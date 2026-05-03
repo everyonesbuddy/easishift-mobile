@@ -1,0 +1,124 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "lint-timeoff-validation",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "lint-timeoff-validation-2",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "eslint-single-timeoff-decision",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"eslint",
+				"components/staff-portal/timeoff/timeoff-decision-page.tsx",
+				"--no-cache"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "eslint-timeoff-route-only",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"eslint",
+				"app/(protected)/timeoff-decisions.tsx",
+				"--no-cache"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "eslint-timeoff-route-only-quoted",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"eslint",
+				"\"app/(protected)/timeoff-decisions.tsx\"",
+				"--no-cache"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "eslint-timeoff-route-only-shell",
+			"type": "shell",
+			"command": "npx eslint --no-cache -- 'app/(protected)/timeoff-decisions.tsx'",
+			"isBackground": false
+		},
+		{
+			"label": "eslint-full-no-cache",
+			"type": "shell",
+			"command": "npx eslint . --no-cache",
+			"isBackground": false
+		},
+		{
+			"label": "expo-lint-recheck",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "expo-lint-after-suppression",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "expo-lint-final-timeoff",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "lint-preferences-migration",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "lint-nav-preferences-route",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "lint-staff-only-preferences-tab",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "lint-timeoff-nav-role-wiring",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "lint-billing-migration",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		},
+		{
+			"label": "lint-billing-flow-segment-fix",
+			"type": "shell",
+			"command": "npm run lint",
+			"isBackground": false
+		}
+	]
+}
