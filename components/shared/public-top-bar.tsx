@@ -1,13 +1,7 @@
-import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { usePathname, useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type PublicNavItem = {
@@ -73,10 +67,7 @@ export default function PublicTopBar() {
                 style={({ pressed }) => [pressed ? styles.pressed : null]}
               >
                 <Text
-                  style={[
-                    styles.navLink,
-                    active ? styles.navLinkActive : null,
-                  ]}
+                  style={[styles.navLink, active ? styles.navLinkActive : null]}
                 >
                   {item.label}
                 </Text>
