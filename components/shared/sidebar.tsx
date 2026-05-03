@@ -163,10 +163,12 @@ export default function Sidebar({ visible, onClose }: Props) {
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName} numberOfLines={1}>
-                  {user?.name || "Staff User"}
+                  {typeof user?.name === "string" && user.name
+                    ? user.name
+                    : "Staff User"}
                 </Text>
                 <Text style={styles.userEmail} numberOfLines={1}>
-                  {user?.email || ""}
+                  {typeof user?.email === "string" ? user.email : ""}
                 </Text>
               </View>
               <TouchableOpacity

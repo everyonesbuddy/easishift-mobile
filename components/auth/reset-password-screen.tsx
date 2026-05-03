@@ -21,8 +21,10 @@ function getErrorMessage(error: unknown) {
     typeof (error as { response?: { data?: { message?: unknown } } }).response
       ?.data?.message === "string"
   ) {
-    return (error as { response?: { data?: { message?: string } } }).response
-      ?.data?.message;
+    return (
+      (error as { response?: { data?: { message?: string } } }).response?.data
+        ?.message || "Failed to reset password"
+    );
   }
 
   if (error instanceof Error) {
