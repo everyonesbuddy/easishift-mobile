@@ -27,24 +27,35 @@ const PHONE_COUNTRY_CODES = [
   { code: "+33", label: "France (+33)" },
 ];
 
+const INDUSTRIES = [
+  "Healthcare",
+  "Senior Living",
+  "Retail",
+  "Hospitality",
+  "Manufacturing",
+  "Education",
+  "Transportation",
+  "Finance",
+  "Police",
+  "Warehouse and Logistics",
+  "Security Service",
+  "Other",
+] as const;
+
 function validateEmail(email: string) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
 
 function getErrorMessage(error: unknown) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (error as { response?: { data?: { message?: unknown } } }).response
-      ?.data?.message === "string"
-  ) {
-    return (error as { response?: { data?: { message?: string } } }).response
-      ?.data?.message;
-  }
+  const fallbackMessage = "Failed to create tenant. Try again.";
+  const maybeMessage =
+    typeof error === "object" && error !== null && "response" in error
+      ? (error as { response?: { data?: { message?: unknown } } }).response
+          ?.data?.message
+      : undefined;
 
-  return "Failed to create tenant. Try again.";
+  return typeof maybeMessage === "string" ? maybeMessage : fallbackMessage;
 }
 
 function CountryCodeField({
@@ -138,6 +149,75 @@ function CountryCodeField({
   );
 }
 
+function IndustryField({
+  value,
+  onChange,
+  error,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  error?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [
+          styles.codeSelector,
+          error ? styles.inputErrorBorder : null,
+          pressed ? styles.pressed : null,
+        ]}
+      >
+        <Text style={styles.codeLabel}>Industry</Text>
+        <Text style={styles.codeValue}>{value || "Select Industry"}</Text>
+      </Pressable>
+
+      <Modal
+        transparent
+        visible={open}
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+      >
+        <View style={styles.selectorBackdrop}>
+          <View style={styles.selectorCard}>
+            <Text style={styles.selectorTitle}>Choose Industry</Text>
+
+            <ScrollView style={styles.selectorList}>
+              {INDUSTRIES.map((item) => (
+                <Pressable
+                  key={item}
+                  onPress={() => {
+                    onChange(item);
+                    setOpen(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.selectorItem,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text style={styles.selectorItemText}>{item}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Pressable
+              onPress={() => setOpen(false)}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.secondaryButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 export default function SignupTenantScreen() {
   const router = useRouter();
 
@@ -150,16 +230,79 @@ export default function SignupTenantScreen() {
   const [userPhoneCountryCode, setUserPhoneCountryCode] = useState("");
   const [userPhone, setUserPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [industry, setIndustry] = useState("");
   const [error, setError] = useState("");
+  const [hospitalNameError, setHospitalNameError] = useState("");
+  const [adminNameError, setAdminNameError] = useState("");
+  const [addressError, setAddressError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [industryError, setIndustryError] = useState("");
+  const [tenantPhoneError, setTenantPhoneError] = useState("");
+  const [adminPhoneError, setAdminPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     setError("");
+    setHospitalNameError("");
+    setAdminNameError("");
+    setAddressError("");
+    setPasswordError("");
     setEmailError("");
+    setIndustryError("");
+    setTenantPhoneError("");
+    setAdminPhoneError("");
+
+    if (!hospitalName.trim()) {
+      setHospitalNameError("Facility name is required");
+      return;
+    }
+
+    if (!address.trim()) {
+      setAddressError("Facility address is required");
+      return;
+    }
+
+    if (!adminName.trim()) {
+      setAdminNameError("Admin name is required");
+      return;
+    }
+
+    if (!adminPassword.trim()) {
+      setPasswordError("Password is required");
+      return;
+    }
+
+    if (adminPassword.length < 8) {
+      setPasswordError("Password must be at least 8 characters");
+      return;
+    }
+
+    const hasTenantPhoneCountryCode = Boolean(tenantPhoneCountryCode.trim());
+    const hasTenantPhone = Boolean(tenantPhone.trim());
+    if (hasTenantPhoneCountryCode !== hasTenantPhone) {
+      setTenantPhoneError(
+        "Facility phone and country code must be provided together",
+      );
+      return;
+    }
+
+    const hasAdminPhoneCountryCode = Boolean(userPhoneCountryCode.trim());
+    const hasAdminPhone = Boolean(userPhone.trim());
+    if (hasAdminPhoneCountryCode !== hasAdminPhone) {
+      setAdminPhoneError(
+        "Admin phone and country code must be provided together",
+      );
+      return;
+    }
 
     if (!validateEmail(adminEmail)) {
       setEmailError("Please enter a valid email address");
+      return;
+    }
+
+    if (!industry) {
+      setIndustryError("Please select an industry");
       return;
     }
 
@@ -174,6 +317,7 @@ export default function SignupTenantScreen() {
         userPhoneCountryCode,
         userPhone,
         address,
+        industry,
         adminName,
       });
 
@@ -189,7 +333,7 @@ export default function SignupTenantScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
-          <Text style={styles.title}>Sign Up Hospital</Text>
+          <Text style={styles.title}>Sign Up Facility</Text>
 
           {error ? (
             <View style={styles.errorBox}>
@@ -198,65 +342,128 @@ export default function SignupTenantScreen() {
           ) : null}
 
           <TextInput
-            placeholder="Hospital Name"
+            placeholder="Facility Name"
             value={hospitalName}
-            onChangeText={setHospitalName}
-            style={styles.input}
+            onChangeText={(value) => {
+              setHospitalName(value);
+              setHospitalNameError("");
+            }}
+            style={[
+              styles.input,
+              hospitalNameError ? styles.inputErrorBorder : null,
+            ]}
           />
+          {hospitalNameError ? (
+            <Text style={styles.inlineError}>{hospitalNameError}</Text>
+          ) : null}
 
           <View style={styles.row}>
             <View style={styles.codeFieldWrap}>
               <CountryCodeField
                 label="Country Code"
                 value={tenantPhoneCountryCode}
-                onChange={setTenantPhoneCountryCode}
+                onChange={(value) => {
+                  setTenantPhoneCountryCode(value);
+                  setTenantPhoneError("");
+                }}
               />
             </View>
             <View style={styles.fieldFlex}>
               <TextInput
                 placeholder="Facility Phone"
                 value={tenantPhone}
-                onChangeText={setTenantPhone}
+                onChangeText={(value) => {
+                  setTenantPhone(value);
+                  setTenantPhoneError("");
+                }}
                 keyboardType="phone-pad"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  tenantPhoneError ? styles.inputErrorBorder : null,
+                ]}
               />
             </View>
           </View>
+          {tenantPhoneError ? (
+            <Text style={styles.inlineError}>{tenantPhoneError}</Text>
+          ) : null}
 
           <TextInput
-            placeholder="Hospital Address"
+            placeholder="Facility Address"
             value={address}
-            onChangeText={setAddress}
-            style={styles.input}
+            onChangeText={(value) => {
+              setAddress(value);
+              setAddressError("");
+            }}
+            style={[
+              styles.input,
+              addressError ? styles.inputErrorBorder : null,
+            ]}
           />
+          {addressError ? (
+            <Text style={styles.inlineError}>{addressError}</Text>
+          ) : null}
+
+          <IndustryField
+            value={industry}
+            onChange={(value) => {
+              setIndustry(value);
+              setIndustryError("");
+            }}
+            error={industryError}
+          />
+          {industryError ? (
+            <Text style={styles.inlineError}>{industryError}</Text>
+          ) : null}
 
           <Text style={styles.sectionLabel}>Admin Info</Text>
 
           <TextInput
             placeholder="Admin Name"
             value={adminName}
-            onChangeText={setAdminName}
-            style={styles.input}
+            onChangeText={(value) => {
+              setAdminName(value);
+              setAdminNameError("");
+            }}
+            style={[
+              styles.input,
+              adminNameError ? styles.inputErrorBorder : null,
+            ]}
           />
+          {adminNameError ? (
+            <Text style={styles.inlineError}>{adminNameError}</Text>
+          ) : null}
 
           <View style={styles.row}>
             <View style={styles.codeFieldWrap}>
               <CountryCodeField
                 label="Country Code"
                 value={userPhoneCountryCode}
-                onChange={setUserPhoneCountryCode}
+                onChange={(value) => {
+                  setUserPhoneCountryCode(value);
+                  setAdminPhoneError("");
+                }}
               />
             </View>
             <View style={styles.fieldFlex}>
               <TextInput
                 placeholder="Admin Phone"
                 value={userPhone}
-                onChangeText={setUserPhone}
+                onChangeText={(value) => {
+                  setUserPhone(value);
+                  setAdminPhoneError("");
+                }}
                 keyboardType="phone-pad"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  adminPhoneError ? styles.inputErrorBorder : null,
+                ]}
               />
             </View>
           </View>
+          {adminPhoneError ? (
+            <Text style={styles.inlineError}>{adminPhoneError}</Text>
+          ) : null}
 
           <TextInput
             placeholder="Admin Email"
@@ -267,7 +474,7 @@ export default function SignupTenantScreen() {
             }}
             keyboardType="email-address"
             autoCapitalize="none"
-            style={styles.input}
+            style={[styles.input, emailError ? styles.inputErrorBorder : null]}
           />
           {emailError ? (
             <Text style={styles.inlineError}>{emailError}</Text>
@@ -276,10 +483,19 @@ export default function SignupTenantScreen() {
           <TextInput
             placeholder="Password"
             value={adminPassword}
-            onChangeText={setAdminPassword}
+            onChangeText={(value) => {
+              setAdminPassword(value);
+              setPasswordError("");
+            }}
             secureTextEntry
-            style={styles.input}
+            style={[
+              styles.input,
+              passwordError ? styles.inputErrorBorder : null,
+            ]}
           />
+          {passwordError ? (
+            <Text style={styles.inlineError}>{passwordError}</Text>
+          ) : null}
 
           <Pressable
             onPress={handleSubmit}
@@ -293,7 +509,7 @@ export default function SignupTenantScreen() {
             {loading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.primaryButtonText}>Create Hospital</Text>
+              <Text style={styles.primaryButtonText}>Create Facility</Text>
             )}
           </Pressable>
         </View>
@@ -343,6 +559,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#0f172a",
     backgroundColor: "#ffffff",
+  },
+  inputErrorBorder: {
+    borderColor: "#dc2626",
   },
   row: {
     flexDirection: "row",

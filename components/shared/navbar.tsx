@@ -37,7 +37,7 @@ export default function Navbar({ onMobileOpen }: Props) {
             }
             activeOpacity={0.8}
           >
-            <Text style={styles.logoText}>Easishift</Text>
+            <Text style={styles.logoText}>WiserShifts</Text>
           </TouchableOpacity>
         ) : (
           <>

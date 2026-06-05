@@ -120,7 +120,7 @@ export default function Sidebar({ visible, onClose }: Props) {
         <View style={styles.drawer}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logoText}>Easishift</Text>
+            <Text style={styles.logoText}>WiserShifts</Text>
             <TouchableOpacity
               onPress={onClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

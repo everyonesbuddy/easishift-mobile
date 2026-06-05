@@ -10,25 +10,15 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import {
+  getRoleDisplayName,
+  getRoleOptionsForIndustry,
+  getRoleOptionsFromFacilityPreferences,
+  isRoleCompatible,
+} from "@/constants/industry-roles";
+import { useAuth } from "@/context/auth-context";
 
-import { CoverageItem, getRoleDisplayName } from "./schedule-types";
-
-const ROLES = [
-  "doctor",
-  "nurse",
-  "rn",
-  "lpn",
-  "cna",
-  "med_aide",
-  "caregiver",
-  "activity_aide",
-  "dietary_aide",
-  "housekeeper",
-  "receptionist",
-  "billing",
-  "staff",
-  "other",
-] as const;
+import { CoverageItem } from "./schedule-types";
 
 type Props = {
   onSuccess?: () => void;
@@ -44,6 +34,8 @@ export default function AutoGenerateScheduleForm({
   onSuccess,
   onClose,
 }: Props) {
+  const { tenant } = useAuth();
+
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -51,6 +43,68 @@ export default function AutoGenerateScheduleForm({
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [fetching, setFetching] = useState(false);
   const [resultSummary, setResultSummary] = useState("");
+  const [facilityPreferences, setFacilityPreferences] = useState<{
+    roleFamilies?: unknown[];
+  } | null>(null);
+
+  const roleOptions = useMemo(() => {
+    const facilityOptions =
+      getRoleOptionsFromFacilityPreferences(facilityPreferences);
+    if (facilityOptions.length) {
+      return facilityOptions;
+    }
+
+    return getRoleOptionsForIndustry(tenant?.industry);
+  }, [facilityPreferences, tenant?.industry]);
+
+  const selectableCoverageIds = useMemo(
+    () =>
+      coverages
+        .filter((coverage) => Number(coverage.remaining) > 0)
+        .map((coverage) => coverage._id || "")
+        .filter(Boolean),
+    [coverages],
+  );
+
+  const selectedSelectableCount = useMemo(
+    () => selectedIds.filter((id) => selectableCoverageIds.includes(id)).length,
+    [selectedIds, selectableCoverageIds],
+  );
+
+  const allSelectableSelected =
+    selectableCoverageIds.length > 0 &&
+    selectedSelectableCount === selectableCoverageIds.length;
+  const hasSomeSelectableSelected =
+    selectedSelectableCount > 0 && !allSelectableSelected;
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadFacilityPreferences() {
+      try {
+        const res = await api.get("/facility-preferences");
+        if (!mounted) {
+          return;
+        }
+
+        setFacilityPreferences(
+          (res.data || null) as { roleFamilies?: unknown[] } | null,
+        );
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setFacilityPreferences(null);
+      }
+    }
+
+    loadFacilityPreferences();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     async function loadCoverages() {
@@ -62,10 +116,33 @@ export default function AutoGenerateScheduleForm({
 
         const now = new Date();
         const raw = Array.isArray(res.data) ? (res.data as CoverageItem[]) : [];
-        const upcoming = raw.filter((coverage) => {
-          const end = new Date(coverage.endTime || "");
-          return !Number.isNaN(end.getTime()) && end >= now;
-        });
+        const upcoming = raw
+          .filter((coverage) => {
+            const end = new Date(coverage.endTime || "");
+            return (
+              !Number.isNaN(end.getTime()) &&
+              end >= now &&
+              (!selectedRole || isRoleCompatible(selectedRole, coverage.role))
+            );
+          })
+          .map((coverage) => {
+            const requiredCount = Number(coverage.requiredCount) || 0;
+            const assignedCount = Number(coverage.assignedCount);
+            const directRemaining = Number(coverage.remaining);
+
+            const computedRemaining = Number.isFinite(assignedCount)
+              ? Math.max(0, requiredCount - assignedCount)
+              : Math.max(0, requiredCount);
+
+            const spotsRemaining = Number.isFinite(directRemaining)
+              ? Math.max(0, directRemaining)
+              : computedRemaining;
+
+            return {
+              ...coverage,
+              remaining: spotsRemaining,
+            };
+          });
 
         setCoverages(upcoming);
         setSelectedIds([]);
@@ -83,8 +160,8 @@ export default function AutoGenerateScheduleForm({
   const sortedCoverages = useMemo(
     () =>
       coverages.slice().sort((a, b) => {
-        const aZero = (a.remaining ?? 0) === 0;
-        const bZero = (b.remaining ?? 0) === 0;
+        const aZero = Number(a.remaining ?? 0) <= 0;
+        const bZero = Number(b.remaining ?? 0) <= 0;
         if (aZero === bZero) {
           const ta = new Date(a.startTime || "").getTime();
           const tb = new Date(b.startTime || "").getTime();
@@ -102,6 +179,19 @@ export default function AutoGenerateScheduleForm({
 
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  const handleToggleSelectAll = (nextChecked: boolean) => {
+    if (nextChecked) {
+      setSelectedIds((prev) =>
+        Array.from(new Set([...prev, ...selectableCoverageIds])),
+      );
+      return;
+    }
+
+    setSelectedIds((prev) =>
+      prev.filter((id) => !selectableCoverageIds.includes(id)),
     );
   };
 
@@ -288,12 +378,12 @@ export default function AutoGenerateScheduleForm({
           label="All"
           onPress={() => setSelectedRole("")}
         />
-        {ROLES.map((role) => (
+        {roleOptions.map((item) => (
           <RolePill
-            key={role}
-            active={selectedRole === role}
-            label={getRoleDisplayName(role)}
-            onPress={() => setSelectedRole(role)}
+            key={item.value}
+            active={selectedRole === item.value}
+            label={item.label}
+            onPress={() => setSelectedRole(item.value)}
           />
         ))}
       </View>
@@ -304,12 +394,38 @@ export default function AutoGenerateScheduleForm({
         <Text style={styles.emptyText}>No unfilled coverages available.</Text>
       ) : null}
 
+      {coverages.length > 0 ? (
+        <Pressable
+          style={styles.selectAllBtn}
+          onPress={() => handleToggleSelectAll(!allSelectableSelected)}
+        >
+          <View
+            style={[
+              styles.checkbox,
+              allSelectableSelected || hasSomeSelectableSelected
+                ? styles.checkboxActive
+                : null,
+            ]}
+          >
+            {allSelectableSelected ? (
+              <Feather name="check" size={13} color="#1d4ed8" />
+            ) : hasSomeSelectableSelected ? (
+              <Feather name="minus" size={13} color="#1d4ed8" />
+            ) : null}
+          </View>
+          <Text style={styles.selectAllText}>
+            Select all ({selectedSelectableCount}/{selectableCoverageIds.length}
+            )
+          </Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.listWrap}>
         {sortedCoverages.map((coverage) => {
           const selected = Boolean(
             coverage._id && selectedIds.includes(coverage._id),
           );
-          const isZero = (coverage.remaining ?? 0) === 0;
+          const isZero = Number(coverage.remaining ?? 0) <= 0;
           const date = new Date(coverage.date || coverage.startTime || "");
           const start = new Date(coverage.startTime || "");
           const end = new Date(coverage.endTime || "");
@@ -360,7 +476,9 @@ export default function AutoGenerateScheduleForm({
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
-                    {coverage.location ? ` - ${coverage.location}` : ""}
+                    {coverage.shiftType ? ` - ${coverage.shiftType}` : ""}
+                    {coverage.shiftTag ? ` - ${coverage.shiftTag}` : ""}
+                    {coverage.unitArea ? ` - ${coverage.unitArea}` : ""}
                   </Text>
                 </View>
               </View>
@@ -491,6 +609,22 @@ const styles = StyleSheet.create({
   },
   rolePillTextActive: {
     color: "#1d4ed8",
+  },
+  selectAllBtn: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  selectAllText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
   },
   listWrap: {
     gap: 8,

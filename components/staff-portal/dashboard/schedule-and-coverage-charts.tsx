@@ -3,13 +3,16 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
+  type ScrollViewProps,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
 import api from "@/config/api";
+import { getRoleDisplayName } from "@/constants/industry-roles";
 
 type Props = {
   isAdmin: boolean;
@@ -46,8 +49,36 @@ function pad2(n: number) {
   return `${n}`.padStart(2, "0");
 }
 
+function parseBackendDate(value: string | Date) {
+  if (value instanceof Date) {
+    return new Date(value.getTime());
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return new Date(trimmed);
+  }
+
+  const normalized = trimmed.replace(" ", "T");
+
+  if (/[zZ]$/.test(normalized) || /[+-]\d\d:\d\d$/.test(normalized)) {
+    return new Date(normalized);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return new Date(`${normalized}T00:00:00Z`);
+  }
+
+  return new Date(`${normalized}Z`);
+}
+
+function parseLocalDayKey(dayKey: string) {
+  const [year, month, day] = dayKey.split("-").map((part) => Number(part));
+  return new Date(year, month - 1, day);
+}
+
 function getLocalDayKey(date: Date | string) {
-  const d = new Date(date);
+  const d = parseBackendDate(date);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
@@ -70,17 +101,24 @@ function getWeekDays() {
 }
 
 function formatDate(value: string | Date) {
-  const d = new Date(value);
+  const d =
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? parseLocalDayKey(value)
+      : parseBackendDate(value);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function formatDayLabel(value: string | Date) {
-  const d = new Date(value);
+  const d =
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? parseLocalDayKey(value)
+      : parseBackendDate(value);
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
 function formatTime(value: string | Date) {
-  const d = new Date(value);
+  const d = parseBackendDate(value);
   return d
     .toLocaleTimeString([], {
       hour: "numeric",
@@ -88,30 +126,6 @@ function formatTime(value: string | Date) {
       hour12: true,
     })
     .replace(/\s/g, "");
-}
-
-function getRoleDisplayName(role?: string) {
-  const labels: Record<string, string> = {
-    doctor: "Doctor",
-    nurse: "Nurse",
-    rn: "RN",
-    lpn: "LPN",
-    cna: "CNA",
-    med_aide: "Med Aide",
-    caregiver: "Caregiver",
-    activity_aide: "Activity Aide",
-    dietary_aide: "Dietary Aide",
-    housekeeper: "Housekeeper",
-    receptionist: "Receptionist",
-    billing: "Billing",
-    staff: "Staff",
-    admin: "Admin",
-    other: "Other",
-  };
-  if (!role) {
-    return "Staff";
-  }
-  return labels[role] ?? role;
 }
 
 function getRoleColor(role?: string) {
@@ -148,8 +162,8 @@ function getRoleColor(role?: string) {
 function splitShiftByDay(
   input: { startTime: Date; endTime: Date } & Record<string, unknown>,
 ) {
-  const start = new Date(input.startTime);
-  const end = new Date(input.endTime);
+  const start = parseBackendDate(input.startTime);
+  const end = parseBackendDate(input.endTime);
   const parts: Record<string, unknown>[] = [];
 
   let current = new Date(start);
@@ -176,6 +190,8 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   const [coverage, setCoverage] = useState<Coverage[]>([]);
   const [selectedCoverageRole, setSelectedCoverageRole] = useState("all");
   const [selectedOvertimeRole, setSelectedOvertimeRole] = useState("all");
+  const [coverageStartDate, setCoverageStartDate] = useState("");
+  const [coverageEndDate, setCoverageEndDate] = useState("");
   const [loading, setLoading] = useState(true);
 
   const weekDays = useMemo(() => getWeekDays(), []);
@@ -183,6 +199,26 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
     () => new Set(weekDays.map((d) => getLocalDayKey(d))),
     [weekDays],
   );
+
+  const weekRangeLabel = useMemo(() => {
+    if (!weekDays.length) return "";
+    const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+    const firstLabel = weekDays[0].toLocaleDateString(undefined, {
+      weekday: "short",
+      ...opts,
+    });
+    const lastLabel = weekDays[6].toLocaleDateString(undefined, {
+      weekday: "short",
+      ...opts,
+    });
+    return `${firstLabel} – ${lastLabel}`;
+  }, [weekDays]);
+
+  useEffect(() => {
+    if (!weekDays.length) return;
+    if (!coverageStartDate) setCoverageStartDate(getLocalDayKey(weekDays[0]));
+    if (!coverageEndDate) setCoverageEndDate(getLocalDayKey(weekDays[6]));
+  }, [weekDays, coverageStartDate, coverageEndDate]);
 
   useEffect(() => {
     async function load() {
@@ -196,8 +232,32 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           api.get("/coverage"),
         ]);
 
-        setSchedules(Array.isArray(scheduleRes.data) ? scheduleRes.data : []);
-        setCoverage(Array.isArray(coverageRes.data) ? coverageRes.data : []);
+        setSchedules(
+          Array.isArray(scheduleRes.data)
+            ? scheduleRes.data.map((item) => ({
+                ...item,
+                startTime: item?.startTime
+                  ? parseBackendDate(item.startTime)
+                  : item?.startTime,
+                endTime: item?.endTime
+                  ? parseBackendDate(item.endTime)
+                  : item?.endTime,
+              }))
+            : [],
+        );
+        setCoverage(
+          Array.isArray(coverageRes.data)
+            ? coverageRes.data.map((item) => ({
+                ...item,
+                startTime: item?.startTime
+                  ? parseBackendDate(item.startTime)
+                  : item?.startTime,
+                endTime: item?.endTime
+                  ? parseBackendDate(item.endTime)
+                  : item?.endTime,
+              }))
+            : [],
+        );
       } catch (error) {
         console.warn("Failed to load dashboard charts", error);
       } finally {
@@ -220,6 +280,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         endTime: new Date(c.endTime),
       }).map((part) => ({
         ...part,
+        _id: c._id,
         dayKey: part.dayKey as string,
         startTime: part.start as Date,
         endTime: part.end as Date,
@@ -241,9 +302,14 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         endTime: new Date(s.endTime),
       }).map((part) => ({
         ...part,
+        _id: s._id,
         dayKey: part.dayKey as string,
         start: part.start as Date,
         end: part.end as Date,
+        role: s.role,
+        status: s.status,
+        staffId: s.staffId,
+        notes: s.notes,
         staffRole: typeof s.staffId === "object" ? s.staffId?.role : s.role,
       }));
     });
@@ -263,11 +329,27 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
       return [];
     }
 
+    const startKey =
+      coverageStartDate && coverageEndDate
+        ? coverageStartDate <= coverageEndDate
+          ? coverageStartDate
+          : coverageEndDate
+        : coverageStartDate || coverageEndDate;
+
+    const endKey =
+      coverageStartDate && coverageEndDate
+        ? coverageStartDate <= coverageEndDate
+          ? coverageEndDate
+          : coverageStartDate
+        : coverageEndDate || coverageStartDate;
+
     return coverageNormalized
-      .filter((cov) => weekDayKeys.has(cov.dayKey))
       .filter(
         (cov) =>
-          selectedCoverageRole === "all" || cov.role === selectedCoverageRole,
+          (selectedCoverageRole === "all" ||
+            cov.role === selectedCoverageRole) &&
+          (startKey ? cov.dayKey >= startKey : true) &&
+          (endKey ? cov.dayKey <= endKey : true),
       )
       .sort((a, b) =>
         a.dayKey === b.dayKey
@@ -286,9 +368,17 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         }).length;
 
         const required = cov.requiredCount || 0;
+        const rowKey = [
+          cov._id || "coverage",
+          cov.dayKey,
+          cov.startTime.getTime(),
+          cov.endTime.getTime(),
+          cov.role || "role",
+          idx,
+        ].join("-");
 
         return {
-          id: cov._id || `${cov.dayKey}-${cov.role || "role"}-${idx}`,
+          id: rowKey,
           role: cov.role,
           dayKey: cov.dayKey,
           shiftStart: cov.startTime,
@@ -302,10 +392,28 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   }, [
     isAdmin,
     selectedCoverageRole,
+    coverageStartDate,
+    coverageEndDate,
     coverageNormalized,
     schedulesNormalized,
-    weekDayKeys,
   ]);
+
+  const consolidatedCoverageSummary = useMemo(() => {
+    return consolidatedCoverageWithStaffing.reduce(
+      (acc, slot) => {
+        if (slot.isUnderstaffed) {
+          acc.understaffed += 1;
+        } else if (slot.isOverstaffed) {
+          acc.overstaffed += 1;
+        } else {
+          acc.fullyStaffed += 1;
+        }
+        acc.total += 1;
+        return acc;
+      },
+      { understaffed: 0, fullyStaffed: 0, overstaffed: 0, total: 0 },
+    );
+  }, [consolidatedCoverageWithStaffing]);
 
   const weeklyOvertimeData = useMemo(() => {
     if (!isAdmin) {
@@ -364,12 +472,28 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           isOvertime: rounded >= 40,
         };
       })
-      .sort((a, b) => b.hours - a.hours)
-      .filter(
-        (row) =>
-          selectedOvertimeRole === "all" || row.role === selectedOvertimeRole,
-      );
-  }, [isAdmin, schedulesNormalized, selectedOvertimeRole, weekDayKeys]);
+      .sort((a, b) => b.hours - a.hours);
+  }, [isAdmin, schedulesNormalized, weekDayKeys]);
+
+  const filteredWeeklyOvertimeData = useMemo(() => {
+    if (!isAdmin) return [];
+    return weeklyOvertimeData.filter(
+      (row) =>
+        selectedOvertimeRole === "all" || row.role === selectedOvertimeRole,
+    );
+  }, [isAdmin, weeklyOvertimeData, selectedOvertimeRole]);
+
+  const overtimeSummary = useMemo(() => {
+    if (!isAdmin || filteredWeeklyOvertimeData.length === 0) {
+      return { nearCount: 0, overtimeCount: 0 };
+    }
+    return {
+      nearCount: filteredWeeklyOvertimeData.filter((w) => w.isNearOvertime)
+        .length,
+      overtimeCount: filteredWeeklyOvertimeData.filter((w) => w.isOvertime)
+        .length,
+    };
+  }, [isAdmin, filteredWeeklyOvertimeData]);
 
   const todayKey = getLocalDayKey(new Date());
 
@@ -398,6 +522,37 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
       .slice(0, 8);
   }, [isAdmin, schedulesNormalized, todayKey]);
 
+  function getCoverageStatusStyle(
+    isUnderstaffed: boolean,
+    isOverstaffed: boolean,
+  ) {
+    if (isUnderstaffed)
+      return { bg: "#FEF2F2", accent: "#DC2626", label: "Understaffed" };
+    if (isOverstaffed)
+      return { bg: "#FFFBEB", accent: "#D97706", label: "Overstaffed" };
+    return { bg: "#ECFDF5", accent: "#16A34A", label: "Balanced" };
+  }
+
+  function getRelativeDateString(dayKey: string) {
+    const d = parseLocalDayKey(dayKey);
+    const now = new Date();
+    const diff = Math.round(
+      (d.getTime() -
+        new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Tomorrow";
+    if (diff > 1 && diff < 7) return `${diff} days`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function formatDurationHours(start: Date, end: Date) {
+    const h = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    if (!Number.isFinite(h) || h <= 0) return "";
+    return `${Math.round(h * 10) / 10}h`;
+  }
+
   if (loading) {
     return (
       <View style={styles.loadingWrap}>
@@ -413,8 +568,25 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>Coverage Overview</Text>
             <Text style={styles.panelSub}>
-              Current-week coverage and staffing status
+              Filter by date range and role, then review each coverage slot
             </Text>
+
+            <View style={styles.dateRangeRow}>
+              <TextInput
+                value={coverageStartDate}
+                onChangeText={setCoverageStartDate}
+                placeholder="Start YYYY-MM-DD"
+                style={styles.dateInput}
+                placeholderTextColor="#94a3b8"
+              />
+              <TextInput
+                value={coverageEndDate}
+                onChangeText={setCoverageEndDate}
+                placeholder="End YYYY-MM-DD"
+                style={styles.dateInput}
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
 
             <ScrollView
               horizontal
@@ -436,55 +608,131 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
               ))}
             </ScrollView>
 
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.summaryChipsRow}
+            >
+              <View style={styles.summaryChip}>
+                <Text style={styles.summaryChipText}>
+                  Slots: {consolidatedCoverageSummary.total}
+                </Text>
+              </View>
+              <View style={[styles.summaryChip, styles.summaryChipRed]}>
+                <Text
+                  style={[styles.summaryChipText, styles.summaryChipTextRed]}
+                >
+                  Understaffed: {consolidatedCoverageSummary.understaffed}
+                </Text>
+              </View>
+              <View style={[styles.summaryChip, styles.summaryChipGreen]}>
+                <Text
+                  style={[styles.summaryChipText, styles.summaryChipTextGreen]}
+                >
+                  Fully staffed: {consolidatedCoverageSummary.fullyStaffed}
+                </Text>
+              </View>
+              <View style={[styles.summaryChip, styles.summaryChipYellow]}>
+                <Text
+                  style={[styles.summaryChipText, styles.summaryChipTextYellow]}
+                >
+                  Overstaffed: {consolidatedCoverageSummary.overstaffed}
+                </Text>
+              </View>
+            </ScrollView>
+
             {consolidatedCoverageWithStaffing.length === 0 ? (
-              <EmptyBlock text="No coverage slots found for this filter." />
+              <EmptyBlock text="No coverage requirements in this range." />
             ) : (
-              <View style={styles.listWrap}>
+              <OverflowScrollView
+                maxHeight={340}
+                contentContainerStyle={styles.listWrap}
+              >
                 {consolidatedCoverageWithStaffing.map((slot) => {
-                  const bg = slot.isUnderstaffed
-                    ? "#ffebee"
-                    : slot.isOverstaffed
-                      ? "#fff8e1"
-                      : "#e8f5e9";
+                  const status = getCoverageStatusStyle(
+                    slot.isUnderstaffed,
+                    slot.isOverstaffed,
+                  );
+                  const pct =
+                    slot.requiredStaff > 0
+                      ? (slot.assignedCount / slot.requiredStaff) * 100
+                      : 0;
 
                   return (
                     <View
                       key={slot.id}
-                      style={[styles.infoRow, { backgroundColor: bg }]}
+                      style={[styles.covCard, { backgroundColor: status.bg }]}
                     >
-                      <View style={styles.infoLeft}>
-                        <View style={styles.rowTop}>
-                          <View
-                            style={[
-                              styles.roleDot,
-                              { backgroundColor: getRoleColor(slot.role) },
-                            ]}
-                          />
-                          <Text style={styles.infoTitle}>
-                            {getRoleDisplayName(slot.role)}
+                      <View style={styles.covCardTop}>
+                        <View style={styles.infoLeft}>
+                          <View style={styles.rowTop}>
+                            <View
+                              style={[
+                                styles.roleDot,
+                                { backgroundColor: getRoleColor(slot.role) },
+                              ]}
+                            />
+                            <Text style={styles.infoTitle}>
+                              {getRoleDisplayName(slot.role)}
+                            </Text>
+                            <Text style={styles.covDate}>
+                              {formatDate(slot.dayKey)}
+                            </Text>
+                          </View>
+                          <Text style={styles.infoMuted}>
+                            {formatTime(slot.shiftStart)} –{" "}
+                            {formatTime(slot.shiftEnd)}
                           </Text>
                         </View>
-                        <Text style={styles.infoMuted}>
-                          {formatDayLabel(slot.dayKey)}{" "}
-                          {formatDate(slot.dayKey)} •{" "}
-                          {formatTime(slot.shiftStart)} -{" "}
-                          {formatTime(slot.shiftEnd)}
-                        </Text>
+                        <View
+                          style={[
+                            styles.statusChip,
+                            { borderColor: status.accent },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusChipText,
+                              { color: status.accent },
+                            ]}
+                          >
+                            {status.label}
+                          </Text>
+                        </View>
                       </View>
-
-                      <Text style={styles.infoCount}>
-                        {slot.assignedCount}/{slot.requiredStaff}
-                      </Text>
+                      <View style={styles.progressSection}>
+                        <View style={styles.progressLabelRow}>
+                          <Text style={styles.progressLabel}>
+                            Assigned vs required
+                          </Text>
+                          <Text style={styles.progressCount}>
+                            {slot.assignedCount} / {slot.requiredStaff}
+                          </Text>
+                        </View>
+                        <View style={styles.progressTrack}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              {
+                                width: `${Math.min(100, pct)}%`,
+                                backgroundColor: status.accent,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
                     </View>
                   );
                 })}
-              </View>
+              </OverflowScrollView>
             )}
           </View>
 
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>Weekly Overtime Tracker</Text>
-            <Text style={styles.panelSub}>Scheduled hours this week</Text>
+            <Text style={styles.panelSub}>
+              Scheduled hours this week ({weekRangeLabel})
+            </Text>
 
             <ScrollView
               horizontal
@@ -506,31 +754,90 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
               ))}
             </ScrollView>
 
-            {weeklyOvertimeData.length === 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.summaryChipsRow}
+            >
+              <View style={styles.summaryChip}>
+                <Text style={styles.summaryChipText}>
+                  Staff tracked: {filteredWeeklyOvertimeData.length}
+                </Text>
+              </View>
+              <View style={[styles.summaryChip, styles.summaryChipYellow]}>
+                <Text
+                  style={[styles.summaryChipText, styles.summaryChipTextYellow]}
+                >
+                  Near overtime: {overtimeSummary.nearCount}
+                </Text>
+              </View>
+              <View style={[styles.summaryChip, styles.summaryChipRed]}>
+                <Text
+                  style={[styles.summaryChipText, styles.summaryChipTextRed]}
+                >
+                  Overtime: {overtimeSummary.overtimeCount}
+                </Text>
+              </View>
+            </ScrollView>
+
+            {filteredWeeklyOvertimeData.length === 0 ? (
               <EmptyBlock text="No matching staff for this filter." />
             ) : (
-              <View style={styles.listWrap}>
-                {weeklyOvertimeData.map((row) => {
+              <OverflowScrollView
+                maxHeight={240}
+                contentContainerStyle={styles.listWrap}
+              >
+                {filteredWeeklyOvertimeData.map((row) => {
+                  const accent = row.isOvertime
+                    ? "#f44336"
+                    : row.isNearOvertime
+                      ? "#f9a825"
+                      : "#66bb6a";
                   const bg = row.isOvertime
                     ? "#ffebee"
                     : row.isNearOvertime
                       ? "#fff8e1"
                       : "#e8f5e9";
+                  const statusLabel = row.isOvertime
+                    ? "Overtime"
+                    : row.isNearOvertime
+                      ? "Near 40h"
+                      : "Within target";
 
                   return (
                     <View
                       key={row.staffId}
-                      style={[styles.infoRow, { backgroundColor: bg }]}
+                      style={[styles.covCard, { backgroundColor: bg }]}
                     >
-                      <View style={styles.infoLeft}>
-                        <Text style={styles.infoTitle}>{row.staffName}</Text>
-                        <Text style={styles.infoMuted}>{row.roleLabel}</Text>
+                      <View style={styles.covCardTop}>
+                        <View style={styles.infoLeft}>
+                          <Text style={styles.infoTitle}>{row.staffName}</Text>
+                          <Text style={styles.infoMuted}>{row.roleLabel}</Text>
+                        </View>
+                        <View>
+                          <Text style={[styles.infoCount, { color: accent }]}>
+                            {row.hours}h
+                          </Text>
+                          <Text style={[styles.statusLabel, { color: accent }]}>
+                            {statusLabel}
+                          </Text>
+                        </View>
                       </View>
-                      <Text style={styles.infoCount}>{row.hours}h</Text>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            {
+                              width: `${Math.min(100, (row.hours / 40) * 100)}%`,
+                              backgroundColor: accent,
+                            },
+                          ]}
+                        />
+                      </View>
                     </View>
                   );
                 })}
-              </View>
+              </OverflowScrollView>
             )}
           </View>
         </>
@@ -539,18 +846,36 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>Today&apos;s Shift</Text>
             {todayShift ? (
-              <View style={[styles.infoRow, { backgroundColor: "#e3f2fd" }]}>
-                <View style={styles.infoLeft}>
-                  <Text style={styles.infoTitle}>
-                    {formatDate(todayShift.dayKey)}
-                  </Text>
+              <View
+                style={[
+                  styles.covCard,
+                  {
+                    backgroundColor: "#e3f2fd",
+                    borderLeftWidth: 4,
+                    borderLeftColor: "#1e88e5",
+                  },
+                ]}
+              >
+                <View style={styles.covCardTop}>
+                  <View style={styles.infoLeft}>
+                    <Text style={styles.infoTitle}>
+                      {formatDate(todayShift.dayKey)}
+                    </Text>
+                    <Text style={styles.infoMuted}>
+                      {getRoleDisplayName(todayShift.staffRole)}
+                    </Text>
+                  </View>
+                  <View style={styles.roleTag}>
+                    <Text style={styles.roleTagText}>Today</Text>
+                  </View>
+                </View>
+                <View style={styles.shiftTimeRow}>
+                  <Feather name="clock" size={13} color="#475569" />
                   <Text style={styles.infoMuted}>
-                    {getRoleDisplayName(todayShift.staffRole)} •{" "}
-                    {formatTime(todayShift.start)} -{" "}
+                    {formatTime(todayShift.start)} –{" "}
                     {formatTime(todayShift.end)}
                   </Text>
                 </View>
-                <Feather name="calendar" size={18} color="#1565c0" />
               </View>
             ) : (
               <EmptyBlock text="No shift scheduled for today." />
@@ -558,33 +883,57 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           </View>
 
           <View style={styles.panel}>
-            <Text style={styles.panelTitle}>Upcoming Shifts</Text>
+            <View style={styles.panelHeaderRow}>
+              <Text style={styles.panelTitle}>Upcoming Shifts</Text>
+              <Text style={styles.panelSub}>
+                {upcomingShifts.length} shifts
+              </Text>
+            </View>
             {upcomingShifts.length === 0 ? (
               <EmptyBlock text="No upcoming shifts." />
             ) : (
               <View style={styles.listWrap}>
                 {upcomingShifts.map((shift) => (
                   <View
-                    key={
-                      shift._id || `${shift.dayKey}-${shift.start.getTime()}`
-                    }
-                    style={[styles.infoRow, { backgroundColor: "#fafafa" }]}
+                    key={[
+                      shift._id || "shift",
+                      shift.dayKey,
+                      shift.start.getTime(),
+                      shift.end.getTime(),
+                      shift.staffRole || shift.role || "role",
+                    ].join("-")}
+                    style={[styles.covCard, { backgroundColor: "#F8FAFC" }]}
                   >
-                    <View style={styles.infoLeft}>
-                      <Text style={styles.infoTitle}>
-                        {formatDate(shift.dayKey)}
-                      </Text>
-                      <Text style={styles.infoMuted}>
-                        {getRoleDisplayName(shift.staffRole)} •{" "}
-                        {formatTime(shift.start)} - {formatTime(shift.end)}
-                      </Text>
+                    <View style={styles.covCardTop}>
+                      <View style={styles.infoLeft}>
+                        <Text style={styles.infoTitle}>
+                          {formatDate(shift.dayKey)}
+                        </Text>
+                        <Text style={styles.infoMuted}>
+                          {getRelativeDateString(shift.dayKey)}
+                        </Text>
+                      </View>
+                      <View style={styles.roleTag}>
+                        <Text style={styles.roleTagText}>
+                          {getRoleDisplayName(shift.staffRole)}
+                        </Text>
+                      </View>
                     </View>
-                    <View
-                      style={[
-                        styles.roleDot,
-                        { backgroundColor: getRoleColor(shift.staffRole) },
-                      ]}
-                    />
+                    <View style={styles.shiftTimeRow}>
+                      <Feather name="clock" size={13} color="#475569" />
+                      <Text style={styles.infoMuted}>
+                        {formatTime(shift.start)} – {formatTime(shift.end)}
+                      </Text>
+                      <Text style={styles.durationText}>
+                        ({formatDurationHours(shift.start, shift.end)})
+                      </Text>
+                      <View
+                        style={[
+                          styles.roleDot,
+                          { backgroundColor: getRoleColor(shift.staffRole) },
+                        ]}
+                      />
+                    </View>
                   </View>
                 ))}
               </View>
@@ -624,6 +973,37 @@ function EmptyBlock({ text }: { text: string }) {
       <Feather name="calendar" size={34} color="#9ca3af" />
       <Text style={styles.emptyText}>{text}</Text>
     </View>
+  );
+}
+
+function OverflowScrollView({
+  children,
+  contentContainerStyle,
+  maxHeight,
+}: {
+  children: React.ReactNode;
+  contentContainerStyle?: ScrollViewProps["contentContainerStyle"];
+  maxHeight: number;
+}) {
+  const [containerHeight, setContainerHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+
+  const canScroll = contentHeight > containerHeight + 1;
+
+  return (
+    <ScrollView
+      nestedScrollEnabled
+      scrollEnabled={canScroll}
+      showsVerticalScrollIndicator={canScroll}
+      persistentScrollbar={canScroll}
+      indicatorStyle="black"
+      style={[styles.scrollPanel, { maxHeight }]}
+      contentContainerStyle={contentContainerStyle}
+      onLayout={(event) => setContainerHeight(event.nativeEvent.layout.height)}
+      onContentSizeChange={(_, height) => setContentHeight(height)}
+    >
+      {children}
+    </ScrollView>
   );
 }
 
@@ -682,6 +1062,9 @@ const styles = StyleSheet.create({
   listWrap: {
     gap: 8,
   },
+  scrollPanel: {
+    paddingRight: 2,
+  },
   infoRow: {
     padding: 10,
     borderRadius: 8,
@@ -728,5 +1111,124 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#9ca3af",
     fontSize: 13,
+  },
+  dateRangeRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  dateInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 13,
+    color: "#111827",
+    backgroundColor: "#ffffff",
+  },
+  summaryChipsRow: {
+    flexDirection: "row",
+    gap: 6,
+    paddingVertical: 2,
+  },
+  summaryChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#f1f5f9",
+  },
+  summaryChipRed: { backgroundColor: "#FEF2F2" },
+  summaryChipGreen: { backgroundColor: "#ECFDF5" },
+  summaryChipYellow: { backgroundColor: "#FFFBEB" },
+  summaryChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  summaryChipTextRed: { color: "#B91C1C" },
+  summaryChipTextGreen: { color: "#166534" },
+  summaryChipTextYellow: { color: "#92400E" },
+  covCard: {
+    borderRadius: 10,
+    padding: 11,
+    gap: 8,
+  },
+  covCardTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  covDate: {
+    color: "#64748b",
+    fontSize: 12,
+  },
+  statusChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: "#ffffff",
+  },
+  statusChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  statusLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "right",
+  },
+  progressSection: {
+    gap: 4,
+  },
+  progressLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  progressLabel: {
+    color: "#64748b",
+    fontSize: 11,
+  },
+  progressCount: {
+    color: "#0f172a",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  progressTrack: {
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(15,23,42,0.08)",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: 7,
+    borderRadius: 999,
+  },
+  panelHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  roleTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#EEF2FF",
+  },
+  roleTagText: {
+    color: "#1E3A8A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  shiftTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  durationText: {
+    color: "#64748b",
+    fontSize: 12,
   },
 });

@@ -1,6 +1,6 @@
-# Easishift Mobile
+# WiserShifts Mobile
 
-Easishift Mobile is the React Native staff portal for facility onboarding, staffing operations, scheduling, coverage planning, time-off workflows, shift swaps, messaging, preferences, and subscription management.
+WiserShifts Mobile is the React Native staff portal for facility onboarding, staffing operations, scheduling, coverage planning, time-off workflows, shift swaps, messaging, preferences, and subscription management.
 
 This README is written as a product-flow guide so a new developer, tester, or stakeholder can understand how the mobile app behaves from first entry to daily operations.
 
@@ -108,11 +108,12 @@ The bottom navigation differs by role.
 - Dashboard
 - Coverage
 - Schedule
-- Messages
+- Preferences
 - More
 
 ### Admin More Menu
 
+- Messages
 - Staff Management
 - Time Off Decisions
 - My Time Off Requests
@@ -255,6 +256,7 @@ Staff management supports:
 - creating staff manually
 - editing existing staff
 - bulk import or bulk add workflows adapted for mobile
+- assigning role, unit areas, shift slot permissions, and certification tags per staff member
 
 ### Step 3. Create coverage needs
 
@@ -281,6 +283,13 @@ Manual scheduling assigns staff into available coverage windows.
 AI scheduling works from unfilled coverage and sends selected coverage items to `/schedules/auto-generate`.
 
 Staff users can use the schedule area for their own view and pickup flow rather than full admin scheduling.
+
+Schedule currently includes:
+
+- List view with role, status, visibility, and shift-time filters
+- Calendar day view with date badges and day drill-down
+- Roster month view for print-style daily staffing matrix checks
+- Admin bulk selection and bulk delete for schedule rows
 
 Both the Schedule and Coverage modules include a real month-grid calendar (`MonthCalendar` component). The calendar shows navigation arrows to move between months, weekday headers, and per-day badges indicating how many items exist on each day. Tapping a day filters the list below the calendar to that day's items.
 
@@ -333,12 +342,8 @@ Preferences are staff-facing and help improve scheduling quality.
 The Preferences screen lets a user manage:
 
 - preferred days of the week
-- unavailable days of the week
-- preferred shift start and end times
-- minimum and maximum weekly hours
-- work style preferences
-- notification preferences
-- additional notes
+- email notifications
+- SMS notifications
 
 The app loads and saves these values through `/preferences/me`.
 

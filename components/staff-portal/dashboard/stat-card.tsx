@@ -22,21 +22,21 @@ export default function StatCard({
   badge,
   onPress,
 }: Props) {
-  const Wrapper = onPress ? Pressable : View;
-
   return (
-    <Wrapper
-      style={({ pressed }: { pressed?: boolean }) => [
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
         styles.card,
         onPress && pressed ? styles.cardPressed : null,
       ]}
-      {...(onPress ? { onPress } : {})}
     >
       {badge ? (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{badge}</Text>
         </View>
       ) : null}
+
+      <Text style={styles.cardTitle}>{title}</Text>
 
       {layout === "center" ? (
         <View style={styles.centerLayout}>
@@ -57,7 +57,7 @@ export default function StatCard({
           </View>
         </View>
       )}
-    </Wrapper>
+    </Pressable>
   );
 }
 
@@ -91,6 +91,15 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 11,
     fontWeight: "700",
+  },
+  cardTitle: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    lineHeight: 12,
+    marginBottom: 2,
   },
   centerLayout: {
     alignItems: "center",

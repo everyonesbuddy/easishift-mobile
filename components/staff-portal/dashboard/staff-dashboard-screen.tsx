@@ -1,16 +1,17 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-create-form";
 import ScheduleAndCoverageCharts from "@/components/staff-portal/dashboard/schedule-and-coverage-charts";
@@ -89,13 +90,17 @@ export default function StaffDashboardScreen() {
         ? `/summary/admin/${userId}`
         : `/summary/staff/${userId}`;
 
-      const [summaryRes, tenantRes] = await Promise.all([
+      const [summaryRes, tenantRes, staffRes] = await Promise.all([
         api.get(endpoint),
         api.get(`/tenants/${tenantId}`),
+        api.get("/auth/users"),
       ]);
 
       setSummary(summaryRes.data || null);
       setTenant(normalizeTenant(tenantRes.data || null));
+      setStaffList(
+        Array.isArray(staffRes.data) ? (staffRes.data as StaffMember[]) : [],
+      );
     } catch (error) {
       console.warn("Failed to load dashboard", error);
       setSummary(null);
@@ -104,26 +109,10 @@ export default function StaffDashboardScreen() {
     }
   };
 
-  const loadStaffList = async () => {
-    try {
-      const res = await api.get("/auth/users");
-      setStaffList(Array.isArray(res.data) ? (res.data as StaffMember[]) : []);
-    } catch (error) {
-      console.warn("Failed to load staff list for dashboard modal", error);
-      setStaffList([]);
-    }
-  };
-
   useEffect(() => {
     loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, tenantId, isAdmin]);
-
-  useEffect(() => {
-    if (openScheduleModal || openAddStaffModal) {
-      loadStaffList();
-    }
-  }, [openAddStaffModal, openScheduleModal]);
 
   const firstName = useMemo(() => {
     if (typeof user?.name === "string" && user.name.length > 0) {
@@ -269,8 +258,23 @@ export default function StaffDashboardScreen() {
           </View>
 
           <View style={styles.avatarWrap}>
-            <Text style={styles.avatarText}>{initials}</Text>
+            {typeof user?.profilePicture === "string" && user.profilePicture ? (
+              <Image
+                source={{ uri: user.profilePicture }}
+                style={styles.avatarImage}
+                contentFit="cover"
+              />
+            ) : (
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
           </View>
+        </View>
+
+        <View style={styles.quickActionsSection}>
+          <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+          <Text style={styles.quickActionsSub}>
+            Manage staff, coverage, and schedules
+          </Text>
         </View>
 
         <View style={styles.actionsRow}>
@@ -487,7 +491,7 @@ const styles = StyleSheet.create({
   },
   banner: {
     borderRadius: 14,
-    backgroundColor: "#1d4ed8",
+    backgroundColor: "#0F4C81",
     padding: 18,
     marginBottom: 16,
     flexDirection: "row",
@@ -528,11 +532,30 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   avatarText: {
     color: "#ffffff",
     fontWeight: "800",
     fontSize: 24,
+  },
+  quickActionsSection: {
+    marginBottom: 8,
+  },
+  quickActionsTitle: {
+    color: "#0F172A",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  quickActionsSub: {
+    color: "#64748B",
+    fontSize: 12,
+    marginTop: 2,
   },
   actionsRow: {
     flexDirection: "row",

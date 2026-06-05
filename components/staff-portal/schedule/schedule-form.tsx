@@ -12,14 +12,13 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import {
+  getRoleDisplayName,
+  isRoleCompatible,
+} from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
-import {
-  CoverageItem,
-  getRoleDisplayName,
-  ScheduleItem,
-  StaffUser,
-} from "./schedule-types";
+import { CoverageItem, ScheduleItem, StaffUser } from "./schedule-types";
 
 type Props = {
   onSuccess: () => void;
@@ -34,6 +33,10 @@ type FormData = {
   staffId: string;
   coverageId: string;
   role: string;
+  unitArea: string;
+  shiftType: string;
+  shiftTag: string;
+  certificationTags: string[];
   startTime: string;
   endTime: string;
   notes: string;
@@ -55,6 +58,21 @@ function toLocalInputValue(dateString?: string) {
 function toUTC(dateString: string) {
   if (!dateString) return "";
   return new Date(dateString).toISOString();
+}
+
+function normalizeStringArray(values: unknown) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function formatCertificationTags(value: unknown) {
+  const tags = normalizeStringArray(value);
+  return tags.length ? tags.join(", ") : "-";
 }
 
 function formatShiftLabel(coverage: CoverageItem) {
@@ -172,6 +190,10 @@ export default function ScheduleForm({
     staffId: "",
     coverageId: "",
     role: "",
+    unitArea: "",
+    shiftType: "",
+    shiftTag: "",
+    certificationTags: [],
     startTime: "",
     endTime: "",
     notes: "",
@@ -199,6 +221,10 @@ export default function ScheduleForm({
       staffId,
       coverageId: "",
       role: schedule.role || "",
+      unitArea: schedule.unitArea || "",
+      shiftType: schedule.shiftType || "",
+      shiftTag: schedule.shiftTag || "",
+      certificationTags: normalizeStringArray(schedule.certificationTags),
       startTime: toLocalInputValue(schedule.startTime),
       endTime: toLocalInputValue(schedule.endTime),
       notes: schedule.notes || "",
@@ -236,15 +262,74 @@ export default function ScheduleForm({
     }
 
     try {
-      const res = await api.get(
-        `/coverage/unfilled?role=${selectedStaff.role}`,
-      );
+      const [coverageRes, schedulesRes] = await Promise.all([
+        api.get("/coverage"),
+        api.get("/schedules"),
+      ]);
+
       const now = new Date();
-      const raw = Array.isArray(res.data) ? (res.data as CoverageItem[]) : [];
-      const valid = raw.filter((item) => {
-        const start = new Date(item.startTime || "");
-        return !Number.isNaN(start.getTime()) && start > now;
-      });
+
+      const schedules = Array.isArray(schedulesRes.data)
+        ? (schedulesRes.data as ScheduleItem[])
+        : [];
+      const raw = Array.isArray(coverageRes.data)
+        ? (coverageRes.data as CoverageItem[])
+        : [];
+
+      const getScheduledCount = (coverage: CoverageItem) => {
+        const assignedCount = Number(coverage?.assignedCount);
+        if (Number.isFinite(assignedCount)) {
+          return assignedCount;
+        }
+
+        const startMs = new Date(coverage?.startTime || "").getTime();
+        const endMs = new Date(coverage?.endTime || "").getTime();
+
+        return schedules.filter((scheduleItem) => {
+          if (!scheduleItem || scheduleItem.status === "call_out") {
+            return false;
+          }
+
+          const scheduleStartMs = new Date(
+            scheduleItem.startTime || "",
+          ).getTime();
+          const scheduleEndMs = new Date(scheduleItem.endTime || "").getTime();
+
+          return (
+            scheduleStartMs === startMs &&
+            scheduleEndMs === endMs &&
+            isRoleCompatible(scheduleItem.role, coverage.role)
+          );
+        }).length;
+      };
+
+      const valid = raw
+        .filter((item) => {
+          const start = new Date(item.startTime || "");
+
+          return (
+            !Number.isNaN(start.getTime()) &&
+            start > now &&
+            isRoleCompatible(selectedStaff.role, item.role)
+          );
+        })
+        .map((item) => {
+          const requiredCount = Number(item.requiredCount) || 0;
+          const directRemaining = Number(item.remaining);
+          const scheduledCount = getScheduledCount(item);
+          const computedRemaining = Math.max(0, requiredCount - scheduledCount);
+
+          const spotsRemaining = Number.isFinite(directRemaining)
+            ? Math.max(0, directRemaining)
+            : computedRemaining;
+
+          return {
+            ...item,
+            remaining: spotsRemaining,
+          };
+        })
+        .filter((item) => Number(item.remaining) > 0);
+
       setCoverageOptions(valid);
     } catch (error) {
       console.warn("Failed to load coverage for schedule form", error);
@@ -277,14 +362,16 @@ export default function ScheduleForm({
     const selected = coverageOptions.find(
       (item) => item._id === formData.coverageId,
     );
-    return selected ? formatShiftLabel(selected) : "Select shift";
+    if (!selected) {
+      return "Select shift";
+    }
+
+    return `${getRoleDisplayName(selected.role)} | ${formatShiftLabel(selected)}${selected.unitArea ? ` | ${selected.unitArea}` : ""}${selected.shiftType ? ` | ${selected.shiftType}` : ""}${selected.shiftTag ? ` | ${selected.shiftTag}` : ""}`;
   }, [coverageOptions, formData.coverageId]);
 
-  const statusButtons: FormData["status"][] = [
-    "scheduled",
-    "completed",
-    "call_out",
-  ];
+  const statusButtons: FormData["status"][] = isAdmin
+    ? ["scheduled", "completed", "call_out"]
+    : ["scheduled", "call_out"];
 
   const submit = async () => {
     setMessage("");
@@ -293,6 +380,10 @@ export default function ScheduleForm({
     const payload: Record<string, unknown> = {
       staffId: formData.staffId,
       role: formData.role,
+      unitArea: formData.unitArea || null,
+      shiftType: formData.shiftType || null,
+      shiftTag: formData.shiftTag || null,
+      certificationTags: normalizeStringArray(formData.certificationTags),
       startTime: toUTC(formData.startTime),
       endTime: toUTC(formData.endTime),
       notes: formData.notes,
@@ -410,6 +501,51 @@ export default function ScheduleForm({
         />
       </View>
 
+      <View style={styles.fieldWrap}>
+        <Text style={styles.label}>Role</Text>
+        <TextInput
+          editable={false}
+          style={styles.inputDisabled}
+          value={getRoleDisplayName(formData.role)}
+        />
+      </View>
+
+      <View style={styles.fieldWrap}>
+        <Text style={styles.label}>Unit Area</Text>
+        <TextInput
+          editable={false}
+          style={styles.inputDisabled}
+          value={formData.unitArea || "-"}
+        />
+      </View>
+
+      <View style={styles.fieldWrap}>
+        <Text style={styles.label}>Shift Type</Text>
+        <TextInput
+          editable={false}
+          style={styles.inputDisabled}
+          value={formData.shiftType || "-"}
+        />
+      </View>
+
+      <View style={styles.fieldWrap}>
+        <Text style={styles.label}>Shift Slot</Text>
+        <TextInput
+          editable={false}
+          style={styles.inputDisabled}
+          value={formData.shiftTag || "-"}
+        />
+      </View>
+
+      <View style={styles.fieldWrap}>
+        <Text style={styles.label}>Certification Tags</Text>
+        <TextInput
+          editable={false}
+          style={styles.inputDisabled}
+          value={formatCertificationTags(formData.certificationTags)}
+        />
+      </View>
+
       {isAdmin ? (
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Notes</Text>
@@ -491,6 +627,10 @@ export default function ScheduleForm({
             startTime: "",
             endTime: "",
             role: selected?.role || "",
+            unitArea: "",
+            shiftType: "",
+            shiftTag: "",
+            certificationTags: [],
           }));
         }}
         options={staffList.map((staff) => ({
@@ -514,13 +654,19 @@ export default function ScheduleForm({
             ...prev,
             coverageId: coverage._id || "",
             role: coverage.role || "",
+            unitArea: coverage.unitArea || "",
+            shiftType: coverage.shiftType || "",
+            shiftTag: coverage.shiftTag || "",
+            certificationTags: normalizeStringArray(
+              coverage.requiredCertificationTags,
+            ),
             startTime: toLocalInputValue(coverage.startTime),
             endTime: toLocalInputValue(coverage.endTime),
           }));
         }}
         options={coverageOptions.map((coverage) => ({
           value: coverage._id || "",
-          label: `${formatShiftLabel(coverage)} (${coverage.remaining ?? 0} spots left)`,
+          label: `${getRoleDisplayName(coverage.role)} | ${formatShiftLabel(coverage)}${coverage.unitArea ? ` | ${coverage.unitArea}` : ""}${coverage.shiftType ? ` | ${coverage.shiftType}` : ""}${coverage.shiftTag ? ` | ${coverage.shiftTag}` : ""} (${coverage.remaining ?? 0} spots left)`,
           disabled: (coverage.remaining ?? 0) === 0,
         }))}
       />

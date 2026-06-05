@@ -45,10 +45,10 @@ export default function PublicTopBar() {
           ]}
         >
           {logoFailed ? (
-            <Text style={styles.brandFallback}>EASISHIFT</Text>
+            <Text style={styles.brandFallback}>WISERSHIFTS</Text>
           ) : (
             <Image
-              source={require("@/assets/logos/easishift-logo-plus-text2.svg")}
+              source={require("@/assets/logos/wisershifts-logo-plus-text2.svg")}
               style={styles.logo}
               contentFit="contain"
               onError={() => setLogoFailed(true)}

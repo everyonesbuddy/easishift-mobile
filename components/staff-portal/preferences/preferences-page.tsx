@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -16,47 +15,17 @@ import api from "@/config/api";
 
 type PreferencesData = {
   preferredDaysOfWeek?: number[];
-  unavailableDaysOfWeek?: number[];
-  preferredShiftStart?: string;
-  preferredShiftEnd?: string;
-  minHoursPerWeek?: number;
-  maxHoursPerWeek?: number;
-  dislikesNights?: boolean;
-  prefersBlockScheduling?: boolean;
-  scheduleEmailNotificationsEnabled?: boolean;
-  scheduleSmsNotificationsEnabled?: boolean;
-  timeOffEmailNotificationsEnabled?: boolean;
-  timeOffSmsNotificationsEnabled?: boolean;
-  notes?: string;
+  emailNotificationsEnabled?: boolean;
+  smsNotificationsEnabled?: boolean;
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const defaultPrefs: PreferencesData = {
   preferredDaysOfWeek: [],
-  unavailableDaysOfWeek: [],
-  preferredShiftStart: "08:00",
-  preferredShiftEnd: "17:00",
-  minHoursPerWeek: 0,
-  maxHoursPerWeek: 0,
-  dislikesNights: false,
-  prefersBlockScheduling: false,
-  scheduleEmailNotificationsEnabled: true,
-  scheduleSmsNotificationsEnabled: true,
-  timeOffEmailNotificationsEnabled: true,
-  timeOffSmsNotificationsEnabled: true,
-  notes: "",
+  emailNotificationsEnabled: true,
+  smsNotificationsEnabled: true,
 };
-
-function toNumberArray(value: unknown): number[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item) => Number(item))
-    .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6);
-}
 
 function sanitizePrefs(value: unknown): PreferencesData {
   if (typeof value !== "object" || value === null) {
@@ -66,45 +35,19 @@ function sanitizePrefs(value: unknown): PreferencesData {
   const source = value as PreferencesData;
 
   return {
-    preferredDaysOfWeek: toNumberArray(source.preferredDaysOfWeek),
-    unavailableDaysOfWeek: toNumberArray(source.unavailableDaysOfWeek),
-    preferredShiftStart:
-      typeof source.preferredShiftStart === "string"
-        ? source.preferredShiftStart
-        : defaultPrefs.preferredShiftStart,
-    preferredShiftEnd:
-      typeof source.preferredShiftEnd === "string"
-        ? source.preferredShiftEnd
-        : defaultPrefs.preferredShiftEnd,
-    minHoursPerWeek:
-      typeof source.minHoursPerWeek === "number" ? source.minHoursPerWeek : 0,
-    maxHoursPerWeek:
-      typeof source.maxHoursPerWeek === "number" ? source.maxHoursPerWeek : 0,
-    dislikesNights:
-      typeof source.dislikesNights === "boolean"
-        ? source.dislikesNights
-        : false,
-    prefersBlockScheduling:
-      typeof source.prefersBlockScheduling === "boolean"
-        ? source.prefersBlockScheduling
-        : false,
-    scheduleEmailNotificationsEnabled:
-      typeof source.scheduleEmailNotificationsEnabled === "boolean"
-        ? source.scheduleEmailNotificationsEnabled
+    preferredDaysOfWeek: Array.isArray(source.preferredDaysOfWeek)
+      ? source.preferredDaysOfWeek
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6)
+      : [],
+    emailNotificationsEnabled:
+      typeof source.emailNotificationsEnabled === "boolean"
+        ? source.emailNotificationsEnabled
         : true,
-    scheduleSmsNotificationsEnabled:
-      typeof source.scheduleSmsNotificationsEnabled === "boolean"
-        ? source.scheduleSmsNotificationsEnabled
+    smsNotificationsEnabled:
+      typeof source.smsNotificationsEnabled === "boolean"
+        ? source.smsNotificationsEnabled
         : true,
-    timeOffEmailNotificationsEnabled:
-      typeof source.timeOffEmailNotificationsEnabled === "boolean"
-        ? source.timeOffEmailNotificationsEnabled
-        : true,
-    timeOffSmsNotificationsEnabled:
-      typeof source.timeOffSmsNotificationsEnabled === "boolean"
-        ? source.timeOffSmsNotificationsEnabled
-        : true,
-    notes: typeof source.notes === "string" ? source.notes : "",
   };
 }
 
@@ -138,11 +81,6 @@ export default function PreferencesPage() {
     [prefs.preferredDaysOfWeek],
   );
 
-  const unavailableSet = useMemo(
-    () => new Set<number>(prefs.unavailableDaysOfWeek || []),
-    [prefs.unavailableDaysOfWeek],
-  );
-
   const handleChange = <K extends keyof PreferencesData>(
     field: K,
     value: PreferencesData[K],
@@ -150,19 +88,20 @@ export default function PreferencesPage() {
     setPrefs((prev) => ({ ...prev, [field]: value }));
   };
 
-  const toggleArrayItem = (
-    field: "preferredDaysOfWeek" | "unavailableDaysOfWeek",
-    value: number,
-  ) => {
-    const arr = Array.isArray(prefs[field]) ? [...(prefs[field] || [])] : [];
-    const idx = arr.indexOf(value);
+  const togglePreferredDay = (dayIndex: number) => {
+    const arr = Array.isArray(prefs.preferredDaysOfWeek)
+      ? [...prefs.preferredDaysOfWeek]
+      : [];
+    const idx = arr.indexOf(dayIndex);
+
     if (idx >= 0) {
       arr.splice(idx, 1);
     } else {
-      arr.push(value);
+      arr.push(dayIndex);
       arr.sort((a, b) => a - b);
     }
-    handleChange(field, arr);
+
+    handleChange("preferredDaysOfWeek", arr);
   };
 
   const handleSave = async () => {
@@ -170,8 +109,17 @@ export default function PreferencesPage() {
       setSaving(true);
       setError("");
       setSuccess("");
-      await api.post("/preferences/me", prefs);
-      setSuccess("Preferences saved.");
+
+      const payload: PreferencesData = {
+        preferredDaysOfWeek: Array.isArray(prefs.preferredDaysOfWeek)
+          ? prefs.preferredDaysOfWeek
+          : [],
+        emailNotificationsEnabled: prefs.emailNotificationsEnabled ?? true,
+        smsNotificationsEnabled: prefs.smsNotificationsEnabled ?? true,
+      };
+
+      await api.post("/preferences/me", payload);
+      setSuccess("Preferences saved");
     } catch (requestError) {
       console.warn("Failed to save preferences", requestError);
       setError("Failed to save preferences");
@@ -184,7 +132,7 @@ export default function PreferencesPage() {
     return (
       <SafeAreaView style={styles.page}>
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="small" color="#2563eb" />
+          <ActivityIndicator size="large" color="#2563eb" />
         </View>
       </SafeAreaView>
     );
@@ -208,12 +156,10 @@ export default function PreferencesPage() {
             <Feather name="info" size={18} color="#1d4ed8" />
             <View style={styles.infoBody}>
               <Text style={styles.infoText}>
-                These preferences help administrators and AI systems create
-                schedules that work better for you.
+                These settings control notifications and preferred work days.
               </Text>
               <Text style={styles.infoText}>
-                They are soft constraints and cannot guarantee specific
-                assignments, but they are considered when schedules are built.
+                Facility rules are configured by admins in Facility Preferences.
               </Text>
             </View>
           </View>
@@ -224,9 +170,8 @@ export default function PreferencesPage() {
           description="Select the days you prefer to work"
         >
           <View style={styles.daysGrid}>
-            {DAYS.map((day, i) => {
-              const isPreferred = preferredSet.has(i);
-              const isUnavailable = unavailableSet.has(i);
+            {DAYS.map((day, index) => {
+              const isPreferred = preferredSet.has(index);
 
               return (
                 <Pressable
@@ -234,13 +179,8 @@ export default function PreferencesPage() {
                   style={[
                     styles.dayPill,
                     isPreferred ? styles.dayPillPreferred : null,
-                    isUnavailable ? styles.dayPillDisabled : null,
                   ]}
-                  onPress={() => {
-                    if (!isUnavailable) {
-                      toggleArrayItem("preferredDaysOfWeek", i);
-                    }
-                  }}
+                  onPress={() => togglePreferredDay(index)}
                 >
                   <Text
                     style={[
@@ -256,157 +196,23 @@ export default function PreferencesPage() {
           </View>
         </SectionCard>
 
-        <SectionCard
-          title="Unavailable Days"
-          description="Select days when you cannot work"
-        >
-          <View style={styles.daysGrid}>
-            {DAYS.map((day, i) => {
-              const isPreferred = preferredSet.has(i);
-              const isUnavailable = unavailableSet.has(i);
-
-              return (
-                <Pressable
-                  key={day}
-                  style={[
-                    styles.dayPill,
-                    isUnavailable ? styles.dayPillUnavailable : null,
-                    isPreferred ? styles.dayPillDisabled : null,
-                  ]}
-                  onPress={() => {
-                    if (!isPreferred) {
-                      toggleArrayItem("unavailableDaysOfWeek", i);
-                    }
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dayPillText,
-                      isUnavailable ? styles.dayPillTextUnavailable : null,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </SectionCard>
-
-        <SectionCard title="Preferred Shift Times">
-          <View style={styles.twoColGrid}>
-            <Field label="Preferred Start Time">
-              <TextInput
-                value={prefs.preferredShiftStart || "08:00"}
-                onChangeText={(value) =>
-                  handleChange("preferredShiftStart", value)
-                }
-                style={styles.input}
-                placeholder="08:00"
-              />
-            </Field>
-            <Field label="Preferred End Time">
-              <TextInput
-                value={prefs.preferredShiftEnd || "17:00"}
-                onChangeText={(value) =>
-                  handleChange("preferredShiftEnd", value)
-                }
-                style={styles.input}
-                placeholder="17:00"
-              />
-            </Field>
-          </View>
-        </SectionCard>
-
-        <SectionCard title="Weekly Hours">
-          <View style={styles.twoColGrid}>
-            <Field label="Minimum Hours per Week">
-              <TextInput
-                value={String(prefs.minHoursPerWeek || 0)}
-                onChangeText={(value) =>
-                  handleChange("minHoursPerWeek", parseInt(value, 10) || 0)
-                }
-                style={styles.input}
-                keyboardType="numeric"
-              />
-            </Field>
-            <Field label="Maximum Hours per Week">
-              <TextInput
-                value={String(prefs.maxHoursPerWeek || 0)}
-                onChangeText={(value) =>
-                  handleChange("maxHoursPerWeek", parseInt(value, 10) || 0)
-                }
-                style={styles.input}
-                keyboardType="numeric"
-              />
-            </Field>
-          </View>
-        </SectionCard>
-
-        <SectionCard title="Work Style Preferences">
-          <SwitchRow
-            title="Night Shift Preference"
-            description="I prefer working night shifts"
-            value={Boolean(prefs.dislikesNights)}
-            onValueChange={(value) => handleChange("dislikesNights", value)}
-          />
-
-          <SwitchRow
-            title="Block Scheduling"
-            description="I prefer working consecutive days in a row"
-            value={Boolean(prefs.prefersBlockScheduling)}
-            onValueChange={(value) =>
-              handleChange("prefersBlockScheduling", value)
-            }
-          />
-        </SectionCard>
-
         <SectionCard title="Notification Preferences">
           <SwitchRow
-            title="Schedule Email Notifications"
-            description="Receive email alerts for schedule updates"
-            value={prefs.scheduleEmailNotificationsEnabled ?? true}
+            title="Email Notifications"
+            description="Receive email alerts for important updates"
+            value={prefs.emailNotificationsEnabled ?? true}
             onValueChange={(value) =>
-              handleChange("scheduleEmailNotificationsEnabled", value)
+              handleChange("emailNotificationsEnabled", value)
             }
           />
 
           <SwitchRow
-            title="Schedule SMS Notifications"
-            description="Receive text alerts for schedule updates"
-            value={prefs.scheduleSmsNotificationsEnabled ?? true}
+            title="SMS Notifications"
+            description="Receive text alerts for important updates"
+            value={prefs.smsNotificationsEnabled ?? true}
             onValueChange={(value) =>
-              handleChange("scheduleSmsNotificationsEnabled", value)
+              handleChange("smsNotificationsEnabled", value)
             }
-          />
-
-          <SwitchRow
-            title="Time-Off Email Notifications"
-            description="Receive email alerts for time-off decisions"
-            value={prefs.timeOffEmailNotificationsEnabled ?? true}
-            onValueChange={(value) =>
-              handleChange("timeOffEmailNotificationsEnabled", value)
-            }
-          />
-
-          <SwitchRow
-            title="Time-Off SMS Notifications"
-            description="Receive text alerts for time-off decisions"
-            value={prefs.timeOffSmsNotificationsEnabled ?? true}
-            onValueChange={(value) =>
-              handleChange("timeOffSmsNotificationsEnabled", value)
-            }
-          />
-        </SectionCard>
-
-        <SectionCard title="Additional Notes">
-          <TextInput
-            value={prefs.notes || ""}
-            onChangeText={(value) => handleChange("notes", value)}
-            style={styles.notesInput}
-            multiline
-            textAlignVertical="top"
-            placeholder="Add any additional scheduling preferences or constraints..."
           />
         </SectionCard>
 
@@ -441,21 +247,6 @@ function SectionCard({
         <Text style={styles.sectionDescription}>{description}</Text>
       ) : null}
       <View style={styles.sectionBody}>{children}</View>
-    </View>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={styles.fieldWrap}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      {children}
     </View>
   );
 }
@@ -578,6 +369,7 @@ const styles = StyleSheet.create({
   },
   dayPill: {
     minWidth: 44,
+    flexBasis: "13.5%",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#d1d5db",
@@ -592,14 +384,6 @@ const styles = StyleSheet.create({
     borderColor: "#16a34a",
     borderWidth: 2,
   },
-  dayPillUnavailable: {
-    backgroundColor: "#fff1f2",
-    borderColor: "#dc2626",
-    borderWidth: 2,
-  },
-  dayPillDisabled: {
-    opacity: 0.55,
-  },
   dayPillText: {
     color: "#111827",
     fontSize: 13,
@@ -607,29 +391,6 @@ const styles = StyleSheet.create({
   },
   dayPillTextPreferred: {
     color: "#166534",
-  },
-  dayPillTextUnavailable: {
-    color: "#b91c1c",
-  },
-  twoColGrid: {
-    gap: 10,
-  },
-  fieldWrap: {
-    gap: 6,
-  },
-  fieldLabel: {
-    color: "#374151",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  input: {
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 10,
-    color: "#111827",
   },
   switchRow: {
     flexDirection: "row",
@@ -655,16 +416,6 @@ const styles = StyleSheet.create({
   switchDescription: {
     color: "#6b7280",
     fontSize: 12,
-  },
-  notesInput: {
-    minHeight: 120,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    color: "#111827",
   },
   saveBtn: {
     minHeight: 44,

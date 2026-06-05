@@ -14,6 +14,12 @@ import {
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import {
+  getRoleColor,
+  getRoleDisplayName,
+  getRoleOptionsFromFacilityPreferences,
+  getRolesForIndustry,
+} from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 import AutoGenerateScheduleForm from "./auto-generate-schedule-form";
@@ -22,29 +28,11 @@ import {
   extractStaffId,
   extractStaffName,
   formatLocal,
-  getRoleDisplayName,
-  ROLE_COLORS,
   ScheduleItem,
   StaffUser,
   STATUS_COLORS,
 } from "./schedule-types";
 import ShiftSwapRequestModal from "./shift-swap-request-modal";
-
-const FILTER_ROLES = [
-  "all",
-  "doctor",
-  "nurse",
-  "rn",
-  "lpn",
-  "cna",
-  "med_aide",
-  "caregiver",
-  "activity_aide",
-  "dietary_aide",
-  "housekeeper",
-  "receptionist",
-  "billing",
-] as const;
 
 const STATUS_FILTERS = ["", "scheduled", "completed", "call_out"] as const;
 
@@ -69,8 +57,78 @@ function getScheduleCalendarDayKey(schedule: ScheduleItem) {
   return toDayKey(parsed);
 }
 
+function getTimeKey(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    return "";
+  }
+
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function isOvernightShift(schedule: ScheduleItem) {
+  const start = new Date(schedule?.startTime || "");
+  const end = new Date(schedule?.endTime || "");
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return false;
+  }
+
+  return start.toDateString() !== end.toDateString();
+}
+
+function formatScheduleTimeRange(
+  schedule: ScheduleItem,
+  { withNextDayHint = true }: { withNextDayHint?: boolean } = {},
+) {
+  const start = new Date(schedule?.startTime || "");
+  const end = new Date(schedule?.endTime || "");
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "";
+  }
+
+  const startLabel = start.toLocaleTimeString("default", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const endLabel = end.toLocaleTimeString("default", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  if (isOvernightShift(schedule) && withNextDayHint) {
+    return `${startLabel} - ${endLabel} next day`;
+  }
+
+  return `${startLabel} - ${endLabel}`;
+}
+
+function formatCertificationTags(schedule: ScheduleItem) {
+  if (!Array.isArray(schedule?.certificationTags)) {
+    return "-";
+  }
+
+  const tags = schedule.certificationTags
+    .map((tag) => String(tag || "").trim())
+    .filter(Boolean);
+
+  return tags.length ? tags.join(", ") : "-";
+}
+
+function parseLocalDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 export default function ScheduleListPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, tenant } = useAuth();
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
@@ -79,16 +137,26 @@ export default function ScheduleListPage() {
   const [editingSchedule, setEditingSchedule] = useState<ScheduleItem | null>(
     null,
   );
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [view, setView] = useState<"list" | "calendar" | "roster">("list");
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<string>(toDayKey(new Date()));
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [staffVisibility, setStaffVisibility] = useState<"mine" | "all">(
+    "mine",
+  );
+  const [shiftTimeFilter, setShiftTimeFilter] = useState("");
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSchedule, setSwapSchedule] = useState<ScheduleItem | null>(null);
+
+  const [facilityPreferences, setFacilityPreferences] = useState<{
+    roleFamilies?: unknown[];
+  } | null>(null);
 
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(10);
@@ -101,18 +169,16 @@ export default function ScheduleListPage() {
       const res = await api.get("/schedules");
       const raw = Array.isArray(res.data) ? (res.data as ScheduleItem[]) : [];
 
-      const userId = String(user?._id || "");
-      const filtered = isAdmin
-        ? raw
-        : raw.filter((schedule) => String(extractStaffId(schedule)) === userId);
-
-      const sorted = filtered.sort((a, b) => {
+      const sorted = raw.sort((a, b) => {
         const aTime = new Date(a.startTime || a.createdAt || "").getTime();
         const bTime = new Date(b.startTime || b.createdAt || "").getTime();
         return bTime - aTime;
       });
 
       setSchedules(sorted);
+      setSelectedScheduleIds((prev) =>
+        prev.filter((id) => sorted.some((schedule) => schedule._id === id)),
+      );
       setError("");
     } catch (requestError) {
       console.warn("Failed to fetch schedules", requestError);
@@ -120,7 +186,7 @@ export default function ScheduleListPage() {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, user?._id]);
+  }, []);
 
   const fetchStaff = useCallback(async () => {
     try {
@@ -136,6 +202,35 @@ export default function ScheduleListPage() {
     fetchSchedules();
     fetchStaff();
   }, [fetchSchedules, fetchStaff]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadFacilityPreferences() {
+      try {
+        const res = await api.get("/facility-preferences");
+        if (!mounted) {
+          return;
+        }
+
+        setFacilityPreferences(
+          (res.data || null) as { roleFamilies?: unknown[] } | null,
+        );
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setFacilityPreferences(null);
+      }
+    }
+
+    loadFacilityPreferences();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const openEdit = (schedule: ScheduleItem) => {
     setEditingSchedule(schedule);
@@ -186,9 +281,134 @@ export default function ScheduleListPage() {
     }
   };
 
+  const toggleScheduleSelection = (id?: string) => {
+    if (!id || !isAdmin) {
+      return;
+    }
+
+    setSelectedScheduleIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  const toggleSelectAllPaginated = () => {
+    if (!isAdmin) {
+      return;
+    }
+
+    const paginatedIds = paginated
+      .map((schedule) => schedule._id || "")
+      .filter(Boolean);
+    const allSelected =
+      paginatedIds.length > 0 &&
+      paginatedIds.every((id) => selectedScheduleIds.includes(id));
+
+    if (allSelected) {
+      setSelectedScheduleIds((prev) =>
+        prev.filter((id) => !paginatedIds.includes(id)),
+      );
+      return;
+    }
+
+    setSelectedScheduleIds((prev) =>
+      Array.from(new Set([...prev, ...paginatedIds])),
+    );
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!isAdmin || selectedScheduleIds.length === 0) {
+      setBulkConfirmOpen(false);
+      return;
+    }
+
+    try {
+      await api.delete("/schedules/bulk", {
+        data: { ids: selectedScheduleIds },
+      });
+      await fetchSchedules();
+      setSelectedScheduleIds([]);
+    } catch (requestError) {
+      console.warn("Failed to bulk delete schedules", requestError);
+      setError("Failed to delete selected schedules.");
+    } finally {
+      setBulkConfirmOpen(false);
+    }
+  };
+
+  const roleFilterOptions = useMemo<string[]>(() => {
+    const facilityRoleValues = getRoleOptionsFromFacilityPreferences(
+      facilityPreferences,
+    ).map((option) => option.value);
+
+    const industryRoles = facilityRoleValues.length
+      ? facilityRoleValues
+      : getRolesForIndustry(tenant?.industry);
+    const scheduleRoles = schedules
+      .map((schedule) => schedule.role)
+      .filter((role): role is string => Boolean(role));
+    const staffRoles = staff
+      .map((member) => member.role)
+      .filter((role): role is string => Boolean(role));
+
+    return [
+      "all",
+      ...Array.from(
+        new Set([...industryRoles, ...scheduleRoles, ...staffRoles]),
+      ),
+    ];
+  }, [facilityPreferences, schedules, staff, tenant?.industry]);
+
+  const legendRoles = useMemo(
+    () =>
+      roleFilterOptions
+        .filter((roleOption) => roleOption !== "all")
+        .slice(0, 8),
+    [roleFilterOptions],
+  );
+
+  const uniqueShiftTimes = useMemo(() => {
+    const seen = new Set<string>();
+    const options: { key: string; label: string }[] = [];
+
+    schedules.forEach((schedule) => {
+      if (!schedule.startTime || !schedule.endTime) {
+        return;
+      }
+
+      const startKey = getTimeKey(schedule.startTime);
+      const endKey = getTimeKey(schedule.endTime);
+      if (!startKey || !endKey) {
+        return;
+      }
+
+      const key = `${startKey}|${endKey}`;
+      if (seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      const overnightLabel = isOvernightShift(schedule) ? " (+1 day)" : "";
+
+      options.push({
+        key,
+        label: `${formatScheduleTimeRange(schedule, { withNextDayHint: false })}${overnightLabel}`,
+      });
+    });
+
+    return options.sort((a, b) => a.key.localeCompare(b.key));
+  }, [schedules]);
+
   const filteredSchedules = useMemo(
     () =>
       schedules.filter((schedule) => {
+        if (
+          !isAdmin &&
+          staffVisibility === "mine" &&
+          String(extractStaffId(schedule)) !== String(user?._id || "")
+        ) {
+          return false;
+        }
+
         if (roleFilter !== "all" && schedule.role !== roleFilter) {
           return false;
         }
@@ -197,14 +417,32 @@ export default function ScheduleListPage() {
           return false;
         }
 
+        if (shiftTimeFilter) {
+          const [startKey, endKey] = shiftTimeFilter.split("|");
+          if (
+            getTimeKey(schedule.startTime) !== startKey ||
+            getTimeKey(schedule.endTime) !== endKey
+          ) {
+            return false;
+          }
+        }
+
         return true;
       }),
-    [schedules, roleFilter, statusFilter],
+    [
+      schedules,
+      isAdmin,
+      roleFilter,
+      shiftTimeFilter,
+      staffVisibility,
+      statusFilter,
+      user?._id,
+    ],
   );
 
   useEffect(() => {
     setPage(0);
-  }, [roleFilter, statusFilter]);
+  }, [roleFilter, statusFilter, staffVisibility, shiftTimeFilter]);
 
   const pageCount = Math.max(
     1,
@@ -214,6 +452,13 @@ export default function ScheduleListPage() {
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage,
   );
+
+  const paginatedScheduleIds = paginated
+    .map((schedule) => schedule._id || "")
+    .filter(Boolean);
+  const allPaginatedSelected =
+    paginatedScheduleIds.length > 0 &&
+    paginatedScheduleIds.every((id) => selectedScheduleIds.includes(id));
 
   const dayMeta = useMemo(() => {
     const meta: Record<string, { count: number; color: string }> = {};
@@ -240,6 +485,32 @@ export default function ScheduleListPage() {
       ),
     [filteredSchedules, selectedDay],
   );
+
+  const monthYear = calendarMonth.toLocaleString("default", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const monthDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const total = new Date(year, month + 1, 0).getDate();
+    const days: string[] = [];
+
+    for (let day = 1; day <= total; day += 1) {
+      days.push(toDayKey(new Date(year, month, day)));
+    }
+
+    return days;
+  }, [calendarMonth]);
+
+  const canManageSchedule = (schedule: ScheduleItem) => {
+    if (isAdmin) {
+      return true;
+    }
+
+    return String(extractStaffId(schedule)) === String(user?._id || "");
+  };
 
   return (
     <SafeAreaView style={styles.page}>
@@ -294,6 +565,27 @@ export default function ScheduleListPage() {
                   Calendar
                 </Text>
               </Pressable>
+              <Pressable
+                style={[
+                  styles.toggleBtn,
+                  view === "roster" ? styles.toggleBtnActive : null,
+                ]}
+                onPress={() => setView("roster")}
+              >
+                <Feather
+                  name="printer"
+                  size={14}
+                  color={view === "roster" ? "#ffffff" : "#374151"}
+                />
+                <Text
+                  style={[
+                    styles.toggleText,
+                    view === "roster" ? styles.toggleTextActive : null,
+                  ]}
+                >
+                  Roster
+                </Text>
+              </Pressable>
             </View>
 
             {isAdmin ? (
@@ -303,6 +595,27 @@ export default function ScheduleListPage() {
               >
                 <Feather name="cpu" size={14} color="#ffffff" />
                 <Text style={styles.actionText}>AI Generated Schedule</Text>
+              </Pressable>
+            ) : null}
+
+            {isAdmin && view === "list" ? (
+              <Pressable
+                style={[
+                  styles.actionBtn,
+                  selectedScheduleIds.length > 0
+                    ? styles.bulkDeleteBtn
+                    : styles.bulkDeleteBtnDisabled,
+                ]}
+                onPress={() => {
+                  if (selectedScheduleIds.length > 0) {
+                    setBulkConfirmOpen(true);
+                  }
+                }}
+              >
+                <Feather name="trash-2" size={14} color="#ffffff" />
+                <Text style={styles.actionText}>
+                  Delete Selected ({selectedScheduleIds.length})
+                </Text>
               </Pressable>
             ) : null}
 
@@ -331,9 +644,34 @@ export default function ScheduleListPage() {
         <View style={styles.filterCard}>
           <Text style={styles.filterLabel}>Filter</Text>
 
+          {!isAdmin ? (
+            <View style={styles.pillsWrap}>
+              {(["mine", "all"] as const).map((visibility) => {
+                const selected = staffVisibility === visibility;
+
+                return (
+                  <Pressable
+                    key={visibility}
+                    style={[styles.pill, selected ? styles.pillActive : null]}
+                    onPress={() => setStaffVisibility(visibility)}
+                  >
+                    <Text
+                      style={[
+                        styles.pillText,
+                        selected ? styles.pillTextActive : null,
+                      ]}
+                    >
+                      {visibility === "mine" ? "My Schedule" : "Everyone"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
           {isAdmin ? (
             <View style={styles.pillsWrap}>
-              {FILTER_ROLES.map((role) => {
+              {roleFilterOptions.map((role) => {
                 const selected = roleFilter === role;
                 return (
                   <Pressable
@@ -376,6 +714,48 @@ export default function ScheduleListPage() {
               );
             })}
           </View>
+
+          {uniqueShiftTimes.length > 0 ? (
+            <View style={styles.pillsWrap}>
+              <Pressable
+                key="all-times"
+                style={[
+                  styles.pill,
+                  !shiftTimeFilter ? styles.pillActive : null,
+                ]}
+                onPress={() => setShiftTimeFilter("")}
+              >
+                <Text
+                  style={[
+                    styles.pillText,
+                    !shiftTimeFilter ? styles.pillTextActive : null,
+                  ]}
+                >
+                  All Times
+                </Text>
+              </Pressable>
+
+              {uniqueShiftTimes.map((option) => {
+                const selected = shiftTimeFilter === option.key;
+                return (
+                  <Pressable
+                    key={option.key}
+                    style={[styles.pill, selected ? styles.pillActive : null]}
+                    onPress={() => setShiftTimeFilter(option.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.pillText,
+                        selected ? styles.pillTextActive : null,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -386,6 +766,20 @@ export default function ScheduleListPage() {
           </View>
         ) : view === "list" ? (
           <>
+            {isAdmin && paginated.length > 0 ? (
+              <View style={styles.bulkRow}>
+                <Pressable
+                  style={styles.bulkSelectBtn}
+                  onPress={toggleSelectAllPaginated}
+                >
+                  <Text style={styles.bulkSelectText}>
+                    {allPaginatedSelected ? "Unselect page" : "Select page"} (
+                    {selectedScheduleIds.length} selected)
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             {paginated.length === 0 ? (
               <View style={styles.centerCard}>
                 <Text style={styles.emptyText}>
@@ -396,17 +790,41 @@ export default function ScheduleListPage() {
               <View style={styles.listWrap}>
                 {paginated.map((schedule) => {
                   const status = schedule.status || "scheduled";
+                  const isSelected =
+                    Boolean(schedule._id) &&
+                    selectedScheduleIds.includes(String(schedule._id));
 
                   return (
                     <View key={schedule._id} style={styles.scheduleCard}>
                       <View style={styles.scheduleHeader}>
                         <View style={styles.staffRow}>
+                          {isAdmin ? (
+                            <Pressable
+                              style={[
+                                styles.checkbox,
+                                isSelected ? styles.checkboxActive : null,
+                              ]}
+                              onPress={() =>
+                                toggleScheduleSelection(
+                                  String(schedule._id || ""),
+                                )
+                              }
+                            >
+                              {isSelected ? (
+                                <Feather
+                                  name="check"
+                                  size={13}
+                                  color="#1d4ed8"
+                                />
+                              ) : null}
+                            </Pressable>
+                          ) : null}
                           <View
                             style={[
                               styles.roleDot,
                               {
                                 backgroundColor:
-                                  ROLE_COLORS[schedule.role || ""] || "#6b7280",
+                                  getRoleColor(schedule.role) || "#6b7280",
                               },
                             ]}
                           />
@@ -421,6 +839,21 @@ export default function ScheduleListPage() {
                             <Text style={styles.staffMeta}>
                               Ends: {formatLocal(schedule.endTime)}
                             </Text>
+                            <Text style={styles.staffMeta}>
+                              Unit Area: {schedule.unitArea || "-"}
+                            </Text>
+                            <Text style={styles.staffMeta}>
+                              Shift: {schedule.shiftType || "-"} |{" "}
+                              {schedule.shiftTag || "-"}
+                            </Text>
+                            <Text style={styles.staffMeta}>
+                              Cert Tags: {formatCertificationTags(schedule)}
+                            </Text>
+                            {isOvernightShift(schedule) ? (
+                              <Text style={styles.overnightText}>
+                                Overnight shift
+                              </Text>
+                            ) : null}
                           </View>
                         </View>
 
@@ -449,15 +882,19 @@ export default function ScheduleListPage() {
                       </Text>
 
                       <View style={styles.cardActions}>
-                        <Pressable
-                          style={[styles.cardBtn, styles.editBtn]}
-                          onPress={() => openEdit(schedule)}
-                        >
-                          <Feather name="edit-2" size={13} color="#0c4a6e" />
-                          <Text style={styles.editText}>Edit</Text>
-                        </Pressable>
+                        {canManageSchedule(schedule) ? (
+                          <Pressable
+                            style={[styles.cardBtn, styles.editBtn]}
+                            onPress={() => openEdit(schedule)}
+                          >
+                            <Feather name="edit-2" size={13} color="#0c4a6e" />
+                            <Text style={styles.editText}>Edit</Text>
+                          </Pressable>
+                        ) : null}
 
-                        {!isAdmin && status === "scheduled" ? (
+                        {!isAdmin &&
+                        canManageSchedule(schedule) &&
+                        status === "scheduled" ? (
                           <Pressable
                             style={[styles.cardBtn, styles.swapBtn]}
                             onPress={() => {
@@ -514,6 +951,115 @@ export default function ScheduleListPage() {
               </Pressable>
             </View>
           </>
+        ) : view === "roster" ? (
+          <View style={styles.calendarWrap}>
+            <View style={styles.rosterHeader}>
+              <Text style={styles.dayTitle}>{monthYear}</Text>
+              <View style={styles.rosterActions}>
+                <Pressable
+                  style={styles.rosterBtn}
+                  onPress={() =>
+                    setCalendarMonth(
+                      new Date(
+                        calendarMonth.getFullYear(),
+                        calendarMonth.getMonth() - 1,
+                        1,
+                      ),
+                    )
+                  }
+                >
+                  <Text style={styles.rosterBtnText}>Previous</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.rosterBtn}
+                  onPress={() => setCalendarMonth(new Date())}
+                >
+                  <Text style={styles.rosterBtnText}>Today</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.rosterBtn}
+                  onPress={() =>
+                    setCalendarMonth(
+                      new Date(
+                        calendarMonth.getFullYear(),
+                        calendarMonth.getMonth() + 1,
+                        1,
+                      ),
+                    )
+                  }
+                >
+                  <Text style={styles.rosterBtnText}>Next</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.dayGroup}>
+              {monthDays.map((dayKey) => {
+                const date = parseLocalDateKey(dayKey);
+                const shiftsOnDay = filteredSchedules.filter(
+                  (schedule) => getScheduleCalendarDayKey(schedule) === dayKey,
+                );
+
+                return (
+                  <View key={dayKey} style={styles.rosterRow}>
+                    <Text style={styles.rosterDayText}>
+                      {date.toLocaleDateString("default", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </Text>
+                    <View style={styles.rosterShiftWrap}>
+                      {shiftsOnDay.length === 0 ? (
+                        <Text style={styles.calendarEmptyText}>No shifts</Text>
+                      ) : (
+                        shiftsOnDay.map((shift, index) => (
+                          <View
+                            key={`${shift._id || "shift"}-${index}`}
+                            style={styles.rosterShiftPill}
+                          >
+                            <View
+                              style={[
+                                styles.roleDot,
+                                { backgroundColor: getRoleColor(shift.role) },
+                              ]}
+                            />
+                            <Text style={styles.rosterShiftText}>
+                              {extractStaffName(shift)} •{" "}
+                              {getRoleDisplayName(shift.role)} •{" "}
+                              {formatScheduleTimeRange(shift, {
+                                withNextDayHint: false,
+                              })}
+                              {isOvernightShift(shift) ? " (+1 day)" : ""}
+                            </Text>
+                          </View>
+                        ))
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {legendRoles.length > 0 ? (
+              <View style={styles.legendWrap}>
+                <Text style={styles.legendTitle}>Role Legend:</Text>
+                {legendRoles.map((roleOption) => (
+                  <View key={roleOption} style={styles.legendItem}>
+                    <View
+                      style={[
+                        styles.legendColor,
+                        { backgroundColor: getRoleColor(roleOption) },
+                      ]}
+                    />
+                    <Text style={styles.legendText}>
+                      {getRoleDisplayName(roleOption)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
         ) : (
           <View style={styles.calendarWrap}>
             <MonthCalendar
@@ -536,7 +1082,11 @@ export default function ScheduleListPage() {
                   <Pressable
                     key={entry._id}
                     style={styles.dayEntry}
-                    onPress={() => openEdit(entry)}
+                    onPress={() => {
+                      if (canManageSchedule(entry)) {
+                        openEdit(entry);
+                      }
+                    }}
                   >
                     <View style={styles.dayEntryTop}>
                       <Text style={styles.dayEntryStaff}>
@@ -607,6 +1157,14 @@ export default function ScheduleListPage() {
         message="This action cannot be undone."
         onCancel={() => setConfirmOpen(false)}
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={bulkConfirmOpen}
+        title="Delete Selected Schedules?"
+        message={`Delete ${selectedScheduleIds.length} selected schedule item(s)? This action cannot be undone.`}
+        onCancel={() => setBulkConfirmOpen(false)}
+        onConfirm={confirmBulkDelete}
       />
 
       <ShiftSwapRequestModal
@@ -696,6 +1254,12 @@ const styles = StyleSheet.create({
   aiBtn: {
     backgroundColor: "#1d4ed8",
   },
+  bulkDeleteBtn: {
+    backgroundColor: "#dc2626",
+  },
+  bulkDeleteBtnDisabled: {
+    backgroundColor: "#9ca3af",
+  },
   manualBtn: {
     backgroundColor: "#111827",
   },
@@ -766,6 +1330,24 @@ const styles = StyleSheet.create({
   listWrap: {
     gap: 10,
   },
+  bulkRow: {
+    alignItems: "flex-start",
+  },
+  bulkSelectBtn: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bulkSelectText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   scheduleCard: {
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -783,6 +1365,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     flex: 1,
+    alignItems: "flex-start",
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 4,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  checkboxActive: {
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
   },
   roleDot: {
     width: 10,
@@ -803,6 +1401,11 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 12,
     lineHeight: 17,
+  },
+  overnightText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "600",
   },
   statusPill: {
     borderWidth: 1,
@@ -890,6 +1493,88 @@ const styles = StyleSheet.create({
   },
   calendarWrap: {
     gap: 10,
+  },
+  rosterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  rosterActions: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  rosterBtn: {
+    minHeight: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    justifyContent: "center",
+  },
+  rosterBtnText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  rosterRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    paddingBottom: 8,
+    marginBottom: 8,
+    gap: 6,
+  },
+  rosterDayText: {
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  rosterShiftWrap: {
+    gap: 6,
+  },
+  rosterShiftPill: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  rosterShiftText: {
+    color: "#374151",
+    fontSize: 12,
+    flex: 1,
+  },
+  legendWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  legendTitle: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+  },
+  legendText: {
+    color: "#374151",
+    fontSize: 12,
   },
   dayGroup: {
     borderWidth: 1,

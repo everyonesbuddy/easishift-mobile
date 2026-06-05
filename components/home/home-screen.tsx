@@ -1,5 +1,7 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import { useEffect, useRef } from "react";
 import {
   Linking,
   Pressable,
@@ -8,12 +10,29 @@ import {
   StyleSheet,
   Text,
   View,
+  type ImageStyle,
+  type TextStyle,
+  type ViewStyle,
 } from "react-native";
 
-const HERO_BADGES = [
-  { icon: "zap", label: "AI Workforce scheduling" },
-  { icon: "shield", label: "Flexible by design" },
-  { icon: "calendar", label: "Simple to use" },
+const HERO_IMAGE_URI =
+  "https://images.pexels.com/photos/7579831/pexels-photo-7579831.jpeg?auto=compress&cs=tinysrgb&w=1200";
+
+const INDUSTRIES = [
+  "Healthcare",
+  "Hospitality",
+  "Retail",
+  "Warehousing & Logistics",
+  "Security Services",
+  "Manufacturing",
+  "Cleaning & Janitorial",
+  "Home Care",
+  "Construction",
+  "Education",
+  "Restaurants",
+  "Events & Venues",
+  "Transportation",
+  "Customer Support",
 ] as const;
 
 const BENEFITS = [
@@ -56,6 +75,72 @@ const TESTIMONIALS = [
     role: "Multi-site clinic",
   },
 ] as const;
+
+type HomeScreenStyles = {
+  safeArea: ViewStyle;
+  content: ViewStyle;
+  heroWrap: ViewStyle;
+  heroLeft: ViewStyle;
+  heroTitle: TextStyle;
+  heroSubtitle: TextStyle;
+  industryStripWrap: ViewStyle;
+  industryStrip: ViewStyle;
+  industryChip: ViewStyle;
+  industryChipText: TextStyle;
+  heroImage: ImageStyle;
+  heroActionRow: ViewStyle;
+  buttonBase: ViewStyle;
+  buttonFilled: ViewStyle;
+  buttonOutline: ViewStyle;
+  buttonFilledText: TextStyle;
+  buttonOutlineText: TextStyle;
+  buttonIcon: TextStyle;
+  buttonPressed: ViewStyle;
+  buttonFullWidth: ViewStyle;
+  divider: ViewStyle;
+  heroRight: ViewStyle;
+  scheduleCard: ViewStyle;
+  scheduleCardTitle: TextStyle;
+  healthRow: ViewStyle;
+  healthLabel: TextStyle;
+  healthChip: ViewStyle;
+  healthChipWarning: ViewStyle;
+  healthChipSuccess: ViewStyle;
+  healthChipText: TextStyle;
+  statRow: ViewStyle;
+  statWrap: ViewStyle;
+  statValue: TextStyle;
+  statLabel: TextStyle;
+  roiStripCard: ViewStyle;
+  roiEyebrow: TextStyle;
+  roiTitle: TextStyle;
+  roiSubtitle: TextStyle;
+  roiButtonWrap: ViewStyle;
+  section: ViewStyle;
+  sectionTitleWrap: ViewStyle;
+  sectionEyebrow: TextStyle;
+  sectionTitle: TextStyle;
+  sectionSubtitle: TextStyle;
+  benefitGrid: ViewStyle;
+  iconBulletRow: ViewStyle;
+  iconBulletIconWrap: ViewStyle;
+  iconBulletCopy: ViewStyle;
+  iconBulletTitle: TextStyle;
+  iconBulletText: TextStyle;
+  testimonialGrid: ViewStyle;
+  testimonialCard: ViewStyle;
+  testimonialQuote: TextStyle;
+  testimonialAuthorRow: ViewStyle;
+  avatarBubble: ViewStyle;
+  avatarText: TextStyle;
+  testimonialName: TextStyle;
+  testimonialRole: TextStyle;
+  ctaCard: ViewStyle;
+  ctaTitle: TextStyle;
+  ctaText: TextStyle;
+  ctaActionStack: ViewStyle;
+  mobileStickyCta: ViewStyle;
+};
 
 function Section({ children }: { children: React.ReactNode }) {
   return <View style={styles.section}>{children}</View>;
@@ -181,28 +266,49 @@ function ActionButton({
 
 export default function HomeScreen() {
   const router = useRouter();
+  const industryScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    let offset = 0;
+    const step = 148;
+    const maxOffset = INDUSTRIES.length * step;
+
+    const timer = setInterval(() => {
+      offset = offset >= maxOffset ? 0 : offset + step;
+      industryScrollRef.current?.scrollTo({ x: offset, animated: true });
+    }, 3200);
+
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroWrap}>
           <View style={styles.heroLeft}>
-            <View style={styles.heroBadgeRow}>
-              {HERO_BADGES.map((badge) => (
-                <View key={badge.label} style={styles.heroBadge}>
-                  <Feather name={badge.icon} size={14} color="#0f172a" />
-                  <Text style={styles.heroBadgeText}>{badge.label}</Text>
-                </View>
-              ))}
-            </View>
-
             <Text style={styles.heroTitle}>
-              Workforce Scheduling Made For Senior Living Facilities
+              Workforce Scheduling{"\n"}
+              Made For You
             </Text>
+
             <Text style={styles.heroSubtitle}>
-              Modern scheduling for assisted living and nursing homes, minus the
-              chaos.
+              We support various industries like:
             </Text>
+
+            <View style={styles.industryStripWrap}>
+              <ScrollView
+                ref={industryScrollRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.industryStrip}
+              >
+                {INDUSTRIES.map((industry) => (
+                  <View key={industry} style={styles.industryChip}>
+                    <Text style={styles.industryChipText}>{industry}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
 
             <View style={styles.heroActionRow}>
               <ActionButton
@@ -214,40 +320,21 @@ export default function HomeScreen() {
               <ActionButton
                 label="Log in"
                 variant="outline"
-                icon="log-in"
+                icon="user"
                 onPress={() => router.push("/login")}
               />
             </View>
 
             <View style={styles.divider} />
-
-            <View style={styles.quickBulletsWrap}>
-              <View style={styles.quickBulletRow}>
-                <Feather name="shuffle" size={16} color="#0f172a" />
-                <Text style={styles.quickBulletText}>
-                  Resolve call-outs and coverage gaps quickly
-                </Text>
-              </View>
-              <View style={styles.quickBulletRow}>
-                <Feather name="trending-down" size={16} color="#0f172a" />
-                <Text style={styles.quickBulletText}>
-                  Overtime risk visible before publishing
-                </Text>
-              </View>
-              <View style={styles.quickBulletRow}>
-                <Feather name="users" size={16} color="#0f172a" />
-                <Text style={styles.quickBulletText}>
-                  Clean handling of rotating staff
-                </Text>
-              </View>
-            </View>
           </View>
 
           <View style={styles.heroRight}>
-            {/* <View style={styles.imagePlaceholder}>
-              <Feather name="image" size={26} color="#1f2937" />
-              <Text style={styles.imagePlaceholderText}>Clinic hero image</Text>
-            </View> */}
+            <Image
+              source={{ uri: HERO_IMAGE_URI }}
+              style={styles.heroImage}
+              contentFit="cover"
+              transition={220}
+            />
 
             <View style={styles.scheduleCard}>
               <Text style={styles.scheduleCardTitle}>
@@ -290,7 +377,7 @@ export default function HomeScreen() {
           </Text>
           <Text style={styles.roiSubtitle}>
             Use the LTC ROI Calculator to estimate turnover impact and projected
-            Easishift savings in under 2 minutes.
+            WiserShifts savings in under 2 minutes.
           </Text>
           <View style={styles.roiButtonWrap}>
             <ActionButton
@@ -383,7 +470,7 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create<HomeScreenStyles>({
   safeArea: {
     flex: 1,
     backgroundColor: "#ffffff",
@@ -400,38 +487,49 @@ const styles = StyleSheet.create({
   heroLeft: {
     gap: 12,
   },
-  heroBadgeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  heroBadge: {
-    flexDirection: "row",
-    gap: 6,
-    alignItems: "center",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(15, 23, 42, 0.12)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "rgba(15, 23, 42, 0.02)",
-  },
-  heroBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#0f172a",
-  },
   heroTitle: {
     fontSize: 34,
     lineHeight: 37,
     fontWeight: "900",
-    letterSpacing: -0.8,
+    letterSpacing: -1,
     color: "#0f172a",
   },
   heroSubtitle: {
     fontSize: 17,
     lineHeight: 24,
     color: "#475569",
+    marginTop: 6,
+  },
+  industryStripWrap: {
+    marginTop: 2,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "#e5e5ea",
+    borderRadius: 16,
+    backgroundColor: "#fafafc",
+    overflow: "hidden",
+  },
+  industryStrip: {
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  industryChip: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: "transparent",
+  },
+  industryChipText: {
+    color: "#1d1d1f",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  heroImage: {
+    height: 230,
+    borderRadius: 24,
+    backgroundColor: "#e2e8f0",
   },
   heroActionRow: {
     flexDirection: "row",
@@ -479,36 +577,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.08)",
     marginVertical: 4,
   },
-  quickBulletsWrap: {
-    gap: 8,
-  },
-  quickBulletRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  quickBulletText: {
-    color: "#0f172a",
-    fontSize: 14,
-    lineHeight: 20,
-  },
   heroRight: {
     gap: 12,
-  },
-  imagePlaceholder: {
-    height: 190,
-    borderRadius: 22,
-    backgroundColor: "#dbeafe",
-    borderWidth: 1,
-    borderColor: "rgba(21, 101, 192, 0.25)",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  imagePlaceholderText: {
-    color: "#1f2937",
-    fontSize: 13,
-    fontWeight: "700",
   },
   scheduleCard: {
     borderRadius: 20,

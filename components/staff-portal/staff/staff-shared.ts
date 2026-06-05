@@ -4,10 +4,15 @@ export type StaffMember = {
   name?: string;
   email?: string;
   role?: string;
+  profilePicture?: string;
   userPhone?: string;
   userPhoneCountryCode?: string;
   phone?: string;
   phoneCountryCode?: string;
+  allowedAreas?: unknown[];
+  allowedShiftTags?: unknown[];
+  allowedShiftTypes?: unknown[];
+  certificationTags?: unknown[];
 };
 
 export const ROLE_COLORS: Record<string, string> = {
@@ -95,7 +100,7 @@ export const PHONE_COUNTRY_CODES = [
 ] as const;
 
 export const SAMPLE_CSV =
-  "name,email,role,userPhone,userPhoneCountryCode\nA,a@x.com,nurse,5551112222,+1\nB,b@x.com,doctor,5553334444,+1";
+  "name,email,role,userPhone,userPhoneCountryCode,profilePicture,allowedAreas,allowedShiftTypes,certificationTags\nA,a@x.com,nurse,5551112222,+1,https://example.com/a.jpg,AL|IL,day|evening,med-pass|bilingual\nB,b@x.com,doctor,5553334444,+1,,IL,day,rn";
 
 export const MAX_ROWS = 500;
 

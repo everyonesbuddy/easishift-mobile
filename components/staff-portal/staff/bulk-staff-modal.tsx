@@ -169,8 +169,10 @@ export default function BulkStaffModal({
 
           <View style={styles.infoCard}>
             <Text style={styles.infoText}>
-              Optional columns are userPhone and userPhoneCountryCode. Maximum{" "}
-              {MAX_ROWS} rows per import.
+              Optional columns are userPhone, userPhoneCountryCode,
+              profilePicture, allowedAreas, allowedShiftTypes, and
+              certificationTags. Use | to separate values in array fields.
+              Maximum {MAX_ROWS} rows per import.
             </Text>
           </View>
 

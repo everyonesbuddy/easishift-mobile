@@ -2,6 +2,10 @@ export type StaffUser = {
   _id?: string;
   name?: string;
   role?: string;
+  allowedAreas?: unknown[];
+  allowedShiftTags?: unknown[];
+  allowedShiftTypes?: unknown[];
+  certificationTags?: unknown[];
 };
 
 export type ScheduleStatus = "scheduled" | "completed" | "call_out";
@@ -10,6 +14,10 @@ export type ScheduleItem = {
   _id?: string;
   staffId?: StaffUser | string | null;
   role?: string;
+  unitArea?: string;
+  shiftType?: string;
+  shiftTag?: string;
+  certificationTags?: string[];
   startTime?: string;
   endTime?: string;
   status?: ScheduleStatus;
@@ -21,6 +29,10 @@ export type ScheduleItem = {
 export type CoverageItem = {
   _id?: string;
   role?: string;
+  unitArea?: string;
+  shiftType?: string;
+  shiftTag?: string;
+  requiredCertificationTags?: string[];
   startTime?: string;
   endTime?: string;
   requiredCount?: number;

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="192" height="192" role="img" aria-label="EasiShift icon">
+  <g stroke="#2563EB" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <!-- calendar body -->
+    <rect x="6" y="10" width="36" height="32" rx="6"></rect>
+    <path d="M6 18h36"></path>
+
+    <!-- rings -->
+    <path d="M16 6v8M32 6v8"></path>
+
+    <!-- shift arrows -->
+    <!-- forward -->
+    <path d="M14 24h14"></path>
+    <path d="M26 21l4 3-4 3"></path>
+
+    <!-- back -->
+    <path d="M34 32H20"></path>
+    <path d="M22 29l-4 3 4 3"></path>
+  </g>
+</svg>

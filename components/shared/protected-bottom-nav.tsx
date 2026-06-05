@@ -33,10 +33,10 @@ const ADMIN_MAIN_ITEMS: NavItem[] = [
   },
   { id: "schedule", label: "Schedule", icon: "calendar", to: "/schedule" },
   {
-    id: "messages",
-    label: "Messages",
-    icon: "message-square",
-    to: "/messages",
+    id: "preferences",
+    label: "Preferences",
+    icon: "settings",
+    to: "/preferences",
   },
   { id: "more", label: "More", icon: "menu", isMore: true },
 ];
@@ -61,6 +61,12 @@ const STAFF_MAIN_ITEMS: NavItem[] = [
 
 const ADMIN_MORE_ITEMS: NavItem[] = [
   { id: "staff", label: "Staff Management", icon: "users", to: "/staffs" },
+  {
+    id: "messages",
+    label: "Messages",
+    icon: "message-square",
+    to: "/messages",
+  },
   {
     id: "timeoff-decisions",
     label: "Time Off Decisions",

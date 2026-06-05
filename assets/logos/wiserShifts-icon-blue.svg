@@ -1,0 +1,18 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="40" cy="40" r="36" fill="#2563EB"/>
+  <line x1="40" y1="6"  x2="40" y2="12" stroke="white" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="40" y1="68" x2="40" y2="74" stroke="white" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="6"  y1="40" x2="12" y2="40" stroke="white" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="68" y1="40" x2="74" y2="40" stroke="white" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="59.0" y1="9.8"  x2="56.4" y2="14.2" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="70.2" y1="21.0" x2="65.4" y2="23.8" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="70.2" y1="59.0" x2="65.4" y2="56.4" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="59.0" y1="70.2" x2="56.4" y2="65.4" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="21.0" y1="70.2" x2="23.8" y2="65.4" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="9.8"  y1="59.0" x2="14.2" y2="56.4" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="9.8"  y1="21.0" x2="14.2" y2="23.8" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <line x1="21.0" y1="9.8"  x2="23.8" y2="14.2" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity=".35"/>
+  <text x="40" y="40" text-anchor="middle" dominant-baseline="central" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" font-size="32" font-weight="900" letter-spacing="-1.6">
+    <tspan fill="white">W</tspan><tspan fill="rgba(255,255,255,0.6)">S</tspan>
+  </text>
+</svg>

@@ -28,7 +28,7 @@ const MANAGER_HOURLY_RATE = 25;
 const SCHEDULING_HOURS_PER_WEEK = 10;
 const WEEKS_PER_YEAR = 52;
 const PRODUCTIVITY_FACTOR = 0.5;
-const EASISHIFT_SAVINGS_RATE = 0.28;
+const WISERSHIFTS_SAVINGS_RATE = 0.28;
 const BEEHIIV_MAGIC_LINK_TEMPLATE =
   "https://magic.beehiiv.com/v1/861bd1b1-f350-4ecc-a6fc-ab3e0eca93f6?email=<email>";
 
@@ -251,7 +251,7 @@ export default function TurnoverRoiCalculatorScreen() {
       MANAGER_HOURLY_RATE * SCHEDULING_HOURS_PER_WEEK * WEEKS_PER_YEAR;
 
     const totalCost = annualTurnoverCost + schedulingAdminCost;
-    const projectedSavings = totalCost * EASISHIFT_SAVINGS_RATE;
+    const projectedSavings = totalCost * WISERSHIFTS_SAVINGS_RATE;
 
     return {
       annualTurnoverEvents,
@@ -286,7 +286,7 @@ export default function TurnoverRoiCalculatorScreen() {
 
     const payload = {
       recipientEmail: trimmedEmail,
-      source: "easishift.com/turnover-roi-calculator",
+      source: "wisershifts.com/turnover-roi-calculator",
       calculatorType: "LTC turnover ROI calculator",
       inputs: {
         employees,
@@ -302,7 +302,7 @@ export default function TurnoverRoiCalculatorScreen() {
         schedulingAdminCost: metrics.schedulingAdminCost,
         totalCost: metrics.totalCost,
         projectedSavings: metrics.projectedSavings,
-        savingsRate: EASISHIFT_SAVINGS_RATE,
+        savingsRate: WISERSHIFTS_SAVINGS_RATE,
       },
       costDrivers: metrics.drivers.map((driver) => ({
         label: driver.label,
@@ -331,7 +331,7 @@ export default function TurnoverRoiCalculatorScreen() {
         <View style={styles.headerWrap}>
           <Text style={styles.title}>LTC Turnover To ROI Calculator</Text>
           <Text style={styles.subtitle}>
-            Estimate your annual turnover burden and see what Easishift can
+            Estimate your annual turnover burden and see what WiserShifts can
             save.
           </Text>
         </View>
@@ -412,7 +412,7 @@ export default function TurnoverRoiCalculatorScreen() {
           </View>
           <View style={styles.metricRow}>
             <Text style={styles.metricLabel}>
-              Projected savings with Easishift (28%)
+              Projected savings with WiserShifts (28%)
             </Text>
             <Text style={styles.metricSavings}>
               {formatMoney(metrics.projectedSavings)}/yr
@@ -454,7 +454,7 @@ export default function TurnoverRoiCalculatorScreen() {
               }
               variant="filled"
               icon="phone-call"
-              label="See how Easishift reduces this - book a 30 min call"
+              label="See how WiserShifts reduces this - book a 30 min call"
             />
           </View>
         </View>

@@ -14,24 +14,27 @@ import {
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
+import {
+  getRoleColor,
+  getRoleDisplayName,
+  getRoleOptionsFromFacilityPreferences,
+  getRolesForIndustry,
+} from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 import BulkStaffModal from "./bulk-staff-modal";
 import StaffCreateAndEditForm from "./staff-create-and-edit-form";
 import {
-  ROLE_COLORS,
-  STAFF_ROLES,
   StaffMember,
   getInitials,
   getPhoneText,
-  getRoleDisplayName,
   getStaffId,
 } from "./staff-shared";
 
 const ROWS_PER_PAGE = 10;
 
 export default function StaffListPage() {
-  const { role } = useAuth();
+  const { role, tenant } = useAuth();
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [open, setOpen] = useState(false);
@@ -45,6 +48,9 @@ export default function StaffListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [facilityPreferences, setFacilityPreferences] = useState<{
+    roleFamilies?: unknown[];
+  } | null>(null);
 
   const fetchStaff = useCallback(async () => {
     setLoading(true);
@@ -63,6 +69,35 @@ export default function StaffListPage() {
   useEffect(() => {
     fetchStaff();
   }, [fetchStaff]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadFacilityPreferences() {
+      try {
+        const res = await api.get("/facility-preferences");
+        if (!mounted) {
+          return;
+        }
+
+        setFacilityPreferences(
+          (res.data || null) as { roleFamilies?: unknown[] } | null,
+        );
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setFacilityPreferences(null);
+      }
+    }
+
+    loadFacilityPreferences();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     setPage(0);
@@ -117,6 +152,37 @@ export default function StaffListPage() {
       return Boolean(matchesSearch && matchesRole);
     });
   }, [staff, searchTerm, filterRole]);
+
+  const roles = useMemo(() => {
+    const facilityRoleValues = getRoleOptionsFromFacilityPreferences(
+      facilityPreferences,
+      { includeAdmin: true },
+    ).map((option) => option.value);
+
+    const industryRoles = facilityRoleValues.length
+      ? facilityRoleValues
+      : getRolesForIndustry(tenant?.industry, {
+          includeAdmin: true,
+        });
+    const existingRoles = staff.map((member) => member.role).filter(Boolean);
+
+    return [
+      "all",
+      ...Array.from(new Set([...industryRoles, ...existingRoles])),
+    ];
+  }, [facilityPreferences, staff, tenant?.industry]);
+
+  const formatStringArray = (values: unknown) => {
+    if (!Array.isArray(values)) {
+      return "-";
+    }
+
+    const normalized = values
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    return normalized.length ? normalized.join(", ") : "-";
+  };
 
   const pageCount = Math.max(
     1,
@@ -212,7 +278,7 @@ export default function StaffListPage() {
                         styles.avatar,
                         {
                           backgroundColor:
-                            ROLE_COLORS[member.role || ""] || "#6b7280",
+                            getRoleColor(member.role) || "#6b7280",
                         },
                       ]}
                     >
@@ -231,7 +297,7 @@ export default function StaffListPage() {
                             styles.roleDot,
                             {
                               backgroundColor:
-                                ROLE_COLORS[member.role || ""] || "#6b7280",
+                                getRoleColor(member.role) || "#6b7280",
                             },
                           ]}
                         />
@@ -244,6 +310,12 @@ export default function StaffListPage() {
                       </Text>
                       <Text style={styles.staffMeta}>
                         {getPhoneText(member)}
+                      </Text>
+                      <Text style={styles.staffMeta}>
+                        Areas: {formatStringArray(member.allowedAreas)}
+                      </Text>
+                      <Text style={styles.staffMeta}>
+                        Certs: {formatStringArray(member.certificationTags)}
                       </Text>
                     </View>
                   </View>
@@ -336,7 +408,7 @@ export default function StaffListPage() {
         value={filterRole}
         onClose={() => setRolePickerOpen(false)}
         onSelect={setFilterRole}
-        options={STAFF_ROLES.map((roleOption) => ({
+        options={roles.map((roleOption) => ({
           value: roleOption,
           label:
             roleOption === "all" ? "All Roles" : getRoleDisplayName(roleOption),

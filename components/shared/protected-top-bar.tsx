@@ -16,7 +16,7 @@ function getTitle(pathname: string) {
   if (pathname.startsWith("/timeoff-requests")) return "Time Off";
   if (pathname.startsWith("/swap-requests")) return "Shift Swaps";
   if (pathname.startsWith("/preferences")) return "Preferences";
-  return "Easishift";
+  return "WiserShifts";
 }
 
 export default function ProtectedTopBar() {

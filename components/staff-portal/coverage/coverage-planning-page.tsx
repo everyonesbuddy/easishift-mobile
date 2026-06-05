@@ -16,39 +16,13 @@ import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-crea
 import CoverageEditCountForm from "@/components/staff-portal/coverage/coverage-edit-count-form";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import {
+  getRoleDisplayName,
+  getRoleOptionsForIndustry,
+  getRoleOptionsFromFacilityPreferences,
+  isRoleCompatible,
+} from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
-
-const ROLE_LABELS: Record<string, string> = {
-  doctor: "Doctor",
-  nurse: "Nurse",
-  rn: "RN",
-  lpn: "LPN",
-  cna: "CNA",
-  med_aide: "Med Aide",
-  caregiver: "Caregiver",
-  activity_aide: "Activity Aide",
-  dietary_aide: "Dietary Aide",
-  housekeeper: "Housekeeper",
-  receptionist: "Receptionist",
-  billing: "Billing",
-  staff: "Staff",
-  other: "Other",
-};
-
-const FILTER_ROLES = [
-  "doctor",
-  "nurse",
-  "rn",
-  "lpn",
-  "cna",
-  "med_aide",
-  "caregiver",
-  "activity_aide",
-  "dietary_aide",
-  "housekeeper",
-  "receptionist",
-  "billing",
-] as const;
 
 const STATUS_COLORS: Record<string, string> = {
   open: "#f59e0b",
@@ -65,6 +39,14 @@ type CoverageItem = {
   endTime?: string;
   date?: string;
   note?: string;
+  unitArea?: string;
+  shiftType?: string;
+  shiftTag?: string;
+  requiredCertificationTags?: string[];
+};
+
+type FacilityPreferences = {
+  roleFamilies?: string[];
 };
 
 function getCoverageDayKey(coverageDate?: string) {
@@ -97,12 +79,12 @@ function parseCoverageDateAsLocal(coverageDate?: string) {
   return new Date(`${dayKey}T00:00:00`);
 }
 
-function toLocal(value?: string) {
-  if (!value) {
+function toLocal(utc?: string) {
+  if (!utc) {
     return null;
   }
 
-  const d = new Date(value);
+  const d = new Date(utc);
   if (Number.isNaN(d.getTime())) {
     return null;
   }
@@ -111,10 +93,96 @@ function toLocal(value?: string) {
 }
 
 function toDayKey(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function spansOvernight(coverage: CoverageItem) {
+  const start = toLocal(coverage.startTime);
+  const end = toLocal(coverage.endTime);
+
+  if (!start || !end) {
+    return false;
+  }
+
+  return start.toDateString() !== end.toDateString();
+}
+
+function formatCoverageDateLabel(coverage: CoverageItem) {
+  const start = toLocal(coverage.startTime);
+
+  if (!start) {
+    return (
+      parseCoverageDateAsLocal(
+        coverage.date || coverage.startTime,
+      )?.toLocaleDateString() || "-"
+    );
+  }
+
+  const startLabel = start.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  if (!spansOvernight(coverage)) {
+    return startLabel;
+  }
+
+  const nextDay = new Date(start);
+  nextDay.setDate(nextDay.getDate() + 1);
+
+  const endLabel = nextDay.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${startLabel} - ${endLabel}`;
+}
+
+function formatCoverageTimeLabel(coverage: CoverageItem) {
+  const start = toLocal(coverage.startTime);
+  const end = toLocal(coverage.endTime);
+
+  if (!start || !end) {
+    return "";
+  }
+
+  const startDateLabel = start.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const endDateLabel = end.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const startLabel = start.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const endLabel = end.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return `${startDateLabel} ${startLabel} - ${endDateLabel} ${endLabel}`;
+}
+
+function formatRequiredCertTags(coverage: CoverageItem) {
+  if (!Array.isArray(coverage.requiredCertificationTags)) {
+    return "-";
+  }
+
+  const tags = coverage.requiredCertificationTags
+    .map((tag) => String(tag || "").trim())
+    .filter(Boolean);
+
+  return tags.length ? tags.join(", ") : "-";
 }
 
 function getCoverageStatusColor(item: CoverageItem) {
@@ -128,12 +196,14 @@ function getCoverageStatusColor(item: CoverageItem) {
 }
 
 export default function CoveragePlanningPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, tenant } = useAuth();
 
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
+  const [facilityPreferences, setFacilityPreferences] =
+    useState<FacilityPreferences | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"list" | "calendar">("list");
-  const [selectedRole, setSelectedRole] = useState<string>("all");
+  const [view, setView] = useState<"table" | "calendar">("table");
+  const [selectedRole, setSelectedRole] = useState("all");
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<string>(toDayKey(new Date()));
 
@@ -143,10 +213,32 @@ export default function CoveragePlanningPage() {
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [selectedCoverageIds, setSelectedCoverageIds] = useState<string[]>([]);
 
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(10);
   const [error, setError] = useState("");
+
+  const roleOptions = useMemo(() => {
+    const facilityOptions =
+      getRoleOptionsFromFacilityPreferences(facilityPreferences);
+
+    if (facilityOptions.length) {
+      return facilityOptions.map((item) => item.value);
+    }
+
+    return getRoleOptionsForIndustry(
+      typeof tenant?.industry === "string" ? tenant.industry : undefined,
+    ).map((item) => item.value);
+  }, [facilityPreferences, tenant]);
+
+  const filterRoleOptions = useMemo(() => {
+    const existingRoles = coverages
+      .map((c) => c.role)
+      .filter(Boolean) as string[];
+    return Array.from(new Set([...roleOptions, ...existingRoles]));
+  }, [coverages, roleOptions]);
 
   useEffect(() => {
     fetchCoverages();
@@ -155,8 +247,35 @@ export default function CoveragePlanningPage() {
   const fetchCoverages = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/coverage");
-      setCoverages(Array.isArray(res.data) ? res.data : []);
+      const [coverageResult, facilityResult] = await Promise.allSettled([
+        api.get("/coverage"),
+        api.get("/facility-preferences"),
+      ]);
+
+      const nextCoverages =
+        coverageResult.status === "fulfilled" &&
+        Array.isArray(coverageResult.value.data)
+          ? coverageResult.value.data
+          : [];
+      setCoverages(nextCoverages);
+
+      if (
+        facilityResult.status === "fulfilled" &&
+        facilityResult.value.data &&
+        typeof facilityResult.value.data === "object"
+      ) {
+        setFacilityPreferences(
+          facilityResult.value.data as FacilityPreferences,
+        );
+      } else {
+        setFacilityPreferences(null);
+      }
+
+      setSelectedCoverageIds((prev) =>
+        prev.filter((id) =>
+          nextCoverages.some((coverage: CoverageItem) => coverage._id === id),
+        ),
+      );
       setError("");
     } catch (err) {
       console.warn("Failed to fetch coverage", err);
@@ -200,9 +319,19 @@ export default function CoveragePlanningPage() {
     }
   };
 
+  const toggleCoverageSelection = (id?: string) => {
+    if (!id) {
+      return;
+    }
+
+    setSelectedCoverageIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
   const displayedCoverages = useMemo(() => {
     const filtered = coverages.filter(
-      (c) => selectedRole === "all" || c.role === selectedRole,
+      (c) => selectedRole === "all" || isRoleCompatible(c.role, selectedRole),
     );
 
     return filtered.sort((a, b) => {
@@ -223,6 +352,56 @@ export default function CoveragePlanningPage() {
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage,
   );
+
+  const paginatedIds = paginated
+    .map((coverage) => coverage._id)
+    .filter((id): id is string => typeof id === "string");
+
+  const allPaginatedSelected =
+    paginatedIds.length > 0 &&
+    paginatedIds.every((id) => selectedCoverageIds.includes(id));
+
+  const toggleSelectAllPaginated = () => {
+    if (allPaginatedSelected) {
+      setSelectedCoverageIds((prev) =>
+        prev.filter((id) => !paginatedIds.includes(id)),
+      );
+      return;
+    }
+
+    setSelectedCoverageIds((prev) =>
+      Array.from(new Set([...prev, ...paginatedIds])),
+    );
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!selectedCoverageIds.length) {
+      setBulkConfirmOpen(false);
+      return;
+    }
+
+    try {
+      await api.delete("/coverage/bulk", {
+        data: { ids: selectedCoverageIds },
+      });
+      await fetchCoverages();
+      setSelectedCoverageIds([]);
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "object" &&
+        err !== null &&
+        "response" in err &&
+        typeof (err as { response?: { data?: { message?: string } } }).response
+          ?.data?.message === "string"
+          ? (err as { response?: { data?: { message?: string } } }).response
+              ?.data?.message
+          : "Failed to delete selected coverage";
+
+      setError(msg || "Failed to delete selected coverage");
+    } finally {
+      setBulkConfirmOpen(false);
+    }
+  };
 
   const dayMeta = useMemo(() => {
     const meta: Record<string, { count: number; color: string }> = {};
@@ -252,6 +431,11 @@ export default function CoveragePlanningPage() {
     [displayedCoverages, selectedDay],
   );
 
+  const totalPages = Math.max(
+    1,
+    Math.ceil(displayedCoverages.length / rowsPerPage),
+  );
+
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -266,19 +450,19 @@ export default function CoveragePlanningPage() {
               <Pressable
                 style={[
                   styles.toggleBtn,
-                  view === "list" ? styles.toggleBtnActive : null,
+                  view === "table" ? styles.toggleBtnActive : null,
                 ]}
-                onPress={() => setView("list")}
+                onPress={() => setView("table")}
               >
                 <Feather
                   name="list"
                   size={14}
-                  color={view === "list" ? "#fff" : "#374151"}
+                  color={view === "table" ? "#fff" : "#374151"}
                 />
                 <Text
                   style={[
                     styles.toggleText,
-                    view === "list" ? styles.toggleTextActive : null,
+                    view === "table" ? styles.toggleTextActive : null,
                   ]}
                 >
                   List
@@ -308,10 +492,32 @@ export default function CoveragePlanningPage() {
             </View>
 
             {isAdmin ? (
-              <Pressable style={styles.addBtn} onPress={() => setOpenAdd(true)}>
-                <Feather name="plus" size={14} color="#fff" />
-                <Text style={styles.addBtnText}>Add Coverage</Text>
-              </Pressable>
+              <View style={styles.adminActionRow}>
+                {view === "table" ? (
+                  <Pressable
+                    style={[
+                      styles.bulkDeleteBtn,
+                      selectedCoverageIds.length === 0
+                        ? styles.bulkDeleteBtnDisabled
+                        : null,
+                    ]}
+                    disabled={selectedCoverageIds.length === 0}
+                    onPress={() => setBulkConfirmOpen(true)}
+                  >
+                    <Text style={styles.bulkDeleteBtnText}>
+                      Delete Selected ({selectedCoverageIds.length})
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                <Pressable
+                  style={styles.addBtn}
+                  onPress={() => setOpenAdd(true)}
+                >
+                  <Feather name="plus" size={14} color="#fff" />
+                  <Text style={styles.addBtnText}>Add Coverage</Text>
+                </Pressable>
+              </View>
             ) : null}
           </View>
         </View>
@@ -330,10 +536,10 @@ export default function CoveragePlanningPage() {
                   setPage(0);
                 }}
               />
-              {FILTER_ROLES.map((role) => (
+              {filterRoleOptions.map((role) => (
                 <RoleFilterChip
                   key={role}
-                  label={ROLE_LABELS[role]}
+                  label={getRoleDisplayName(role)}
                   active={selectedRole === role}
                   onPress={() => {
                     setSelectedRole(role);
@@ -349,72 +555,109 @@ export default function CoveragePlanningPage() {
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" />
           </View>
-        ) : view === "list" ? (
+        ) : view === "table" ? (
           <View style={styles.listWrap}>
+            {isAdmin ? (
+              <Pressable
+                style={styles.selectAllRow}
+                onPress={toggleSelectAllPaginated}
+              >
+                <Feather
+                  name={allPaginatedSelected ? "check-square" : "square"}
+                  size={16}
+                  color={allPaginatedSelected ? "#1d4ed8" : "#6b7280"}
+                />
+                <Text style={styles.selectAllText}>
+                  Select all on this page
+                </Text>
+              </Pressable>
+            ) : null}
+
             {paginated.map((c) => {
-              const day = parseCoverageDateAsLocal(c.date || c.startTime);
-              const start = toLocal(c.startTime);
-              const end = toLocal(c.endTime);
+              const id = c._id || `${c.role}-${c.startTime}`;
+              const checked = !!c._id && selectedCoverageIds.includes(c._id);
 
               return (
-                <View
-                  key={c._id || `${c.role}-${c.startTime}`}
-                  style={styles.rowCard}
-                >
+                <View key={id} style={styles.rowCard}>
                   <View style={styles.rowTop}>
                     <View style={styles.rowLeft}>
-                      <Text style={styles.rowRole}>
-                        {ROLE_LABELS[c.role || ""] || c.role || "Role"}
+                      <View style={styles.rowRoleLine}>
+                        {isAdmin && c._id ? (
+                          <Pressable
+                            onPress={() => toggleCoverageSelection(c._id)}
+                            style={styles.rowCheckbox}
+                          >
+                            <Feather
+                              name={checked ? "check-square" : "square"}
+                              size={16}
+                              color={checked ? "#1d4ed8" : "#6b7280"}
+                            />
+                          </Pressable>
+                        ) : null}
+
+                        <Text style={styles.rowRole}>
+                          {getRoleDisplayName(c.role)}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.rowMeta}>
+                        {formatCoverageDateLabel(c)} •{" "}
+                        {formatCoverageTimeLabel(c)}
                       </Text>
                       <Text style={styles.rowMeta}>
-                        {day?.toLocaleDateString() || "-"} -{" "}
-                        {start?.toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        }) || "-"}{" "}
-                        -{" "}
-                        {end?.toLocaleTimeString([], {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        }) || "-"}
+                        Unit Area: {c.unitArea || "-"}
+                      </Text>
+                      <Text style={styles.rowMeta}>
+                        Shift Type: {c.shiftType || "-"}
+                      </Text>
+                      <Text style={styles.rowMeta}>
+                        Shift Slot: {c.shiftTag || "-"}
+                      </Text>
+                      <Text style={styles.rowMeta}>
+                        Cert Tags: {formatRequiredCertTags(c)}
+                      </Text>
+                      {spansOvernight(c) ? (
+                        <Text style={styles.overnightText}>
+                          Overnight shift
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.rowRight}>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          { backgroundColor: getCoverageStatusColor(c) },
+                        ]}
+                      />
+                      <Text style={styles.countText}>
+                        {Number(c.requiredCount) || 0} needed
                       </Text>
                     </View>
-                    <View
-                      style={[
-                        styles.statusDot,
-                        { backgroundColor: getCoverageStatusColor(c) },
-                      ]}
-                    />
                   </View>
 
                   <Text style={styles.rowNote} numberOfLines={2}>
                     {c.note || "-"}
                   </Text>
 
-                  <View style={styles.rowFooter}>
-                    <Text style={styles.countText}>
-                      {Number(c.requiredCount) || 0} needed
-                    </Text>
-
-                    {isAdmin ? (
-                      <View style={styles.rowActions}>
-                        <Pressable
-                          style={styles.editBtn}
-                          onPress={() => openEdit(c)}
-                        >
-                          <Feather name="edit-2" size={13} color="#fff" />
-                          <Text style={styles.editBtnText}>Edit</Text>
-                        </Pressable>
-                        <Pressable
-                          style={styles.deleteBtn}
-                          onPress={() => askDelete(c._id)}
-                        >
-                          <Feather name="trash-2" size={13} color="#fff" />
-                          <Text style={styles.deleteBtnText}>Delete</Text>
-                        </Pressable>
-                      </View>
-                    ) : null}
-                  </View>
+                  {isAdmin ? (
+                    <View style={styles.rowActions}>
+                      <Pressable
+                        style={styles.editBtn}
+                        onPress={() => openEdit(c)}
+                      >
+                        <Feather name="edit-2" size={13} color="#fff" />
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.deleteBtn}
+                        onPress={() => askDelete(c._id)}
+                      >
+                        <Feather name="trash-2" size={13} color="#fff" />
+                        <Text style={styles.deleteBtnText}>Delete</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
               );
             })}
@@ -432,22 +675,14 @@ export default function CoveragePlanningPage() {
                   <Text style={styles.pageBtnText}>Previous</Text>
                 </Pressable>
                 <Text style={styles.pageInfo}>
-                  Page {page + 1} of{" "}
-                  {Math.max(
-                    1,
-                    Math.ceil(displayedCoverages.length / rowsPerPage),
-                  )}
+                  Page {page + 1} of {totalPages}
                 </Text>
                 <Pressable
                   style={[
                     styles.pageBtn,
-                    (page + 1) * rowsPerPage >= displayedCoverages.length
-                      ? styles.pageBtnDisabled
-                      : null,
+                    page + 1 >= totalPages ? styles.pageBtnDisabled : null,
                   ]}
-                  disabled={
-                    (page + 1) * rowsPerPage >= displayedCoverages.length
-                  }
+                  disabled={page + 1 >= totalPages}
                   onPress={() => setPage((p) => p + 1)}
                 >
                   <Text style={styles.pageBtnText}>Next</Text>
@@ -498,10 +733,10 @@ export default function CoveragePlanningPage() {
                         />
                         <View style={styles.calendarContent}>
                           <Text style={styles.calendarTitle}>
-                            {ROLE_LABELS[item.role || ""] ||
-                              item.role ||
-                              "Role"}{" "}
-                            ({Number(item.requiredCount) || 0})
+                            {getRoleDisplayName(item.role)} (
+                            {Number(item.requiredCount) || 0})
+                            {item.unitArea ? ` • ${item.unitArea}` : ""}
+                            {item.shiftType ? ` • ${item.shiftType}` : ""}
                           </Text>
                           <Text style={styles.calendarMeta}>
                             {start?.toLocaleTimeString([], {
@@ -568,6 +803,14 @@ export default function CoveragePlanningPage() {
         onCancel={() => setConfirmOpen(false)}
         onConfirm={confirmDelete}
       />
+
+      <ConfirmDialog
+        open={bulkConfirmOpen}
+        title="Delete Selected Coverage?"
+        message={`Delete ${selectedCoverageIds.length} selected coverage item(s)? This action cannot be undone.`}
+        onCancel={() => setBulkConfirmOpen(false)}
+        onConfirm={confirmBulkDelete}
+      />
     </SafeAreaView>
   );
 }
@@ -630,6 +873,9 @@ const styles = StyleSheet.create({
   headerActions: {
     gap: 8,
   },
+  adminActionRow: {
+    gap: 8,
+  },
   toggleWrap: {
     flexDirection: "row",
     backgroundColor: "#f3f4f6",
@@ -656,6 +902,24 @@ const styles = StyleSheet.create({
   },
   toggleTextActive: {
     color: "#ffffff",
+  },
+  bulkDeleteBtn: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#dc2626",
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    backgroundColor: "#fff5f5",
+  },
+  bulkDeleteBtnDisabled: {
+    opacity: 0.45,
+  },
+  bulkDeleteBtnText: {
+    color: "#b91c1c",
+    fontWeight: "700",
+    fontSize: 13,
   },
   addBtn: {
     borderRadius: 8,
@@ -725,6 +989,22 @@ const styles = StyleSheet.create({
   listWrap: {
     gap: 8,
   },
+  selectAllRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  selectAllText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   rowCard: {
     borderRadius: 10,
     borderWidth: 1,
@@ -735,7 +1015,6 @@ const styles = StyleSheet.create({
   },
   rowTop: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
     gap: 8,
   },
@@ -743,6 +1022,18 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  rowRight: {
+    alignItems: "flex-end",
+    gap: 6,
+  },
+  rowRoleLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  rowCheckbox: {
+    paddingVertical: 2,
   },
   rowRole: {
     color: "#111827",
@@ -753,28 +1044,29 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 12,
   },
+  overnightText: {
+    marginTop: 1,
+    color: "#0284c7",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   statusDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
+  countText: {
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   rowNote: {
     color: "#4b5563",
     fontSize: 12,
   },
-  rowFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  countText: {
-    color: "#111827",
-    fontSize: 12,
-    fontWeight: "600",
-  },
   rowActions: {
     flexDirection: "row",
+    justifyContent: "flex-end",
     gap: 6,
   },
   editBtn: {
