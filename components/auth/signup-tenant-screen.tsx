@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   SafeAreaView,
@@ -13,6 +14,11 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+
+const TERMS_VERSION = "1.0";
+const TERMS_URL = "https://www.wisershifts.com/terms-and-conditions";
+const PRIVACY_URL = "https://www.wisershifts.com/privacy-policy";
+const EULA_URL = "https://www.wisershifts.com/eula";
 
 const PHONE_COUNTRY_CODES = [
   { code: "+1", label: "US/CA (+1)" },
@@ -240,7 +246,57 @@ export default function SignupTenantScreen() {
   const [industryError, setIndustryError] = useState("");
   const [tenantPhoneError, setTenantPhoneError] = useState("");
   const [adminPhoneError, setAdminPhoneError] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsError, setTermsError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const openLegalLink = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      setError("Unable to open legal link.");
+    });
+  };
+
+  const isFormValid = useMemo(() => {
+    const hasRequiredText =
+      Boolean(hospitalName.trim()) &&
+      Boolean(address.trim()) &&
+      Boolean(adminName.trim()) &&
+      Boolean(adminPassword.trim()) &&
+      Boolean(adminEmail.trim()) &&
+      Boolean(industry);
+
+    const isPasswordValid = adminPassword.length >= 8;
+    const isEmailValid = validateEmail(adminEmail);
+
+    const hasTenantPhoneCountryCode = Boolean(tenantPhoneCountryCode.trim());
+    const hasTenantPhone = Boolean(tenantPhone.trim());
+    const isTenantPhoneValid = hasTenantPhoneCountryCode === hasTenantPhone;
+
+    const hasAdminPhoneCountryCode = Boolean(userPhoneCountryCode.trim());
+    const hasAdminPhone = Boolean(userPhone.trim());
+    const isAdminPhoneValid = hasAdminPhoneCountryCode === hasAdminPhone;
+
+    return (
+      hasRequiredText &&
+      isPasswordValid &&
+      isEmailValid &&
+      isTenantPhoneValid &&
+      isAdminPhoneValid &&
+      termsAccepted
+    );
+  }, [
+    address,
+    adminEmail,
+    adminName,
+    adminPassword,
+    hospitalName,
+    industry,
+    tenantPhone,
+    tenantPhoneCountryCode,
+    termsAccepted,
+    userPhone,
+    userPhoneCountryCode,
+  ]);
 
   const handleSubmit = async () => {
     setError("");
@@ -252,6 +308,7 @@ export default function SignupTenantScreen() {
     setIndustryError("");
     setTenantPhoneError("");
     setAdminPhoneError("");
+    setTermsError("");
 
     if (!hospitalName.trim()) {
       setHospitalNameError("Facility name is required");
@@ -306,6 +363,11 @@ export default function SignupTenantScreen() {
       return;
     }
 
+    if (!termsAccepted) {
+      setTermsError("You must accept the Terms and Conditions to continue");
+      return;
+    }
+
     setLoading(true);
     try {
       await api.post("/auth/signup/tenant", {
@@ -319,6 +381,9 @@ export default function SignupTenantScreen() {
         address,
         industry,
         adminName,
+        termsAccepted: true,
+        termsVersion: TERMS_VERSION,
+        termsAcceptedAt: new Date().toISOString(),
       });
 
       router.replace("/login");
@@ -497,13 +562,59 @@ export default function SignupTenantScreen() {
             <Text style={styles.inlineError}>{passwordError}</Text>
           ) : null}
 
+          <View style={styles.termsWrap}>
+            <Pressable
+              onPress={() => {
+                setTermsAccepted((prev) => !prev);
+                setTermsError("");
+              }}
+              style={({ pressed }) => [
+                styles.checkbox,
+                termsAccepted ? styles.checkboxChecked : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              {termsAccepted ? (
+                <Text style={styles.checkboxTick}>✓</Text>
+              ) : null}
+            </Pressable>
+
+            <Text style={styles.termsText}>
+              I agree to the{" "}
+              <Text
+                style={styles.termsLink}
+                onPress={() => openLegalLink(TERMS_URL)}
+              >
+                Terms and Conditions
+              </Text>
+              {", "}
+              <Text
+                style={styles.termsLink}
+                onPress={() => openLegalLink(PRIVACY_URL)}
+              >
+                Privacy Policy
+              </Text>
+              {" and "}
+              <Text
+                style={styles.termsLink}
+                onPress={() => openLegalLink(EULA_URL)}
+              >
+                EULA
+              </Text>
+            </Text>
+          </View>
+
+          {termsError ? (
+            <Text style={styles.inlineError}>{termsError}</Text>
+          ) : null}
+
           <Pressable
             onPress={handleSubmit}
-            disabled={loading}
+            disabled={loading || !isFormValid}
             style={({ pressed }) => [
               styles.primaryButton,
               pressed ? styles.pressed : null,
-              loading ? styles.disabled : null,
+              loading || !isFormValid ? styles.disabled : null,
             ]}
           >
             {loading ? (
@@ -667,6 +778,44 @@ const styles = StyleSheet.create({
     color: "#b91c1c",
     marginTop: -6,
     marginBottom: -2,
+  },
+  termsWrap: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginTop: 2,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: "#0f172a",
+    borderRadius: 4,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
+  },
+  checkboxTick: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 14,
+  },
+  termsText: {
+    flex: 1,
+    color: "#0f172a",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  termsLink: {
+    color: "#1d4ed8",
+    textDecorationLine: "underline",
+    fontWeight: "600",
   },
   pressed: {
     opacity: 0.86,
