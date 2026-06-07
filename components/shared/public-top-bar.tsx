@@ -48,7 +48,7 @@ export default function PublicTopBar() {
             <Text style={styles.brandFallback}>WISERSHIFTS</Text>
           ) : (
             <Image
-              source={require("@/assets/logos/wisershifts-logo-plus-text2.svg")}
+              source={require("@/assets/logos/wiserShifts-logo-light.svg")}
               style={styles.logo}
               contentFit="contain"
               onError={() => setLogoFailed(true)}
@@ -85,21 +85,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
     backgroundColor: "#ffffff",
-    paddingHorizontal: 16,
+    paddingLeft: 0,
+    paddingRight: 16,
     paddingBottom: 10,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
-    gap: 20,
+    justifyContent: "space-between",
   },
   brandLeft: {
     paddingVertical: 2,
   },
   logo: {
-    width: 162,
-    height: 32,
+    width: 180,
+    height: 34,
   },
   brandFallback: {
     color: "#0f172a",
@@ -111,8 +111,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 22,
-    flex: 1,
-    justifyContent: "flex-start",
+    justifyContent: "flex-end",
+    flexShrink: 0,
   },
   navLink: {
     color: "#64748b",
