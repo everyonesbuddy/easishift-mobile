@@ -15,42 +15,9 @@ import {
   getRoleDisplayName,
   getRoleOptionsForIndustry,
   getRoleOptionsFromFacilityPreferences,
+  getUnitAreaDisplayName,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
-
-const weekdayOptions = [
-  { value: 1, label: "Mon" },
-  { value: 2, label: "Tue" },
-  { value: 3, label: "Wed" },
-  { value: 4, label: "Thu" },
-  { value: 5, label: "Fri" },
-  { value: 6, label: "Sat" },
-  { value: 0, label: "Sun" },
-] as const;
-
-const horizonOptions = [1, 2, 3, 7, 14, 28, 42, 56] as const;
-
-const requirementTemplates = [
-  {
-    id: "morning",
-    label: "Morning 07-15",
-    startTime: "07:00",
-    endTime: "15:00",
-  },
-  {
-    id: "business",
-    label: "Business 09-17",
-    startTime: "09:00",
-    endTime: "17:00",
-  },
-  {
-    id: "evening",
-    label: "Evening 15-23",
-    startTime: "15:00",
-    endTime: "23:00",
-  },
-  { id: "night", label: "Night 23-07", startTime: "23:00", endTime: "07:00" },
-] as const;
 
 type ShiftSlot = {
   tag?: unknown;
@@ -89,6 +56,25 @@ type Props = {
   onClose?: () => void;
 };
 
+const weekdayOptions = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+] as const;
+
+const horizonOptions = [1, 2, 3, 7, 14, 28, 42, 56] as const;
+
+const requirementTemplates = [
+  { label: "Morning 07-15", startTime: "07:00", endTime: "15:00" },
+  { label: "Business 09-17", startTime: "09:00", endTime: "17:00" },
+  { label: "Evening 15-23", startTime: "15:00", endTime: "23:00" },
+  { label: "Night 23-07", startTime: "23:00", endTime: "07:00" },
+] as const;
+
 const defaultRequirement: Requirement = {
   role: "",
   requiredCount: 1,
@@ -116,133 +102,69 @@ function dedupeStrings(values: unknown) {
   );
 }
 
-function toDisplayLabel(value: unknown) {
-  const normalized = String(value || "")
-    .trim()
+function normalizeStringArray(values: unknown) {
+  return dedupeStrings(values).map((value) => normalizeToken(value));
+}
+
+function toDisplayLabel(value: string) {
+  return value
     .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ");
-
-  if (!normalized) {
-    return "";
-  }
-
-  return normalized
     .split(" ")
+    .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
-function toDayKey(input: Date) {
-  const y = input.getFullYear();
-  const m = `${input.getMonth() + 1}`.padStart(2, "0");
-  const d = `${input.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function toDayKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function toUTCISOString(dateStr: string, timeStr: string) {
-  const [year, month, day] = String(dateStr || "")
-    .split("-")
-    .map((part) => Number(part));
-  const [hour, minute] = String(timeStr || "")
-    .split(":")
-    .map((part) => Number(part));
-
-  if (
-    !Number.isInteger(year) ||
-    !Number.isInteger(month) ||
-    !Number.isInteger(day) ||
-    !Number.isInteger(hour) ||
-    !Number.isInteger(minute)
-  ) {
-    return new Date(`${dateStr}T${timeStr}:00`).toISOString();
-  }
-
+function toUTCISOString(dateKey: string, timeValue: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const [hour, minute] = timeValue.split(":").map(Number);
   return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
 }
 
-function isOvernightTimeRange(startTime: string, endTime: string) {
-  if (!startTime || !endTime) {
-    return false;
-  }
-
-  return endTime <= startTime;
+function isOvernight(startTime: string, endTime: string) {
+  return !!startTime && !!endTime && endTime <= startTime;
 }
 
-function formatShiftPreview(
-  dateValue: string,
-  startTime: string,
-  endTime: string,
-) {
-  if (!dateValue || !startTime || !endTime) {
-    return `${startTime || "--:--"} - ${endTime || "--:--"}`;
-  }
-
-  const start = new Date(`${dateValue}T${startTime}:00`);
-  const end = new Date(`${dateValue}T${endTime}:00`);
-
-  if (isOvernightTimeRange(startTime, endTime)) {
-    end.setDate(end.getDate() + 1);
-  }
-
-  return `${start.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  })} - ${end.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  })} ${end.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  })}`;
-}
-
-function buildDatesFromPattern(
-  startDateStr: string,
+function buildDates(
+  startDate: string,
   horizonDays: number,
-  mode: string,
+  repeatMode: string,
   weekdays: number[],
 ) {
-  const start = new Date(`${startDateStr}T00:00:00`);
-  const totalDays = Number(horizonDays);
-  const selectedWeekdays = new Set(weekdays);
-
-  if (!Number.isFinite(totalDays) || totalDays <= 0) {
+  const start = new Date(`${startDate}T00:00:00`);
+  if (
+    Number.isNaN(start.getTime()) ||
+    !Number.isFinite(horizonDays) ||
+    horizonDays <= 0
+  ) {
     return [] as string[];
   }
 
-  if (Number.isNaN(start.getTime())) {
-    return [] as string[];
-  }
-
+  const weekdaySet = new Set(weekdays);
   const dates: string[] = [];
 
-  for (let offset = 0; offset < totalDays; offset += 1) {
+  for (let offset = 0; offset < horizonDays; offset += 1) {
     const date = new Date(start);
     date.setDate(start.getDate() + offset);
 
     const day = date.getDay();
     const isWeekend = day === 0 || day === 6;
 
-    if (mode === "weekdays" && isWeekend) {
-      continue;
-    }
-
-    if (mode === "weekends" && !isWeekend) {
-      continue;
-    }
-
-    if (mode === "custom" && !selectedWeekdays.has(day)) {
-      continue;
-    }
+    if (repeatMode === "weekdays" && isWeekend) continue;
+    if (repeatMode === "weekends" && !isWeekend) continue;
+    if (repeatMode === "custom" && !weekdaySet.has(day)) continue;
 
     dates.push(toDayKey(date));
   }
 
   return dates;
-}
-
-function normalizePreferenceStrings(values: unknown) {
-  return dedupeStrings(values).map((value) => normalizeToken(value));
 }
 
 export default function CoverageCreateForm({
@@ -251,13 +173,11 @@ export default function CoverageCreateForm({
   onClose,
 }: Props) {
   const { tenant } = useAuth();
-
   const [facilityPreferences, setFacilityPreferences] =
     useState<FacilityPreferences | null>(null);
-
-  const today = toDayKey(new Date());
-
-  const [plannerStartDate, setPlannerStartDate] = useState(today);
+  const [plannerStartDate, setPlannerStartDate] = useState(
+    toDayKey(new Date()),
+  );
   const [horizonDays, setHorizonDays] = useState(14);
   const [repeatMode, setRepeatMode] = useState("weekdays");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([
@@ -274,32 +194,42 @@ export default function CoverageCreateForm({
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    async function loadFacilityPreferences() {
+    let isMounted = true;
+
+    async function loadPreferences() {
       try {
-        const res = await api.get("/facility-preferences");
-        setFacilityPreferences(res.data || null);
-      } catch (requestError) {
-        console.warn(
-          "Failed to load facility preferences for coverage form",
-          requestError,
-        );
-        setFacilityPreferences(null);
+        const response = await api.get("/facility-preferences");
+        if (isMounted) {
+          setFacilityPreferences(response.data || null);
+        }
+      } catch (loadError) {
+        console.warn("Failed to load facility preferences", loadError);
+        if (isMounted) {
+          setFacilityPreferences(null);
+        }
       }
     }
 
-    loadFacilityPreferences();
+    loadPreferences();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const shiftTypeDefinitions = useMemo(() => {
     const defs = Array.isArray(facilityPreferences?.shiftTypeDefinitions)
-      ? facilityPreferences.shiftTypeDefinitions
+      ? facilityPreferences?.shiftTypeDefinitions
       : [];
 
     return defs
-      .map((def) => ({
-        key: normalizeToken(def?.key),
-        label: String(def?.label || "").trim(),
-        timeSlots: (Array.isArray(def?.timeSlots) ? def.timeSlots : [])
+      .map((definition) => ({
+        key: normalizeToken(definition?.key),
+        label: String(definition?.label || "").trim(),
+        timeSlots: (Array.isArray(definition?.timeSlots)
+          ? definition.timeSlots
+          : []
+        )
           .map((slot) => ({
             tag: normalizeToken(slot?.tag),
             label: String(slot?.label || "").trim(),
@@ -310,7 +240,7 @@ export default function CoverageCreateForm({
             (slot) => slot.tag && slot.startLocalTime && slot.endLocalTime,
           ),
       }))
-      .filter((def) => def.key);
+      .filter((definition) => definition.key);
   }, [facilityPreferences?.shiftTypeDefinitions]);
 
   const slotLookup = useMemo(() => {
@@ -319,9 +249,9 @@ export default function CoverageCreateForm({
       { startLocalTime: string; endLocalTime: string }
     >();
 
-    shiftTypeDefinitions.forEach((def) => {
-      def.timeSlots.forEach((slot) => {
-        map.set(`${def.key}:${slot.tag}`, {
+    shiftTypeDefinitions.forEach((definition) => {
+      definition.timeSlots.forEach((slot) => {
+        map.set(`${definition.key}:${slot.tag}`, {
           startLocalTime: slot.startLocalTime,
           endLocalTime: slot.endLocalTime,
         });
@@ -332,47 +262,36 @@ export default function CoverageCreateForm({
   }, [shiftTypeDefinitions]);
 
   const shiftDefinitionOptions = useMemo(() => {
-    return shiftTypeDefinitions.flatMap((def) =>
-      def.timeSlots.map((slot) => ({
-        value: `${def.key}:${slot.tag}`,
-        shiftType: def.key,
+    return shiftTypeDefinitions.flatMap((definition) =>
+      definition.timeSlots.map((slot) => ({
+        value: `${definition.key}:${slot.tag}`,
+        shiftType: definition.key,
         shiftTag: slot.tag,
-        label: `${def.label || toDisplayLabel(def.key)} - ${slot.label || toDisplayLabel(slot.tag)} (${slot.startLocalTime}-${slot.endLocalTime})`,
+        label: `${definition.label || toDisplayLabel(definition.key)} - ${slot.label || toDisplayLabel(slot.tag)} (${slot.startLocalTime} - ${slot.endLocalTime})`,
       })),
     );
   }, [shiftTypeDefinitions]);
 
   const roleOptions = useMemo(() => {
-    const facilityOptions =
+    const facilityRoleOptions =
       getRoleOptionsFromFacilityPreferences(facilityPreferences);
-
-    if (facilityOptions.length) {
-      return facilityOptions;
-    }
-
-    return getRoleOptionsForIndustry(
-      typeof tenant?.industry === "string" ? tenant.industry : undefined,
-    );
-  }, [facilityPreferences, tenant]);
+    return facilityRoleOptions.length > 0
+      ? facilityRoleOptions
+      : getRoleOptionsForIndustry(tenant?.industry);
+  }, [facilityPreferences, tenant?.industry]);
 
   const unitAreas = useMemo(
-    () => normalizePreferenceStrings(facilityPreferences?.unitAreas),
+    () => normalizeStringArray(facilityPreferences?.unitAreas),
     [facilityPreferences?.unitAreas],
   );
-
   const certificationTags = useMemo(
-    () => normalizePreferenceStrings(facilityPreferences?.certificationTags),
+    () => normalizeStringArray(facilityPreferences?.certificationTags),
     [facilityPreferences?.certificationTags],
   );
 
   const generatedDates = useMemo(
     () =>
-      buildDatesFromPattern(
-        plannerStartDate,
-        horizonDays,
-        repeatMode,
-        selectedWeekdays,
-      ),
+      buildDates(plannerStartDate, horizonDays, repeatMode, selectedWeekdays),
     [plannerStartDate, horizonDays, repeatMode, selectedWeekdays],
   );
 
@@ -383,65 +302,46 @@ export default function CoverageCreateForm({
 
   const includedDateSet = useMemo(() => new Set(activeDates), [activeDates]);
 
-  const totalShiftBlocks = activeDates.length * requirements.length;
-  const totalRequestedStaff =
-    activeDates.length *
-    requirements.reduce(
-      (sum, req) => sum + (Number(req.requiredCount) || 0),
-      0,
-    );
-
-  const previewByDate = useMemo(
-    () =>
-      activeDates.map((dateValue) => ({
-        dateValue,
-        dateLabel: new Date(`${dateValue}T00:00:00`).toLocaleDateString(
-          undefined,
-          {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          },
-        ),
-        rows: requirements.map((req, reqIndex) => ({
-          id: `${dateValue}-${reqIndex}`,
-          role: req.role ? getRoleDisplayName(req.role) : "-",
-          timeLabel: formatShiftPreview(dateValue, req.startTime, req.endTime),
-          count: Number(req.requiredCount) || 0,
-          spansOvernight: isOvernightTimeRange(req.startTime, req.endTime),
-          unitArea: req.unitArea || "",
-          shiftType: req.shiftType || "",
-          shiftTag: req.shiftTag || "",
-        })),
+  const previewByDate = useMemo(() => {
+    return activeDates.map((dateValue) => ({
+      dateValue,
+      dateLabel: new Date(`${dateValue}T00:00:00`).toLocaleDateString(
+        undefined,
+        {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        },
+      ),
+      rows: requirements.map((req, index) => ({
+        id: `${dateValue}-${index}`,
+        role: req.role ? getRoleDisplayName(req.role) : "-",
+        timeLabel: `${req.startTime} - ${req.endTime}`,
+        unitArea: req.unitArea,
+        shiftType: req.shiftType,
+        shiftTag: req.shiftTag,
+        count: Number(req.requiredCount) || 0,
+        overnight: isOvernight(req.startTime, req.endTime),
       })),
-    [activeDates, requirements],
-  );
+    }));
+  }, [activeDates, requirements]);
+
+  const handleRepeatModeChange = (mode: string) => {
+    setRepeatMode(mode);
+
+    if (mode === "weekdays") setSelectedWeekdays([1, 2, 3, 4, 5]);
+    if (mode === "weekends") setSelectedWeekdays([0, 6]);
+    if (mode === "everyday") setSelectedWeekdays([0, 1, 2, 3, 4, 5, 6]);
+  };
 
   const handleToggleWeekday = (day: number) => {
     setRepeatMode("custom");
     setSelectedWeekdays((prev) => {
       if (prev.includes(day)) {
-        return prev.length === 1 ? prev : prev.filter((item) => item !== day);
+        return prev.length === 1 ? prev : prev.filter((value) => value !== day);
       }
-
       return [...prev, day].sort((a, b) => a - b);
     });
-  };
-
-  const handleRepeatModeChange = (mode: string) => {
-    setRepeatMode(mode);
-
-    if (mode === "weekdays") {
-      setSelectedWeekdays([1, 2, 3, 4, 5]);
-    }
-
-    if (mode === "weekends") {
-      setSelectedWeekdays([6, 0]);
-    }
-
-    if (mode === "everyday") {
-      setSelectedWeekdays([0, 1, 2, 3, 4, 5, 6]);
-    }
   };
 
   const handleRequirementChange = (
@@ -450,41 +350,23 @@ export default function CoverageCreateForm({
     value: string | number | string[],
   ) => {
     setRequirements((prev) =>
-      prev.map((req, i) => (i === index ? { ...req, [field]: value } : req)),
+      prev.map((req, reqIndex) =>
+        reqIndex === index ? { ...req, [field]: value } : req,
+      ),
     );
-  };
-
-  const getShiftSlotsForType = (shiftType: string) => {
-    const key = normalizeToken(shiftType);
-
-    if (!key) {
-      return [] as { tag: string }[];
-    }
-
-    const matched = shiftTypeDefinitions.find((def) => def.key === key);
-    return matched?.timeSlots || [];
   };
 
   const getSelectedSlot = (req: Requirement) => {
     const shiftType = normalizeToken(req.shiftType);
     const shiftTag = normalizeToken(req.shiftTag);
-
-    if (!shiftType || !shiftTag) {
-      return null;
-    }
-
+    if (!shiftType || !shiftTag) return null;
     return slotLookup.get(`${shiftType}:${shiftTag}`) || null;
   };
 
   const getShiftDefinitionValue = (req: Requirement) => {
     const shiftType = normalizeToken(req.shiftType);
     const shiftTag = normalizeToken(req.shiftTag);
-
-    if (!shiftType || !shiftTag) {
-      return "";
-    }
-
-    return `${shiftType}:${shiftTag}`;
+    return shiftType && shiftTag ? `${shiftType}:${shiftTag}` : "";
   };
 
   const handleShiftDefinitionSelect = (
@@ -502,15 +384,11 @@ export default function CoverageCreateForm({
     const selectedOption = shiftDefinitionOptions.find(
       (option) => option.value === normalizedValue,
     );
-
-    if (!selectedOption) {
-      return;
-    }
+    if (!selectedOption) return;
 
     const selectedSlot = slotLookup.get(
       `${selectedOption.shiftType}:${selectedOption.shiftTag}`,
     );
-
     handleRequirementChange(index, "shiftType", selectedOption.shiftType);
     handleRequirementChange(index, "shiftTag", selectedOption.shiftTag);
 
@@ -540,7 +418,26 @@ export default function CoverageCreateForm({
 
   const handleRemoveRequirement = (index: number) => {
     setRequirements((prev) =>
-      prev.length === 1 ? prev : prev.filter((_, i) => i !== index),
+      prev.length === 1
+        ? prev
+        : prev.filter((_, reqIndex) => reqIndex !== index),
+    );
+  };
+
+  const toggleCertificationTag = (index: number, certTag: string) => {
+    const current = requirements[index];
+    const next = new Set(current.requiredCertificationTags || []);
+
+    if (next.has(certTag)) {
+      next.delete(certTag);
+    } else {
+      next.add(certTag);
+    }
+
+    handleRequirementChange(
+      index,
+      "requiredCertificationTags",
+      Array.from(next),
     );
   };
 
@@ -556,23 +453,6 @@ export default function CoverageCreateForm({
     setExcludedDates([]);
   };
 
-  const toggleCertificationTag = (index: number, certTag: string) => {
-    const req = requirements[index];
-    const set = new Set(req.requiredCertificationTags || []);
-
-    if (set.has(certTag)) {
-      set.delete(certTag);
-    } else {
-      set.add(certTag);
-    }
-
-    handleRequirementChange(
-      index,
-      "requiredCertificationTags",
-      Array.from(set),
-    );
-  };
-
   const handleSubmit = async (autoGenerate = false) => {
     setError("");
     setSuccess("");
@@ -584,52 +464,30 @@ export default function CoverageCreateForm({
 
     for (let index = 0; index < requirements.length; index += 1) {
       const req = requirements[index];
-      const slotsForType = getShiftSlotsForType(req.shiftType);
-      const selectedSlot = getSelectedSlot(req);
-      const requiresSlotTag =
-        !!normalizeToken(req.shiftType) && slotsForType.length > 0;
-
       if (!req.role) {
         setError(`Requirement ${index + 1} must include a role.`);
         return;
       }
-
-      if (requiresSlotTag && !selectedSlot) {
-        setError(
-          `Requirement ${index + 1} must include a shift slot for selected shift type.`,
-        );
-        return;
-      }
-
-      if (!selectedSlot && (!req.startTime || !req.endTime)) {
-        setError(
-          `Requirement ${index + 1} must include start time and end time.`,
-        );
+      if (!req.shiftType && (!req.startTime || !req.endTime)) {
+        setError(`Requirement ${index + 1} must include a time range.`);
         return;
       }
     }
 
-    setLoadingMode(autoGenerate ? "ai" : "create");
     setLoading(true);
+    setLoadingMode(autoGenerate ? "ai" : "create");
 
     try {
-      const createdCoverages: { _id?: string }[] = [];
-
       const createResponses = await Promise.all(
-        activeDates.map((date) => {
+        activeDates.map((dateValue) => {
           const shifts = requirements.map((req) => {
             const selectedSlot = getSelectedSlot(req);
             const startTime = selectedSlot?.startLocalTime || req.startTime;
             const endTime = selectedSlot?.endLocalTime || req.endTime;
-
-            const isOvernight = isOvernightTimeRange(startTime, endTime);
-            let endDate = date;
-
-            if (isOvernight) {
-              const d = new Date(`${date}T00:00:00`);
-              d.setDate(d.getDate() + 1);
-              endDate = toDayKey(d);
-            }
+            const overnight = isOvernight(startTime, endTime);
+            const endDate = overnight
+              ? toDayKey(new Date(`${dateValue}T00:00:00`))
+              : dateValue;
 
             return {
               role: req.role,
@@ -637,7 +495,7 @@ export default function CoverageCreateForm({
               unitArea: req.unitArea || null,
               shiftType: req.shiftType || null,
               shiftTag: req.shiftTag || null,
-              startTime: toUTCISOString(date, startTime),
+              startTime: toUTCISOString(dateValue, startTime),
               endTime: toUTCISOString(endDate, endTime),
               requiredCertificationTags: dedupeStrings(
                 req.requiredCertificationTags,
@@ -648,42 +506,41 @@ export default function CoverageCreateForm({
 
           return api.post("/coverage", {
             tenantId,
-            dates: [date],
+            dates: [dateValue],
             shifts,
           });
         }),
       );
 
-      createResponses.forEach((response) => {
-        const createdForDate = Array.isArray(response.data)
-          ? response.data
-          : Array.isArray(response.data?.created)
-            ? response.data.created
-            : [];
+      if (autoGenerate) {
+        const coverageIds = createResponses
+          .flatMap((response) =>
+            Array.isArray(response.data)
+              ? response.data
+              : response.data?.created || [],
+          )
+          .map((item) => item?._id)
+          .filter(Boolean);
 
-        createdCoverages.push(...createdForDate);
-      });
-
-      if (autoGenerate && createdCoverages.length) {
-        await api.post("/schedules/auto-generate", {
-          coverageIds: createdCoverages.map((item) => item._id).filter(Boolean),
-        });
+        if (coverageIds.length) {
+          await api.post("/schedules/auto-generate", { coverageIds });
+        }
       }
 
-      const message = autoGenerate
-        ? "Coverage created and auto-scheduling completed."
-        : "Coverage requirements added successfully.";
-
-      setSuccess(message);
+      setSuccess(
+        autoGenerate
+          ? "Coverage created and AI schedule generation started."
+          : "Coverage requirements added successfully.",
+      );
       setRequirements([{ ...defaultRequirement }]);
-      setPlannerStartDate(today);
+      setPlannerStartDate(toDayKey(new Date()));
       setHorizonDays(14);
       setRepeatMode("weekdays");
       setSelectedWeekdays([1, 2, 3, 4, 5]);
       setExcludedDates([]);
       setNote("");
       onSuccess?.();
-    } catch (requestError) {
+    } catch (requestError: unknown) {
       const message =
         typeof requestError === "object" &&
         requestError !== null &&
@@ -707,7 +564,8 @@ export default function CoverageCreateForm({
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>Coverage Planner</Text>
           <Text style={styles.subtitle}>
-            Set horizon + repeat pattern, then define requirements once.
+            Set the horizon, repeat pattern, and coverage requirements in one
+            pass.
           </Text>
         </View>
         {onClose ? (
@@ -723,7 +581,7 @@ export default function CoverageCreateForm({
       <View style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Quick Planner</Text>
         <Text style={styles.sectionHint}>
-          Start date + horizon + repeat mode generates dates automatically.
+          Generate dates from a start date, horizon, and repeat mode.
         </Text>
 
         <View style={styles.inlineInputsRow}>
@@ -814,10 +672,12 @@ export default function CoverageCreateForm({
             );
           })}
         </View>
+      </View>
 
-        <Text style={styles.sectionHint}>
-          Generated {generatedDates.length} dates, using {activeDates.length}{" "}
-          active dates.
+      <View style={styles.infoBanner}>
+        <Text style={styles.infoBannerText}>
+          Choose a Shift Definition when possible. Manual times stay available
+          for exceptions.
         </Text>
       </View>
 
@@ -874,7 +734,7 @@ export default function CoverageCreateForm({
       <View style={styles.rowWrap}>
         {requirementTemplates.map((template) => (
           <Pressable
-            key={template.id}
+            key={template.label}
             style={styles.token}
             onPress={() => handleAddTemplateRequirement(template)}
           >
@@ -886,9 +746,7 @@ export default function CoverageCreateForm({
       <View style={styles.stack}>
         {requirements.map((req, index) => {
           const selectedSlot = getSelectedSlot(req);
-          const roleValue = req.role;
-          const unitAreaValue = req.unitArea;
-          const shiftDefValue = getShiftDefinitionValue(req);
+          const shiftDefinitionValue = getShiftDefinitionValue(req);
 
           return (
             <View key={`req-${index}`} style={styles.requirementCard}>
@@ -907,14 +765,14 @@ export default function CoverageCreateForm({
               <Text style={styles.fieldLabel}>Role</Text>
               <View style={styles.rowWrap}>
                 {roleOptions.map((item) => {
-                  const active = roleValue === item.value;
+                  const active = req.role === item.value;
                   return (
                     <Pressable
                       key={`${index}-${item.value}`}
-                      style={[styles.token, active ? styles.tokenActive : null]}
                       onPress={() =>
                         handleRequirementChange(index, "role", item.value)
                       }
+                      style={[styles.token, active ? styles.tokenActive : null]}
                     >
                       <Text
                         style={[
@@ -975,40 +833,39 @@ export default function CoverageCreateForm({
                 </View>
               </View>
 
-              {isOvernightTimeRange(req.startTime, req.endTime) ? (
-                <Text style={styles.infoBanner}>
-                  Overnight shift: this requirement will end on the next day.
+              {isOvernight(req.startTime, req.endTime) ? (
+                <Text style={styles.sectionHint}>
+                  Overnight shift: this requirement ends the next day.
                 </Text>
               ) : null}
 
-              <Text style={styles.fieldLabel}>Unit Area (Optional)</Text>
+              <Text style={styles.fieldLabel}>Unit Area</Text>
               <View style={styles.rowWrap}>
                 <Pressable
+                  onPress={() => handleRequirementChange(index, "unitArea", "")}
                   style={[
                     styles.token,
-                    !unitAreaValue ? styles.tokenActive : null,
+                    !req.unitArea ? styles.tokenActive : null,
                   ]}
-                  onPress={() => handleRequirementChange(index, "unitArea", "")}
                 >
                   <Text
                     style={[
                       styles.tokenText,
-                      !unitAreaValue ? styles.tokenTextActive : null,
+                      !req.unitArea ? styles.tokenTextActive : null,
                     ]}
                   >
                     Any Area
                   </Text>
                 </Pressable>
-
                 {unitAreas.map((area) => {
-                  const active = unitAreaValue === area;
+                  const active = req.unitArea === area;
                   return (
                     <Pressable
-                      key={`${index}-area-${area}`}
-                      style={[styles.token, active ? styles.tokenActive : null]}
+                      key={`${index}-${area}`}
                       onPress={() =>
                         handleRequirementChange(index, "unitArea", area)
                       }
+                      style={[styles.token, active ? styles.tokenActive : null]}
                     >
                       <Text
                         style={[
@@ -1016,41 +873,40 @@ export default function CoverageCreateForm({
                           active ? styles.tokenTextActive : null,
                         ]}
                       >
-                        {toDisplayLabel(area)}
+                        {getUnitAreaDisplayName(area)}
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
 
-              <Text style={styles.fieldLabel}>Shift Definition (Optional)</Text>
+              <Text style={styles.fieldLabel}>Shift Definition</Text>
               <View style={styles.rowWrap}>
                 <Pressable
+                  onPress={() => handleShiftDefinitionSelect(index, "")}
                   style={[
                     styles.token,
-                    !shiftDefValue ? styles.tokenActive : null,
+                    !shiftDefinitionValue ? styles.tokenActive : null,
                   ]}
-                  onPress={() => handleShiftDefinitionSelect(index, "")}
                 >
                   <Text
                     style={[
                       styles.tokenText,
-                      !shiftDefValue ? styles.tokenTextActive : null,
+                      !shiftDefinitionValue ? styles.tokenTextActive : null,
                     ]}
                   >
                     Manual Time Entry
                   </Text>
                 </Pressable>
-
                 {shiftDefinitionOptions.map((option) => {
-                  const active = shiftDefValue === option.value;
+                  const active = shiftDefinitionValue === option.value;
                   return (
                     <Pressable
-                      key={`${index}-shiftdef-${option.value}`}
-                      style={[styles.token, active ? styles.tokenActive : null]}
+                      key={`${index}-${option.value}`}
                       onPress={() =>
                         handleShiftDefinitionSelect(index, option.value)
                       }
+                      style={[styles.token, active ? styles.tokenActive : null]}
                     >
                       <Text
                         style={[
@@ -1065,25 +921,19 @@ export default function CoverageCreateForm({
                 })}
               </View>
 
-              <Text style={styles.fieldLabel}>
-                Required Certifications (Optional)
-              </Text>
+              <Text style={styles.fieldLabel}>Required Certifications</Text>
               <View style={styles.rowWrap}>
-                {certificationTags.length === 0 ? (
-                  <Text style={styles.sectionHint}>
-                    No certification tags configured yet.
-                  </Text>
-                ) : (
+                {certificationTags.length ? (
                   certificationTags.map((cert) => {
                     const active = req.requiredCertificationTags.includes(cert);
                     return (
                       <Pressable
-                        key={`${index}-cert-${cert}`}
+                        key={`${index}-${cert}`}
+                        onPress={() => toggleCertificationTag(index, cert)}
                         style={[
                           styles.token,
                           active ? styles.tokenActive : null,
                         ]}
-                        onPress={() => toggleCertificationTag(index, cert)}
                       >
                         <Text
                           style={[
@@ -1096,6 +946,10 @@ export default function CoverageCreateForm({
                       </Pressable>
                     );
                   })
+                ) : (
+                  <Text style={styles.sectionHint}>
+                    No certification tags configured yet.
+                  </Text>
                 )}
               </View>
             </View>
@@ -1106,43 +960,39 @@ export default function CoverageCreateForm({
       <View style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Plan Summary</Text>
         <Text style={styles.sectionHint}>
-          {totalShiftBlocks} coverage entries, {totalRequestedStaff} staff
-          positions, {activeDates.length} active dates.
+          {activeDates.length} active dates • {requirements.length} requirement
+          blocks.
         </Text>
 
-        {previewByDate.length === 0 ? (
-          <Text style={styles.sectionHint}>
-            Add active dates and at least one requirement to see preview.
-          </Text>
-        ) : (
-          <View style={styles.previewWrap}>
-            {previewByDate.map((group) => (
-              <View key={group.dateValue} style={styles.previewDayCard}>
-                <Text style={styles.previewDayLabel}>{group.dateLabel}</Text>
-
-                {group.rows.map((row) => (
-                  <View key={row.id} style={styles.previewRow}>
-                    <Text style={styles.previewRole}>{row.role}</Text>
-                    <Text style={styles.previewMeta}>
-                      {row.timeLabel}
-                      {row.unitArea ? ` | ${toDisplayLabel(row.unitArea)}` : ""}
-                      {row.shiftType
-                        ? ` | ${toDisplayLabel(row.shiftType)}`
-                        : ""}
-                      {row.shiftTag ? ` | ${toDisplayLabel(row.shiftTag)}` : ""}
-                      {row.spansOvernight ? " | Overnight" : ""}
-                    </Text>
-                    <Text style={styles.previewCount}>x{row.count}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-          </View>
-        )}
+        <View style={styles.previewWrap}>
+          {previewByDate.map((group) => (
+            <View key={group.dateValue} style={styles.previewDayCard}>
+              <Text style={styles.previewDayLabel}>{group.dateLabel}</Text>
+              {group.rows.map((row) => (
+                <View key={row.id} style={styles.previewRow}>
+                  <Text style={styles.previewRole}>{row.role}</Text>
+                  <Text style={styles.previewMeta}>
+                    {row.timeLabel}
+                    {row.unitArea ? ` | ${toDisplayLabel(row.unitArea)}` : ""}
+                    {row.shiftType ? ` | ${toDisplayLabel(row.shiftType)}` : ""}
+                    {row.shiftTag ? ` | ${toDisplayLabel(row.shiftTag)}` : ""}
+                    {row.overnight ? " | Overnight" : ""}
+                  </Text>
+                  <Text style={styles.previewCount}>x{row.count}</Text>
+                </View>
+              ))}
+            </View>
+          ))}
+          {!previewByDate.length ? (
+            <Text style={styles.sectionHint}>
+              Add active dates and at least one requirement to preview the plan.
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.fieldWrap}>
-        <Text style={styles.fieldLabel}>Notes (Optional)</Text>
+        <Text style={styles.fieldLabel}>Notes</Text>
         <TextInput
           value={note}
           onChangeText={setNote}
@@ -1165,52 +1015,23 @@ export default function CoverageCreateForm({
             <Text style={styles.primaryBtnText}>Save Requirements</Text>
           )}
         </Pressable>
-
-        <Pressable
-          style={[styles.actionBtn, styles.darkBtn]}
-          onPress={() => handleSubmit(true)}
-          disabled={loading}
-        >
-          {loading && loadingMode === "ai" ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <Text style={styles.darkBtnText}>Save + AI Generate Schedule</Text>
-          )}
-        </Pressable>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: 10,
-    paddingBottom: 8,
-  },
+  card: { gap: 10, paddingBottom: 8 },
   headerRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 10,
   },
-  headerTextWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  closeBtn: {
-    padding: 8,
-    marginRight: 2,
-  },
-  title: {
-    color: "#111827",
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  subtitle: {
-    color: "#6b7280",
-    fontSize: 13,
-    marginTop: 2,
-  },
+  headerTextWrap: { flex: 1, minWidth: 0 },
+  closeBtn: { padding: 8, marginRight: 2 },
+  title: { color: "#111827", fontSize: 20, fontWeight: "800" },
+  subtitle: { color: "#6b7280", fontSize: 13, marginTop: 2 },
   error: {
     color: "#b91c1c",
     backgroundColor: "#fee2e2",
@@ -1237,34 +1058,27 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 8,
   },
-  sectionTitle: {
-    color: "#111827",
-    fontSize: 15,
-    fontWeight: "700",
+  sectionTitle: { color: "#111827", fontSize: 15, fontWeight: "700" },
+  sectionHint: { color: "#6b7280", fontSize: 12 },
+  infoBanner: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#dbeafe",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  sectionHint: {
-    color: "#6b7280",
-    fontSize: 12,
-  },
-  inlineInputsRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  fieldWrap: {
-    flex: 1,
-    gap: 5,
-  },
-  countWrap: {
-    maxWidth: 90,
-  },
-  horizonWrap: {
-    flex: 1.3,
-  },
-  fieldLabel: {
-    color: "#374151",
+  infoBannerText: {
+    color: "#1e40af",
     fontSize: 12,
     fontWeight: "600",
+    lineHeight: 17,
   },
+  inlineInputsRow: { flexDirection: "row", gap: 8 },
+  fieldWrap: { flex: 1, gap: 5 },
+  countWrap: { maxWidth: 90 },
+  horizonWrap: { flex: 1.3 },
+  fieldLabel: { color: "#374151", fontSize: 12, fontWeight: "600" },
   input: {
     borderWidth: 1,
     borderColor: "#d1d5db",
@@ -1274,15 +1088,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     color: "#111827",
   },
-  inputDisabled: {
-    backgroundColor: "#eef2f7",
-    color: "#64748b",
-  },
-  rowWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
+  inputDisabled: { backgroundColor: "#eef2f7", color: "#64748b" },
+  rowWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   token: {
     borderRadius: 999,
     borderWidth: 1,
@@ -1291,35 +1098,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  tokenActive: {
-    borderColor: "#1d4ed8",
-    backgroundColor: "#dbeafe",
-  },
-  tokenText: {
-    color: "#374151",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  tokenTextActive: {
-    color: "#1d4ed8",
-  },
-  tokenTextMuted: {
-    textDecorationLine: "line-through",
-  },
+  tokenActive: { borderColor: "#1d4ed8", backgroundColor: "#dbeafe" },
+  tokenText: { color: "#374151", fontSize: 12, fontWeight: "600" },
+  tokenTextActive: { color: "#1d4ed8" },
+  tokenTextMuted: { textDecorationLine: "line-through" },
   requirementHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
   },
-  linkBtn: {
-    paddingVertical: 4,
-  },
-  linkBtnText: {
-    color: "#2563eb",
-    fontSize: 12,
-    fontWeight: "700",
-  },
+  linkBtn: { paddingVertical: 4 },
+  linkBtnText: { color: "#2563eb", fontSize: 12, fontWeight: "700" },
   smallBtn: {
     borderRadius: 8,
     borderWidth: 1,
@@ -1332,14 +1122,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
   },
-  smallBtnText: {
-    color: "#111827",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  stack: {
-    gap: 10,
-  },
+  smallBtnText: { color: "#111827", fontSize: 13, fontWeight: "700" },
+  stack: { gap: 10 },
   requirementCard: {
     borderRadius: 10,
     borderWidth: 1,
@@ -1353,26 +1137,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  requirementTitle: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  infoBanner: {
-    color: "#1e40af",
-    backgroundColor: "#dbeafe",
-    borderColor: "#bfdbfe",
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  previewWrap: {
-    gap: 8,
-    maxHeight: 300,
-  },
+  requirementTitle: { color: "#111827", fontSize: 14, fontWeight: "700" },
+  previewWrap: { gap: 8 },
   previewDayCard: {
     borderRadius: 8,
     borderWidth: 1,
@@ -1381,56 +1147,26 @@ const styles = StyleSheet.create({
     padding: 8,
     gap: 6,
   },
-  previewDayLabel: {
-    color: "#111827",
-    fontSize: 12,
-    fontWeight: "700",
-  },
+  previewDayLabel: { color: "#111827", fontSize: 12, fontWeight: "700" },
   previewRow: {
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
     paddingTop: 6,
     gap: 2,
   },
-  previewRole: {
-    color: "#1f2937",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  previewMeta: {
-    color: "#64748b",
-    fontSize: 11,
-  },
-  previewCount: {
-    color: "#0f172a",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  notesInput: {
-    minHeight: 68,
-    textAlignVertical: "top",
-  },
-  actionRow: {
-    gap: 8,
-  },
+  previewRole: { color: "#1f2937", fontSize: 12, fontWeight: "700" },
+  previewMeta: { color: "#64748b", fontSize: 11 },
+  previewCount: { color: "#0f172a", fontSize: 12, fontWeight: "700" },
+  notesInput: { minHeight: 68, textAlignVertical: "top" },
+  actionRow: { gap: 8 },
   actionBtn: {
     borderRadius: 8,
     minHeight: 42,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtn: {
-    backgroundColor: "#2563eb",
-  },
-  darkBtn: {
-    backgroundColor: "#111827",
-  },
-  primaryBtnText: {
-    color: "#ffffff",
-    fontWeight: "700",
-  },
-  darkBtnText: {
-    color: "#ffffff",
-    fontWeight: "700",
-  },
+  primaryBtn: { backgroundColor: "#2563eb" },
+  darkBtn: { backgroundColor: "#111827" },
+  primaryBtnText: { color: "#ffffff", fontWeight: "700" },
+  darkBtnText: { color: "#ffffff", fontWeight: "700" },
 });

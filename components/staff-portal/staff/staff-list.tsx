@@ -15,10 +15,12 @@ import {
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
 import {
+  getCertificationTagDisplayName,
   getRoleColor,
   getRoleDisplayName,
   getRoleOptionsFromFacilityPreferences,
   getRolesForIndustry,
+  getUnitAreaDisplayName,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -172,13 +174,20 @@ export default function StaffListPage() {
     ];
   }, [facilityPreferences, staff, tenant?.industry]);
 
-  const formatStringArray = (values: unknown) => {
+  const formatStringArray = (
+    values: unknown,
+    formatter?: (v: unknown) => string,
+  ) => {
     if (!Array.isArray(values)) {
       return "-";
     }
 
     const normalized = values
-      .map((value) => String(value || "").trim())
+      .map((value) => {
+        const str = String(value || "").trim();
+        if (!str) return "";
+        return formatter ? formatter(str) : str;
+      })
       .filter(Boolean);
 
     return normalized.length ? normalized.join(", ") : "-";
@@ -312,10 +321,18 @@ export default function StaffListPage() {
                         {getPhoneText(member)}
                       </Text>
                       <Text style={styles.staffMeta}>
-                        Areas: {formatStringArray(member.allowedAreas)}
+                        Areas:{" "}
+                        {formatStringArray(
+                          member.allowedAreas,
+                          getUnitAreaDisplayName,
+                        )}
                       </Text>
                       <Text style={styles.staffMeta}>
-                        Certs: {formatStringArray(member.certificationTags)}
+                        Certs:{" "}
+                        {formatStringArray(
+                          member.certificationTags,
+                          getCertificationTagDisplayName,
+                        )}
                       </Text>
                     </View>
                   </View>

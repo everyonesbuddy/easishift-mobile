@@ -12,7 +12,12 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
-import { getRoleDisplayName } from "@/constants/industry-roles";
+import {
+  getRoleColor,
+  getRoleDisplayName,
+  getUnitAreaDisplayName,
+  isRoleCompatible,
+} from "@/constants/industry-roles";
 
 type Props = {
   isAdmin: boolean;
@@ -43,6 +48,7 @@ type Coverage = {
   endTime?: string | Date;
   role?: string;
   requiredCount?: number;
+  unitArea?: string;
 };
 
 function pad2(n: number) {
@@ -128,35 +134,10 @@ function formatTime(value: string | Date) {
     .replace(/\s/g, "");
 }
 
-function getRoleColor(role?: string) {
-  switch (role) {
-    case "doctor":
-      return "#1e88e5";
-    case "nurse":
-      return "#66bb6a";
-    case "rn":
-      return "#26a69a";
-    case "lpn":
-      return "#ffb74d";
-    case "cna":
-      return "#ffa726";
-    case "med_aide":
-      return "#ab47bc";
-    case "caregiver":
-      return "#43a047";
-    case "activity_aide":
-      return "#26c6da";
-    case "dietary_aide":
-      return "#fdd835";
-    case "housekeeper":
-      return "#78909c";
-    case "receptionist":
-      return "#ffb74d";
-    case "billing":
-      return "#ab47bc";
-    default:
-      return "#90a4ae";
-  }
+function normalizeText(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function splitShiftByDay(
@@ -286,6 +267,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         endTime: part.end as Date,
         role: c.role,
         requiredCount: c.requiredCount ?? 0,
+        unitArea: c.unitArea,
       }));
     });
   }, [coverage]);
@@ -316,13 +298,25 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   }, [schedules]);
 
   const rolesWithCoverage = useMemo(() => {
-    const setRoles = new Set(
+    const allRoles = Array.from(
+      new Set([
+        ...coverageNormalized.map((item) => item.role),
+        ...schedulesNormalized.map((item) => item.staffRole || item.role),
+      ]),
+    ).filter((r): r is string => typeof r === "string" && Boolean(r));
+
+    const setCoverageRoles = new Set(
       coverageNormalized
-        .map((item) => item.role)
-        .filter((role): role is string => typeof role === "string"),
+        .map((c) => c.role)
+        .filter((r): r is string => typeof r === "string"),
     );
-    return Array.from(setRoles.values());
-  }, [coverageNormalized]);
+
+    return allRoles.filter((r) =>
+      Array.from(setCoverageRoles).some((coverageRole) =>
+        isRoleCompatible(r, coverageRole),
+      ),
+    );
+  }, [coverageNormalized, schedulesNormalized]);
 
   const consolidatedCoverageWithStaffing = useMemo(() => {
     if (!isAdmin) {
@@ -344,13 +338,14 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         : coverageEndDate || coverageStartDate;
 
     return coverageNormalized
-      .filter(
-        (cov) =>
-          (selectedCoverageRole === "all" ||
-            cov.role === selectedCoverageRole) &&
-          (startKey ? cov.dayKey >= startKey : true) &&
-          (endKey ? cov.dayKey <= endKey : true),
-      )
+      .filter((cov) => {
+        const inRole =
+          selectedCoverageRole === "all" ||
+          isRoleCompatible(cov.role, selectedCoverageRole);
+        const inStartRange = startKey ? cov.dayKey >= startKey : true;
+        const inEndRange = endKey ? cov.dayKey <= endKey : true;
+        return inRole && inStartRange && inEndRange;
+      })
       .sort((a, b) =>
         a.dayKey === b.dayKey
           ? a.startTime.getTime() - b.startTime.getTime()
@@ -359,11 +354,19 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
       .map((cov, idx) => {
         const assignedCount = schedulesNormalized.filter((s) => {
           const scheduleRole = s.staffRole || s.role;
+          const coverageEndMs = cov.endTime.getTime();
+          const hasCoverageUnitArea = Boolean(cov.unitArea);
+          const unitAreaMatches = hasCoverageUnitArea
+            ? normalizeText((s as Record<string, unknown>).unitArea) ===
+              normalizeText(cov.unitArea)
+            : true;
           return (
             s.dayKey === cov.dayKey &&
             s.start.getTime() === cov.startTime.getTime() &&
+            s.end.getTime() === coverageEndMs &&
             s.status !== "call_out" &&
-            scheduleRole === cov.role
+            unitAreaMatches &&
+            isRoleCompatible(scheduleRole, cov.role)
           );
         }).length;
 
@@ -373,13 +376,13 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           cov.dayKey,
           cov.startTime.getTime(),
           cov.endTime.getTime(),
-          cov.role || "role",
           idx,
         ].join("-");
 
         return {
           id: rowKey,
           role: cov.role,
+          unitArea: cov.unitArea || "",
           dayKey: cov.dayKey,
           shiftStart: cov.startTime,
           shiftEnd: cov.endTime,
@@ -479,7 +482,8 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
     if (!isAdmin) return [];
     return weeklyOvertimeData.filter(
       (row) =>
-        selectedOvertimeRole === "all" || row.role === selectedOvertimeRole,
+        selectedOvertimeRole === "all" ||
+        isRoleCompatible(row.role, selectedOvertimeRole),
     );
   }, [isAdmin, weeklyOvertimeData, selectedOvertimeRole]);
 
@@ -683,6 +687,11 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
                             {formatTime(slot.shiftStart)} –{" "}
                             {formatTime(slot.shiftEnd)}
                           </Text>
+                          {slot.unitArea ? (
+                            <Text style={styles.infoMuted}>
+                              Unit Area: {getUnitAreaDisplayName(slot.unitArea)}
+                            </Text>
+                          ) : null}
                         </View>
                         <View
                           style={[

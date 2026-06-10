@@ -17,9 +17,13 @@ import CoverageEditCountForm from "@/components/staff-portal/coverage/coverage-e
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
 import {
+  getCertificationTagDisplayName,
+  getRoleColor,
   getRoleDisplayName,
-  getRoleOptionsForIndustry,
   getRoleOptionsFromFacilityPreferences,
+  getShiftTagDisplayName,
+  getShiftTypeDisplayName,
+  getUnitAreaDisplayName,
   isRoleCompatible,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
@@ -179,8 +183,8 @@ function formatRequiredCertTags(coverage: CoverageItem) {
   }
 
   const tags = coverage.requiredCertificationTags
-    .map((tag) => String(tag || "").trim())
-    .filter(Boolean);
+    .map((tag) => getCertificationTagDisplayName(tag))
+    .filter((tag) => tag !== "-");
 
   return tags.length ? tags.join(", ") : "-";
 }
@@ -196,7 +200,7 @@ function getCoverageStatusColor(item: CoverageItem) {
 }
 
 export default function CoveragePlanningPage() {
-  const { user, isAdmin, tenant } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
   const [facilityPreferences, setFacilityPreferences] =
@@ -211,6 +215,10 @@ export default function CoveragePlanningPage() {
   const [editingCoverage, setEditingCoverage] = useState<CoverageItem | null>(
     null,
   );
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedCoverage, setSelectedCoverage] = useState<CoverageItem | null>(
+    null,
+  );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
@@ -221,17 +229,10 @@ export default function CoveragePlanningPage() {
   const [error, setError] = useState("");
 
   const roleOptions = useMemo(() => {
-    const facilityOptions =
-      getRoleOptionsFromFacilityPreferences(facilityPreferences);
-
-    if (facilityOptions.length) {
-      return facilityOptions.map((item) => item.value);
-    }
-
-    return getRoleOptionsForIndustry(
-      typeof tenant?.industry === "string" ? tenant.industry : undefined,
-    ).map((item) => item.value);
-  }, [facilityPreferences, tenant]);
+    return getRoleOptionsFromFacilityPreferences(facilityPreferences).map(
+      (item) => item.value,
+    );
+  }, [facilityPreferences]);
 
   const filterRoleOptions = useMemo(() => {
     const existingRoles = coverages
@@ -300,6 +301,20 @@ export default function CoveragePlanningPage() {
     }
 
     setEditingCoverage(coverage);
+  };
+
+  const openDetails = (coverage: CoverageItem) => {
+    if (!coverage) {
+      return;
+    }
+
+    setSelectedCoverage(coverage);
+    setDetailsOpen(true);
+  };
+
+  const closeDetails = () => {
+    setDetailsOpen(false);
+    setSelectedCoverage(null);
   };
 
   const confirmDelete = async () => {
@@ -435,6 +450,15 @@ export default function CoveragePlanningPage() {
     1,
     Math.ceil(displayedCoverages.length / rowsPerPage),
   );
+
+  const getRoleChipStyles = (role?: string) => {
+    const roleColor = getRoleColor(role);
+    return {
+      backgroundColor: `${roleColor}22`,
+      borderColor: `${roleColor}55`,
+      borderWidth: 1,
+    };
+  };
 
   return (
     <SafeAreaView style={styles.page}>
@@ -605,13 +629,13 @@ export default function CoveragePlanningPage() {
                         {formatCoverageTimeLabel(c)}
                       </Text>
                       <Text style={styles.rowMeta}>
-                        Unit Area: {c.unitArea || "-"}
+                        Unit Area: {getUnitAreaDisplayName(c.unitArea)}
                       </Text>
                       <Text style={styles.rowMeta}>
-                        Shift Type: {c.shiftType || "-"}
+                        Shift Type: {getShiftTypeDisplayName(c.shiftType)}
                       </Text>
                       <Text style={styles.rowMeta}>
-                        Shift Slot: {c.shiftTag || "-"}
+                        Shift Slot: {getShiftTagDisplayName(c.shiftTag)}
                       </Text>
                       <Text style={styles.rowMeta}>
                         Cert Tags: {formatRequiredCertTags(c)}
@@ -642,6 +666,13 @@ export default function CoveragePlanningPage() {
 
                   {isAdmin ? (
                     <View style={styles.rowActions}>
+                      <Pressable
+                        style={styles.viewBtn}
+                        onPress={() => openDetails(c)}
+                      >
+                        <Feather name="eye" size={13} color="#fff" />
+                        <Text style={styles.viewBtnText}>View</Text>
+                      </Pressable>
                       <Pressable
                         style={styles.editBtn}
                         onPress={() => openEdit(c)}
@@ -719,11 +750,7 @@ export default function CoveragePlanningPage() {
                       <Pressable
                         key={item._id || `${item.role}-${item.startTime}`}
                         style={styles.calendarItem}
-                        onPress={() => {
-                          if (isAdmin) {
-                            openEdit(item);
-                          }
-                        }}
+                        onPress={() => openDetails(item)}
                       >
                         <View
                           style={[
@@ -735,8 +762,12 @@ export default function CoveragePlanningPage() {
                           <Text style={styles.calendarTitle}>
                             {getRoleDisplayName(item.role)} (
                             {Number(item.requiredCount) || 0})
-                            {item.unitArea ? ` • ${item.unitArea}` : ""}
-                            {item.shiftType ? ` • ${item.shiftType}` : ""}
+                            {item.unitArea
+                              ? ` • ${getUnitAreaDisplayName(item.unitArea)}`
+                              : ""}
+                            {item.shiftType
+                              ? ` • ${getShiftTypeDisplayName(item.shiftType)}`
+                              : ""}
                           </Text>
                           <Text style={styles.calendarMeta}>
                             {start?.toLocaleTimeString([], {
@@ -759,6 +790,129 @@ export default function CoveragePlanningPage() {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={detailsOpen}
+        animationType="slide"
+        onRequestClose={closeDetails}
+      >
+        <View style={styles.modalPage}>
+          <ScrollView contentContainerStyle={styles.detailCard}>
+            {selectedCoverage ? (
+              <>
+                <View style={styles.detailHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.detailTitle}>Coverage Details</Text>
+                    <Text style={styles.detailSubtitle}>
+                      {getRoleDisplayName(selectedCoverage.role)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={closeDetails}
+                    style={styles.closeDetailBtn}
+                  >
+                    <Feather name="x" size={18} color="#6b7280" />
+                  </Pressable>
+                </View>
+
+                <View
+                  style={[
+                    styles.detailRolePill,
+                    getRoleChipStyles(selectedCoverage.role),
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.detailRoleText,
+                      { color: getRoleColor(selectedCoverage.role) },
+                    ]}
+                  >
+                    {getRoleDisplayName(selectedCoverage.role)}
+                  </Text>
+                </View>
+
+                <View style={styles.detailGrid}>
+                  <DetailRow
+                    label="Date"
+                    value={formatCoverageDateLabel(selectedCoverage)}
+                  />
+                  <DetailRow
+                    label="Time"
+                    value={formatCoverageTimeLabel(selectedCoverage)}
+                  />
+                  <DetailRow
+                    label="Required Staff"
+                    value={String(selectedCoverage.requiredCount ?? "-")}
+                  />
+                  <DetailRow
+                    label="Remaining"
+                    value={String(selectedCoverage.remaining ?? "-")}
+                  />
+                  <DetailRow
+                    label="Unit Area"
+                    value={
+                      getUnitAreaDisplayName(selectedCoverage.unitArea) || "-"
+                    }
+                  />
+                  <DetailRow
+                    label="Shift Type"
+                    value={
+                      getShiftTypeDisplayName(selectedCoverage.shiftType) || "-"
+                    }
+                  />
+                  <DetailRow
+                    label="Shift Slot"
+                    value={
+                      getShiftTagDisplayName(selectedCoverage.shiftTag) || "-"
+                    }
+                  />
+                </View>
+
+                <DetailRow
+                  label="Required Certification Tags"
+                  value={formatRequiredCertTags(selectedCoverage)}
+                />
+
+                <View>
+                  <Text style={styles.detailLabel}>Notes</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedCoverage.note || "-"}
+                  </Text>
+                </View>
+
+                {spansOvernight(selectedCoverage) ? (
+                  <Text style={styles.overnightText}>Overnight shift</Text>
+                ) : null}
+
+                {isAdmin ? (
+                  <View style={styles.detailActionRow}>
+                    <Pressable
+                      style={styles.editBtn}
+                      onPress={() => {
+                        closeDetails();
+                        openEdit(selectedCoverage);
+                      }}
+                    >
+                      <Feather name="edit-2" size={13} color="#fff" />
+                      <Text style={styles.editBtnText}>Edit</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.deleteBtn}
+                      onPress={() => {
+                        closeDetails();
+                        askDelete(selectedCoverage._id);
+                      }}
+                    >
+                      <Feather name="trash-2" size={13} color="#fff" />
+                      <Text style={styles.deleteBtnText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+          </ScrollView>
+        </View>
+      </Modal>
 
       <Modal
         visible={openAdd}
@@ -841,6 +995,15 @@ function RoleFilterChip({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailItem}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value || "-"}</Text>
+    </View>
   );
 }
 
@@ -1064,6 +1227,20 @@ const styles = StyleSheet.create({
     color: "#4b5563",
     fontSize: 12,
   },
+  viewBtn: {
+    borderRadius: 7,
+    backgroundColor: "#475569",
+    minHeight: 30,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  viewBtnText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   rowActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -1178,5 +1355,68 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     padding: 12,
     paddingTop: 40,
+  },
+  detailCard: {
+    gap: 12,
+    paddingBottom: 24,
+  },
+  detailHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  detailTitle: {
+    color: "#111827",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  detailSubtitle: {
+    color: "#6b7280",
+    fontSize: 13,
+    marginTop: 2,
+  },
+  closeDetailBtn: {
+    padding: 8,
+  },
+  detailRolePill: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  detailRoleText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  detailGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  detailItem: {
+    minWidth: "48%",
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: "#f8fafc",
+    gap: 4,
+  },
+  detailLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  detailActionRow: {
+    flexDirection: "row",
+    gap: 8,
   },
 });

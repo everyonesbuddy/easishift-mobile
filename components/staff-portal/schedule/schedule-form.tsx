@@ -14,6 +14,9 @@ import {
 import api from "@/config/api";
 import {
   getRoleDisplayName,
+  getShiftTagDisplayName,
+  getShiftTypeDisplayName,
+  getUnitAreaDisplayName,
   isRoleCompatible,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
@@ -44,6 +47,10 @@ type FormData = {
   timezone: string;
 };
 
+type CoverageOption = CoverageItem & {
+  spotsRemaining: number;
+};
+
 function toLocalInputValue(dateString?: string) {
   if (!dateString) return "";
   const date = new Date(dateString);
@@ -68,6 +75,88 @@ function normalizeStringArray(values: unknown) {
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeTag(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function toNormalizedSet(values: unknown) {
+  return new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => normalizeTag(value))
+      .filter(Boolean),
+  );
+}
+
+function doesCoverageMatchStaffTags(staff: StaffUser, coverage: CoverageItem) {
+  const allowedAreas = toNormalizedSet(staff?.allowedAreas);
+  const allowedShiftTypes = toNormalizedSet(staff?.allowedShiftTypes);
+  const certificationTags = toNormalizedSet(staff?.certificationTags);
+
+  const hasTagRestrictions =
+    allowedAreas.size > 0 ||
+    allowedShiftTypes.size > 0 ||
+    certificationTags.size > 0;
+
+  if (!hasTagRestrictions) {
+    return true;
+  }
+
+  if (allowedAreas.size > 0) {
+    const coverageArea = normalizeTag(coverage?.unitArea);
+    if (!coverageArea || !allowedAreas.has(coverageArea)) {
+      return false;
+    }
+  }
+
+  if (allowedShiftTypes.size > 0) {
+    const coverageShiftType = normalizeTag(coverage?.shiftType);
+    const coverageShiftTag = normalizeTag(coverage?.shiftTag);
+
+    if (!coverageShiftType) {
+      return false;
+    }
+
+    const exactShiftSlot = coverageShiftTag
+      ? `${coverageShiftType}:${coverageShiftTag}`
+      : "";
+
+    const matchesByType = Array.from(allowedShiftTypes).some((allowed) =>
+      allowed.startsWith(`${coverageShiftType}:`),
+    );
+
+    const isShiftMatch =
+      (exactShiftSlot && allowedShiftTypes.has(exactShiftSlot)) ||
+      allowedShiftTypes.has(coverageShiftType) ||
+      (!coverageShiftTag && matchesByType);
+
+    if (!isShiftMatch) {
+      return false;
+    }
+  }
+
+  if (certificationTags.size > 0) {
+    const coverageCertTags = (
+      Array.isArray(coverage?.requiredCertificationTags)
+        ? coverage.requiredCertificationTags
+        : []
+    )
+      .map((tag) => normalizeTag(tag))
+      .filter(Boolean);
+
+    const hasRequiredCerts = coverageCertTags.every((tag) =>
+      certificationTags.has(tag),
+    );
+
+    if (!hasRequiredCerts) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function formatCertificationTags(value: unknown) {
@@ -101,7 +190,7 @@ function formatShiftLabel(coverage: CoverageItem) {
         minute: "2-digit",
       });
 
-  return `${dateLabel} - ${startLabel} to ${endLabel}`;
+  return `${dateLabel} - ${startLabel} - ${endLabel}`;
 }
 
 function SelectModal({
@@ -201,7 +290,7 @@ export default function ScheduleForm({
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
-  const [coverageOptions, setCoverageOptions] = useState<CoverageItem[]>([]);
+  const [coverageOptions, setCoverageOptions] = useState<CoverageOption[]>([]);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [staffSelectOpen, setStaffSelectOpen] = useState(false);
@@ -310,7 +399,8 @@ export default function ScheduleForm({
           return (
             !Number.isNaN(start.getTime()) &&
             start > now &&
-            isRoleCompatible(selectedStaff.role, item.role)
+            isRoleCompatible(selectedStaff.role, item.role) &&
+            doesCoverageMatchStaffTags(selectedStaff, item)
           );
         })
         .map((item) => {
@@ -325,10 +415,10 @@ export default function ScheduleForm({
 
           return {
             ...item,
-            remaining: spotsRemaining,
+            spotsRemaining,
           };
         })
-        .filter((item) => Number(item.remaining) > 0);
+        .filter((item) => item.spotsRemaining > 0);
 
       setCoverageOptions(valid);
     } catch (error) {
@@ -366,7 +456,7 @@ export default function ScheduleForm({
       return "Select shift";
     }
 
-    return `${getRoleDisplayName(selected.role)} | ${formatShiftLabel(selected)}${selected.unitArea ? ` | ${selected.unitArea}` : ""}${selected.shiftType ? ` | ${selected.shiftType}` : ""}${selected.shiftTag ? ` | ${selected.shiftTag}` : ""}`;
+    return `${getRoleDisplayName(selected.role)} | ${formatShiftLabel(selected)}${selected.unitArea ? ` | ${getUnitAreaDisplayName(selected.unitArea)}` : ""}${selected.shiftType ? ` | ${getShiftTypeDisplayName(selected.shiftType)}` : ""}${selected.shiftTag ? ` | ${getShiftTagDisplayName(selected.shiftTag)}` : ""}`;
   }, [coverageOptions, formData.coverageId]);
 
   const statusButtons: FormData["status"][] = isAdmin
@@ -666,8 +756,8 @@ export default function ScheduleForm({
         }}
         options={coverageOptions.map((coverage) => ({
           value: coverage._id || "",
-          label: `${getRoleDisplayName(coverage.role)} | ${formatShiftLabel(coverage)}${coverage.unitArea ? ` | ${coverage.unitArea}` : ""}${coverage.shiftType ? ` | ${coverage.shiftType}` : ""}${coverage.shiftTag ? ` | ${coverage.shiftTag}` : ""} (${coverage.remaining ?? 0} spots left)`,
-          disabled: (coverage.remaining ?? 0) === 0,
+          label: `${getRoleDisplayName(coverage.role)} | ${formatShiftLabel(coverage)}${coverage.unitArea ? ` | ${getUnitAreaDisplayName(coverage.unitArea)}` : ""}${coverage.shiftType ? ` | ${getShiftTypeDisplayName(coverage.shiftType)}` : ""}${coverage.shiftTag ? ` | ${getShiftTagDisplayName(coverage.shiftTag)}` : ""} (${coverage.spotsRemaining} spots left${coverage.spotsRemaining <= 0 ? " | Full" : ""})`,
+          disabled: coverage.spotsRemaining <= 0,
         }))}
       />
     </ScrollView>

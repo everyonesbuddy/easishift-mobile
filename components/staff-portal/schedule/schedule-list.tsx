@@ -15,10 +15,14 @@ import ConfirmDialog from "@/components/shared/confirm-dialog";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
 import {
+  getCertificationTagDisplayName,
   getRoleColor,
   getRoleDisplayName,
   getRoleOptionsFromFacilityPreferences,
   getRolesForIndustry,
+  getShiftTagDisplayName,
+  getShiftTypeDisplayName,
+  getUnitAreaDisplayName,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -116,10 +120,37 @@ function formatCertificationTags(schedule: ScheduleItem) {
   }
 
   const tags = schedule.certificationTags
-    .map((tag) => String(tag || "").trim())
-    .filter(Boolean);
+    .map((tag) => getCertificationTagDisplayName(tag))
+    .filter((tag) => tag !== "-");
 
   return tags.length ? tags.join(", ") : "-";
+}
+
+function formatScheduleDateRange(schedule: ScheduleItem) {
+  const start = new Date(schedule?.startTime || "");
+  const end = new Date(schedule?.endTime || "");
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "-";
+  }
+
+  const startLabel = start.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  if (!isOvernightShift(schedule)) {
+    return startLabel;
+  }
+
+  const endLabel = end.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${startLabel} - ${endLabel}`;
 }
 
 function parseLocalDateKey(dateKey: string) {
@@ -153,6 +184,10 @@ export default function ScheduleListPage() {
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSchedule, setSwapSchedule] = useState<ScheduleItem | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleItem | null>(
+    null,
+  );
 
   const [facilityPreferences, setFacilityPreferences] = useState<{
     roleFamilies?: unknown[];
@@ -235,6 +270,16 @@ export default function ScheduleListPage() {
   const openEdit = (schedule: ScheduleItem) => {
     setEditingSchedule(schedule);
     setOpen(true);
+  };
+
+  const openDetails = (schedule: ScheduleItem) => {
+    setSelectedSchedule(schedule);
+    setDetailsOpen(true);
+  };
+
+  const closeDetails = () => {
+    setDetailsOpen(false);
+    setSelectedSchedule(null);
   };
 
   const openCreate = () => {
@@ -840,11 +885,13 @@ export default function ScheduleListPage() {
                               Ends: {formatLocal(schedule.endTime)}
                             </Text>
                             <Text style={styles.staffMeta}>
-                              Unit Area: {schedule.unitArea || "-"}
+                              Unit Area:{" "}
+                              {getUnitAreaDisplayName(schedule.unitArea)}
                             </Text>
                             <Text style={styles.staffMeta}>
-                              Shift: {schedule.shiftType || "-"} |{" "}
-                              {schedule.shiftTag || "-"}
+                              Shift:{" "}
+                              {getShiftTypeDisplayName(schedule.shiftType)} |{" "}
+                              {getShiftTagDisplayName(schedule.shiftTag)}
                             </Text>
                             <Text style={styles.staffMeta}>
                               Cert Tags: {formatCertificationTags(schedule)}
@@ -882,6 +929,14 @@ export default function ScheduleListPage() {
                       </Text>
 
                       <View style={styles.cardActions}>
+                        <Pressable
+                          style={[styles.cardBtn, styles.viewBtn]}
+                          onPress={() => openDetails(schedule)}
+                        >
+                          <Feather name="eye" size={13} color="#374151" />
+                          <Text style={styles.viewText}>View</Text>
+                        </Pressable>
+
                         {canManageSchedule(schedule) ? (
                           <Pressable
                             style={[styles.cardBtn, styles.editBtn]}
@@ -1082,11 +1137,7 @@ export default function ScheduleListPage() {
                   <Pressable
                     key={entry._id}
                     style={styles.dayEntry}
-                    onPress={() => {
-                      if (canManageSchedule(entry)) {
-                        openEdit(entry);
-                      }
-                    }}
+                    onPress={() => openDetails(entry)}
                   >
                     <View style={styles.dayEntryTop}>
                       <Text style={styles.dayEntryStaff}>
@@ -1118,6 +1169,142 @@ export default function ScheduleListPage() {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={detailsOpen}
+        animationType="slide"
+        onRequestClose={closeDetails}
+      >
+        <SafeAreaView style={styles.modalPage}>
+          {selectedSchedule ? (
+            <ScrollView contentContainerStyle={styles.detailsScroll}>
+              <View style={styles.detailsCard}>
+                <View style={styles.detailsHeader}>
+                  <View style={styles.detailsHeaderText}>
+                    <Text style={styles.detailsTitle}>Schedule Details</Text>
+                    <Text style={styles.detailsSubtitle}>
+                      Review shift details before editing or swapping.
+                    </Text>
+                  </View>
+                  <Pressable style={styles.closeAction} onPress={closeDetails}>
+                    <Feather name="x" size={20} color="#6b7280" />
+                  </Pressable>
+                </View>
+
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Staff</Text>
+                  <Text style={styles.detailValue}>
+                    {extractStaffName(selectedSchedule)}
+                  </Text>
+                </View>
+
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Role</Text>
+                  <Text style={styles.detailValue}>
+                    {getRoleDisplayName(selectedSchedule.role)}
+                  </Text>
+                </View>
+
+                <View style={styles.detailGrid}>
+                  <View style={styles.detailGroup}>
+                    <Text style={styles.detailLabel}>Date</Text>
+                    <Text style={styles.detailValue}>
+                      {formatScheduleDateRange(selectedSchedule)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailGroup}>
+                    <Text style={styles.detailLabel}>Time</Text>
+                    <Text style={styles.detailValue}>
+                      {formatScheduleTimeRange(selectedSchedule)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailGroup}>
+                    <Text style={styles.detailLabel}>Unit Area</Text>
+                    <Text style={styles.detailValue}>
+                      {getUnitAreaDisplayName(selectedSchedule.unitArea) || "-"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailGroup}>
+                    <Text style={styles.detailLabel}>Shift Type</Text>
+                    <Text style={styles.detailValue}>
+                      {getShiftTypeDisplayName(selectedSchedule.shiftType) ||
+                        "-"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailGroup}>
+                    <Text style={styles.detailLabel}>Shift Slot</Text>
+                    <Text style={styles.detailValue}>
+                      {getShiftTagDisplayName(selectedSchedule.shiftTag) || "-"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailGroup}>
+                    <Text style={styles.detailLabel}>Status</Text>
+                    <Text style={styles.detailValue}>
+                      {(selectedSchedule.status || "scheduled")
+                        .replace("_", " ")
+                        .toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Certification Tags</Text>
+                  <Text style={styles.detailValue}>
+                    {formatCertificationTags(selectedSchedule)}
+                  </Text>
+                </View>
+
+                <View style={styles.detailGroup}>
+                  <Text style={styles.detailLabel}>Notes</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedSchedule.notes || "-"}
+                  </Text>
+                </View>
+
+                {isOvernightShift(selectedSchedule) ? (
+                  <Text style={styles.overnightText}>Overnight shift</Text>
+                ) : null}
+
+                <View style={styles.detailsActions}>
+                  {canManageSchedule(selectedSchedule) ? (
+                    <Pressable
+                      style={[styles.cardBtn, styles.editBtn]}
+                      onPress={() => {
+                        closeDetails();
+                        openEdit(selectedSchedule);
+                      }}
+                    >
+                      <Feather name="edit-2" size={13} color="#0c4a6e" />
+                      <Text style={styles.editText}>Edit Schedule</Text>
+                    </Pressable>
+                  ) : null}
+
+                  {!isAdmin &&
+                  canManageSchedule(selectedSchedule) &&
+                  selectedSchedule.status === "scheduled" ? (
+                    <Pressable
+                      style={[styles.cardBtn, styles.swapBtn]}
+                      onPress={() => {
+                        closeDetails();
+                        setSwapSchedule(selectedSchedule);
+                        setSwapModalOpen(true);
+                      }}
+                    >
+                      <Feather name="repeat" size={13} color="#ffffff" />
+                      <Text style={styles.swapText}>Swap Shift</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            </ScrollView>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
 
       <Modal
         visible={open}
@@ -1445,6 +1632,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  viewBtn: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+  },
+  viewText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   swapBtn: {
     backgroundColor: "#7c3aed",
   },
@@ -1625,5 +1822,73 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
     padding: 14,
     paddingTop: 28,
+  },
+  detailsScroll: {
+    paddingBottom: 20,
+  },
+  detailsCard: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    backgroundColor: "#ffffff",
+    padding: 14,
+    gap: 12,
+  },
+  detailsHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  detailsHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  closeAction: {
+    padding: 6,
+  },
+  detailsTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  detailsSubtitle: {
+    color: "#6b7280",
+    fontSize: 12,
+  },
+  detailGroup: {
+    gap: 3,
+  },
+  detailLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  detailValue: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
+  detailGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  detailsActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingTop: 4,
+  },
+  detailsActionBtn: {
+    minHeight: 34,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
 });

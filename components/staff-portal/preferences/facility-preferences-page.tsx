@@ -136,7 +136,7 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
       const timeSlots = Array.from(
         new Map(
           (Array.isArray(definition?.timeSlots) ? definition.timeSlots : [])
-            .map((slot) => {
+            .map((slot): [string, ShiftSlot] | null => {
               const tag = toSnakeCase(slot?.tag);
               const startLocalTime = String(slot?.startLocalTime || "").trim();
               const endLocalTime = String(slot?.endLocalTime || "").trim();
@@ -158,9 +158,9 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
                     endLocalTime <= startLocalTime,
                   ),
                 },
-              ] as const;
+              ];
             })
-            .filter(Boolean) as readonly [string, ShiftSlot][],
+            .filter((entry): entry is [string, ShiftSlot] => entry !== null),
         ).values(),
       );
 

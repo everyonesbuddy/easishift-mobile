@@ -4,6 +4,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -12,7 +13,6 @@ import {
 import api from "@/config/api";
 import {
   getRoleDisplayName,
-  getRoleOptionsForIndustry,
   getRoleOptionsFromFacilityPreferences,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
@@ -35,6 +35,9 @@ type FormState = {
   allowedShiftTags: string[];
   allowedShiftTypes: string[];
   certificationTags: string[];
+  preferredDaysOfWeek: number[];
+  emailNotificationsEnabled: boolean;
+  smsNotificationsEnabled: boolean;
   role: string;
 };
 
@@ -58,6 +61,8 @@ type FacilityPreferences = {
   shiftTypeDefinitions?: ShiftTypeDefinition[];
 };
 
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
 function validateEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -70,6 +75,16 @@ function normalizeStringArray(values: unknown) {
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeNumberArray(values: unknown) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6),
+    ),
+  ).sort((a, b) => a - b);
 }
 
 function normalizeToken(value: unknown) {
@@ -108,6 +123,29 @@ function buildTimeSlotLabel(slot: ShiftSlot) {
   return displayName;
 }
 
+function extractStaffIdFromResponse(data: unknown) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const payload = data as {
+    user?: { _id?: string; id?: string };
+    staff?: { _id?: string; id?: string };
+    _id?: string;
+    id?: string;
+  };
+
+  return (
+    payload.user?._id ||
+    payload.user?.id ||
+    payload.staff?._id ||
+    payload.staff?.id ||
+    payload._id ||
+    payload.id ||
+    null
+  );
+}
+
 export default function StaffCreateAndEditForm({
   staff,
   onSuccess,
@@ -128,6 +166,9 @@ export default function StaffCreateAndEditForm({
     allowedShiftTags: [],
     allowedShiftTypes: [],
     certificationTags: [],
+    preferredDaysOfWeek: [],
+    emailNotificationsEnabled: true,
+    smsNotificationsEnabled: true,
     role: "",
   });
   const [emailError, setEmailError] = useState("");
@@ -175,13 +216,7 @@ export default function StaffCreateAndEditForm({
     [facilityPreferences],
   );
 
-  const roleOptions = useMemo(() => {
-    if (facilityRoleOptions.length > 0) {
-      return facilityRoleOptions;
-    }
-
-    return getRoleOptionsForIndustry(tenant?.industry);
-  }, [facilityRoleOptions, tenant?.industry]);
+  const roleOptions = useMemo(() => facilityRoleOptions, [facilityRoleOptions]);
 
   const selectableRoleOptions = useMemo(() => {
     const options = canAssignAdminRole
@@ -331,11 +366,67 @@ export default function StaffCreateAndEditForm({
 
   const isEditingSelf = Boolean(staff && staff._id === user?._id);
   const disableRoleChange = isEditingSelf && loggedInRole === "admin";
+  const hasTagRestrictions =
+    form.allowedAreas.length > 0 ||
+    form.allowedShiftTags.length > 0 ||
+    form.certificationTags.length > 0;
+
+  const fetchStaffPreferences = async (staffId?: string) => {
+    if (!staffId) {
+      return;
+    }
+
+    try {
+      const res = await api.get(`/preferences/${staffId}`);
+      const data = res.data || {};
+
+      setForm((prev) => ({
+        ...prev,
+        preferredDaysOfWeek: normalizeNumberArray(
+          (data as { preferredDaysOfWeek?: unknown[] }).preferredDaysOfWeek,
+        ),
+        emailNotificationsEnabled:
+          (data as { emailNotificationsEnabled?: boolean })
+            .emailNotificationsEnabled ?? true,
+        smsNotificationsEnabled:
+          (data as { smsNotificationsEnabled?: boolean })
+            .smsNotificationsEnabled ?? true,
+      }));
+    } catch (requestError) {
+      console.warn("Failed to fetch staff preferences", requestError);
+    }
+  };
+
+  const saveStaffPreferences = async (
+    staffId: string | undefined,
+    preferencesPayload: {
+      preferredDaysOfWeek: number[];
+      emailNotificationsEnabled: boolean;
+      smsNotificationsEnabled: boolean;
+    },
+  ) => {
+    if (!staffId) {
+      return;
+    }
+
+    await api.post(`/preferences/${staffId}`, preferencesPayload);
+  };
 
   useEffect(() => {
     if (!staff) {
       return;
     }
+
+    const savedShiftTags = normalizeStringArray(staff.allowedShiftTags);
+    const derivedShiftTags =
+      savedShiftTags.length > 0
+        ? savedShiftTags
+        : normalizeStringArray(staff.allowedShiftTypes)
+            .map((value) => {
+              const colonIndex = value.indexOf(":");
+              return colonIndex !== -1 ? value.slice(colonIndex + 1) : value;
+            })
+            .filter(Boolean);
 
     setForm({
       name: staff.name || "",
@@ -344,19 +435,16 @@ export default function StaffCreateAndEditForm({
         staff.userPhoneCountryCode || staff.phoneCountryCode || "",
       phone: staff.userPhone || staff.phone || "",
       allowedAreas: normalizeStringArray(staff.allowedAreas),
-      allowedShiftTags:
-        normalizeStringArray(staff.allowedShiftTags).length > 0
-          ? normalizeStringArray(staff.allowedShiftTags)
-          : normalizeStringArray(staff.allowedShiftTypes)
-              .map((value) => {
-                const colonIndex = value.indexOf(":");
-                return colonIndex !== -1 ? value.slice(colonIndex + 1) : value;
-              })
-              .filter(Boolean),
+      allowedShiftTags: derivedShiftTags,
       allowedShiftTypes: normalizeStringArray(staff.allowedShiftTypes),
       certificationTags: normalizeStringArray(staff.certificationTags),
-      role: staff.role || "doctor",
+      preferredDaysOfWeek: [],
+      emailNotificationsEnabled: true,
+      smsNotificationsEnabled: true,
+      role: staff.role || "staff",
     });
+
+    fetchStaffPreferences(staff._id || staff.id);
   }, [staff]);
 
   useEffect(() => {
@@ -420,11 +508,25 @@ export default function StaffCreateAndEditForm({
 
       const normalizedShiftTypes = slotSpecificShiftValues.length
         ? slotSpecificShiftValues
-        : normalizeStringArray(form.allowedShiftTypes).map((value) =>
-            normalizeToken(value),
-          );
+        : normalizedShiftTags.length === 0 && shiftSlotOptions.length > 0
+          ? []
+          : normalizeStringArray(form.allowedShiftTypes).map((value) =>
+              normalizeToken(value),
+            );
 
-      if (staff?._id) {
+      const normalizedPreferredDays = normalizeNumberArray(
+        form.preferredDaysOfWeek,
+      );
+
+      const preferencesPayload = {
+        preferredDaysOfWeek: normalizedPreferredDays,
+        emailNotificationsEnabled: !!form.emailNotificationsEnabled,
+        smsNotificationsEnabled: !!form.smsNotificationsEnabled,
+      };
+
+      const staffId = staff?._id || staff?.id;
+
+      if (staffId) {
         const payload: Record<string, unknown> = {
           name: form.name,
           email: form.email,
@@ -442,7 +544,8 @@ export default function StaffCreateAndEditForm({
           payload.phone = normalizedPhone;
         }
 
-        await api.put(`/auth/${staff._id}`, payload);
+        await api.put(`/auth/${staffId}`, payload);
+        await saveStaffPreferences(staffId, preferencesPayload);
       } else {
         const seatLimit = Number(tenant?.seatLimit);
         const hasSeatLimit = Number.isFinite(seatLimit) && seatLimit > 0;
@@ -458,7 +561,7 @@ export default function StaffCreateAndEditForm({
           return;
         }
 
-        await api.post("/auth/signup/staff", {
+        const res = await api.post("/auth/signup/staff", {
           name: form.name,
           email: form.email,
           role: form.role,
@@ -475,6 +578,12 @@ export default function StaffCreateAndEditForm({
               }
             : {}),
         });
+
+        const createdStaffId = extractStaffIdFromResponse(res?.data);
+
+        if (createdStaffId) {
+          await saveStaffPreferences(createdStaffId, preferencesPayload);
+        }
       }
 
       onSuccess();
@@ -512,6 +621,14 @@ export default function StaffCreateAndEditForm({
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.fieldWrap}>
+        <Text style={styles.sectionEyebrow}>Staff Info</Text>
+        <Text style={styles.sectionTitle}>Basic Information</Text>
+        <Text style={styles.sectionDescription}>
+          Core details used to identify the staff member and assign their role.
+        </Text>
+      </View>
 
       <View style={styles.fieldWrap}>
         <Text style={styles.label}>Name</Text>
@@ -574,6 +691,66 @@ export default function StaffCreateAndEditForm({
       {phoneError ? <Text style={styles.fieldError}>{phoneError}</Text> : null}
 
       <View style={styles.fieldWrap}>
+        <Text style={styles.sectionEyebrow}>Coverage Rules</Text>
+        <Text style={styles.sectionTitle}>Tagging and Restrictions</Text>
+        <Text style={styles.sectionDescription}>
+          Use tags only when this staff member should be limited to specific
+          areas, time slots, or certifications.
+        </Text>
+      </View>
+
+      <View style={styles.tagSummaryWrap}>
+        <View
+          style={[
+            styles.statusPill,
+            hasTagRestrictions ? styles.statusPillWarn : styles.statusPillOk,
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusPillText,
+              hasTagRestrictions
+                ? styles.statusPillTextWarn
+                : styles.statusPillTextOk,
+            ]}
+          >
+            {hasTagRestrictions ? "Restricted by tags" : "Floating staff"}
+          </Text>
+        </View>
+        <View style={styles.metaPill}>
+          <Text style={styles.metaPillText}>
+            {form.allowedAreas.length} area
+            {form.allowedAreas.length === 1 ? "" : "s"}
+          </Text>
+        </View>
+        <View style={styles.metaPill}>
+          <Text style={styles.metaPillText}>
+            {form.allowedShiftTags.length} shift
+            {form.allowedShiftTags.length === 1 ? "" : "s"}
+          </Text>
+        </View>
+        <View style={styles.metaPill}>
+          <Text style={styles.metaPillText}>
+            {form.certificationTags.length} certification
+            {form.certificationTags.length === 1 ? "" : "s"}
+          </Text>
+        </View>
+      </View>
+
+      <View
+        style={[
+          styles.infoNotice,
+          hasTagRestrictions ? styles.infoNoticeWarn : styles.infoNoticeInfo,
+        ]}
+      >
+        <Text style={styles.infoNoticeText}>
+          {hasTagRestrictions
+            ? "This staff member is restricted to coverages that match selected tags. Leaving a tag group empty means no restriction from that group."
+            : "This staff member is currently untagged, so they are treated as floating and can work any role-compatible coverage."}
+        </Text>
+      </View>
+
+      <View style={styles.fieldWrap}>
         <Text style={styles.label}>Role</Text>
         <Pressable
           style={[
@@ -612,8 +789,8 @@ export default function StaffCreateAndEditForm({
         label="Allowed Shift Time Slots"
         helperText={
           shiftSlotOptions.length > 0
-            ? "Select exact slots, e.g. Day - Day 1 or Day - Day 2"
-            : "No shift definitions configured yet. Configure shift slots in Facility Preferences."
+            ? "Leave empty to allow any slot. Selecting chips restricts this staff member to exact shift slots."
+            : "No shift definitions configured yet. Define shift time slots in Facility Preferences."
         }
         options={shiftSlotOptions}
         values={form.allowedShiftTags}
@@ -631,7 +808,7 @@ export default function StaffCreateAndEditForm({
         label="Certification Tags"
         helperText={
           certificationTagOptions.length > 0
-            ? "Tap chips to select or remove certifications"
+            ? "Leave empty if no certification restriction is needed."
             : "No certification tags configured yet."
         }
         options={certificationTagOptions}
@@ -645,6 +822,77 @@ export default function StaffCreateAndEditForm({
         }
         onOpenPicker={() => setCertPickerOpen(true)}
       />
+
+      <View style={styles.fieldWrapFull}>
+        <Text style={styles.sectionEyebrow}>Staff Preferences</Text>
+        <Text style={styles.sectionTitle}>Availability and Notifications</Text>
+        <Text style={styles.sectionDescription}>
+          These preferences help guide scheduling and how this staff member
+          receives updates.
+        </Text>
+
+        <Text style={styles.label}>Preferred Work Days</Text>
+        <Text style={styles.helperText}>
+          Select days this staff member prefers to work.
+        </Text>
+        <View style={styles.dayGrid}>
+          {DAYS.map((day, index) => {
+            const selected = form.preferredDaysOfWeek.includes(index);
+            return (
+              <Pressable
+                key={day}
+                onPress={() => {
+                  const nextValues = selected
+                    ? form.preferredDaysOfWeek.filter((item) => item !== index)
+                    : [...form.preferredDaysOfWeek, index];
+
+                  setForm((prev) => ({
+                    ...prev,
+                    preferredDaysOfWeek: normalizeNumberArray(nextValues),
+                  }));
+                }}
+                style={[
+                  styles.dayChip,
+                  selected ? styles.dayChipSelected : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.dayChipText,
+                    selected ? styles.dayChipTextSelected : null,
+                  ]}
+                >
+                  {day}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.label}>Notification Preferences</Text>
+        <Text style={styles.helperText}>
+          Configure email and SMS alerts for this staff member.
+        </Text>
+
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Email Notifications</Text>
+          <Switch
+            value={!!form.emailNotificationsEnabled}
+            onValueChange={(value) =>
+              setForm((prev) => ({ ...prev, emailNotificationsEnabled: value }))
+            }
+          />
+        </View>
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>SMS Notifications</Text>
+          <Switch
+            value={!!form.smsNotificationsEnabled}
+            onValueChange={(value) =>
+              setForm((prev) => ({ ...prev, smsNotificationsEnabled: value }))
+            }
+          />
+        </View>
+      </View>
 
       <View style={styles.actions}>
         <Pressable
@@ -1098,6 +1346,128 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: 8,
+  },
+  fieldWrapFull: {
+    gap: 6,
+    marginBottom: 2,
+  },
+  sectionEyebrow: {
+    color: "#2563eb",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  sectionTitle: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  sectionDescription: {
+    color: "#6b7280",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  tagSummaryWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statusPillWarn: {
+    backgroundColor: "#fef3c7",
+  },
+  statusPillOk: {
+    backgroundColor: "#dcfce7",
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  statusPillTextWarn: {
+    color: "#92400e",
+  },
+  statusPillTextOk: {
+    color: "#166534",
+  },
+  metaPill: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#ffffff",
+  },
+  metaPillText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  infoNotice: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  infoNoticeInfo: {
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+  },
+  infoNoticeWarn: {
+    borderColor: "#fcd34d",
+    backgroundColor: "#fffbeb",
+  },
+  infoNoticeText: {
+    color: "#334155",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  dayGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  dayChip: {
+    minWidth: 40,
+    alignItems: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  dayChipSelected: {
+    borderColor: "#22c55e",
+    backgroundColor: "#ecfdf3",
+  },
+  dayChipText: {
+    color: "#374151",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  dayChipTextSelected: {
+    color: "#166534",
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "#ffffff",
+  },
+  switchLabel: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "600",
   },
   actionBtn: {
     flex: 1,
