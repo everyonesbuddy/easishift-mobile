@@ -436,9 +436,7 @@ export default function HomeScreen() {
                 variant="filled"
                 icon="phone-call"
                 onPress={() =>
-                  Linking.openURL(
-                    "https://calendly.com/easishift-info/30min?month=2026-01",
-                  )
+                  Linking.openURL("https://calendly.com/wisershifts-info/30min")
                 }
                 fullWidth
               />
@@ -459,9 +457,7 @@ export default function HomeScreen() {
           variant="filled"
           icon="phone-call"
           onPress={() =>
-            Linking.openURL(
-              "https://calendly.com/easishift-info/30min?month=2026-01",
-            )
+            Linking.openURL("https://calendly.com/wisershifts-info/30min")
           }
           fullWidth
         />
