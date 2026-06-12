@@ -45,7 +45,15 @@ export type CoverageItem = {
 export type SwapRequestItem = {
   _id?: string;
   role?: string;
-  status?: "pending" | "accepted" | "denied" | "cancelled" | "expired";
+  status?:
+    | "pending"
+    | "pending_admin"
+    | "pending_receiver"
+    | "accepted"
+    | "denied"
+    | "admin_denied"
+    | "cancelled"
+    | "expired";
   shiftStartTime?: string;
   shiftEndTime?: string;
   requestNote?: string;

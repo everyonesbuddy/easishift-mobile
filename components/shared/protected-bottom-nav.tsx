@@ -79,6 +79,7 @@ const ADMIN_MORE_ITEMS: NavItem[] = [
     icon: "clock",
     to: "/timeoff-requests",
   },
+  { id: "swaps", label: "Shift Swaps", icon: "repeat", to: "/swap-requests" },
   {
     id: "billing",
     label: "Manage Subscription",

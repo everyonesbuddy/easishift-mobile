@@ -24,11 +24,23 @@ import {
 import ShiftSwapRequestModal from "./shift-swap-request-modal";
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: "#f59e0b",
+  pending_admin: "#f59e0b",
+  pending_receiver: "#0284c7",
   accepted: "#16a34a",
   denied: "#dc2626",
+  admin_denied: "#dc2626",
   cancelled: "#6b7280",
   expired: "#6b7280",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending_admin: "PENDING ADMIN",
+  pending_receiver: "PENDING RECEIVER",
+  accepted: "ACCEPTED",
+  denied: "DENIED",
+  admin_denied: "ADMIN DENIED",
+  cancelled: "CANCELLED",
+  expired: "EXPIRED",
 };
 
 export default function SwapShiftRequestsPage() {
@@ -45,7 +57,9 @@ export default function SwapShiftRequestsPage() {
   const [respondDialogOpen, setRespondDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] =
     useState<SwapRequestItem | null>(null);
-  const [decision, setDecision] = useState<"accept" | "deny">("accept");
+  const [decision, setDecision] = useState<"approve" | "accept" | "deny">(
+    "accept",
+  );
   const [responseNote, setResponseNote] = useState("");
   const [submittingResponse, setSubmittingResponse] = useState(false);
   const [error, setError] = useState("");
@@ -102,7 +116,7 @@ export default function SwapShiftRequestsPage() {
 
   const openRespondDialog = (
     request: SwapRequestItem,
-    nextDecision: "accept" | "deny",
+    nextDecision: "approve" | "accept" | "deny",
   ) => {
     setSelectedRequest(request);
     setDecision(nextDecision);
@@ -154,13 +168,17 @@ export default function SwapShiftRequestsPage() {
     [activeTab, inboxRequests, sentRequests],
   );
 
+  const isPendingForAdmin = (requestItem: SwapRequestItem) => {
+    return isAdmin && requestItem.status === "pending_admin";
+  };
+
   const isPendingForReceiver = (requestItem: SwapRequestItem) => {
-    if (requestItem.status !== "pending") {
+    if (requestItem.status !== "pending_receiver") {
       return false;
     }
 
     if (isAdmin) {
-      return true;
+      return false;
     }
 
     return String(requestItem.receiverStaffId?._id) === String(user?._id);
@@ -248,7 +266,7 @@ export default function SwapShiftRequestsPage() {
             {activeRequests.map((requestItem) => {
               const requester = requestItem.requesterStaffId;
               const receiver = requestItem.receiverStaffId;
-              const status = requestItem.status || "pending";
+              const status = requestItem.status || "pending_admin";
 
               return (
                 <View key={requestItem._id} style={styles.requestCard}>
@@ -294,10 +312,31 @@ export default function SwapShiftRequestsPage() {
                           { color: STATUS_COLORS[status] || "#6b7280" },
                         ]}
                       >
-                        {status.toUpperCase()}
+                        {STATUS_LABELS[status] || status.toUpperCase()}
                       </Text>
                     </View>
                   </View>
+
+                  {isPendingForAdmin(requestItem) ? (
+                    <View style={styles.actionRow}>
+                      <Pressable
+                        style={[styles.actionBtn, styles.acceptBtn]}
+                        onPress={() =>
+                          openRespondDialog(requestItem, "approve")
+                        }
+                      >
+                        <Feather name="check" size={14} color="#ffffff" />
+                        <Text style={styles.actionText}>Approve</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.actionBtn, styles.denyBtn]}
+                        onPress={() => openRespondDialog(requestItem, "deny")}
+                      >
+                        <Feather name="x" size={14} color="#ffffff" />
+                        <Text style={styles.actionText}>Deny</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
 
                   {isPendingForReceiver(requestItem) ? (
                     <View style={styles.actionRow}>
@@ -344,9 +383,11 @@ export default function SwapShiftRequestsPage() {
         >
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <Text style={styles.modalTitle}>
-              {decision === "accept"
-                ? "Accept Swap Request"
-                : "Deny Swap Request"}
+              {decision === "approve"
+                ? "Approve Swap Request"
+                : decision === "accept"
+                  ? "Accept Swap Request"
+                  : "Deny Swap Request"}
             </Text>
 
             <TextInput
@@ -380,7 +421,11 @@ export default function SwapShiftRequestsPage() {
                   <ActivityIndicator size="small" color="#ffffff" />
                 ) : (
                   <Text style={styles.modalSubmitText}>
-                    {decision === "accept" ? "Accept" : "Deny"}
+                    {decision === "approve"
+                      ? "Approve"
+                      : decision === "accept"
+                        ? "Accept"
+                        : "Deny"}
                   </Text>
                 )}
               </Pressable>
