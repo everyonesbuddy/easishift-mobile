@@ -19,8 +19,10 @@ type Plan = {
   key: string;
   name: string;
   priceLabel: string;
-  price: number;
-  seats: number;
+  price: number | null;
+  seats: number | string;
+  supportTier: "standard" | "priority";
+  isEnterprise?: boolean;
   highlight: boolean;
 };
 
@@ -31,6 +33,7 @@ const YEARLY_PLANS: Plan[] = [
     priceLabel: "$4,000/yr",
     price: 4000,
     seats: 50,
+    supportTier: "standard",
     highlight: false,
   },
   {
@@ -39,6 +42,7 @@ const YEARLY_PLANS: Plan[] = [
     priceLabel: "$7,000/yr",
     price: 7000,
     seats: 100,
+    supportTier: "standard",
     highlight: true,
   },
   {
@@ -47,6 +51,17 @@ const YEARLY_PLANS: Plan[] = [
     priceLabel: "$9,000/yr",
     price: 9000,
     seats: 150,
+    supportTier: "priority",
+    highlight: false,
+  },
+  {
+    key: "enterpriseYearly",
+    name: "Enterprise",
+    priceLabel: "Custom pricing",
+    price: null,
+    seats: "150+",
+    supportTier: "priority",
+    isEnterprise: true,
     highlight: false,
   },
 ];
@@ -58,6 +73,7 @@ const MONTHLY_PLANS: Plan[] = [
     priceLabel: "$400/mo",
     price: 400,
     seats: 50,
+    supportTier: "standard",
     highlight: false,
   },
   {
@@ -66,6 +82,7 @@ const MONTHLY_PLANS: Plan[] = [
     priceLabel: "$700/mo",
     price: 700,
     seats: 100,
+    supportTier: "standard",
     highlight: true,
   },
   {
@@ -74,14 +91,28 @@ const MONTHLY_PLANS: Plan[] = [
     priceLabel: "$900/mo",
     price: 900,
     seats: 150,
+    supportTier: "priority",
+    highlight: false,
+  },
+  {
+    key: "enterpriseMonthly",
+    name: "Enterprise",
+    priceLabel: "Custom pricing",
+    price: null,
+    seats: "150+",
+    supportTier: "priority",
+    isEnterprise: true,
     highlight: false,
   },
 ];
 
-const FEATURE_LIST = [
-  "Priority support",
-  "Advanced reporting",
-  "Automated scheduling tools",
+const SHARED_FEATURE_LIST = [
+  "Automated scheduling",
+  "Shift swaps",
+  "Time-off management",
+  "Internal messaging",
+  "Coverage planning",
+  "Staff directory",
 ];
 
 function getYearlySavingsPercent() {
@@ -115,6 +146,26 @@ export default function ManageSubscriptionPage() {
   );
 
   const yearlySavingsPercent = useMemo(() => getYearlySavingsPercent(), []);
+
+  const getCapacityLabel = (plan: Plan) =>
+    plan.isEnterprise
+      ? `${plan.seats} active employees`
+      : `Up to ${plan.seats} active employees`;
+
+  const getSupportLabel = (plan: Plan) =>
+    plan.supportTier === "priority" ? "Priority support" : "Standard support";
+
+  const getPlanPriceHint = (plan: Plan) => {
+    if (plan.isEnterprise) {
+      return "Talk to sales for a custom package";
+    }
+
+    if (billingPeriod === "yearly" && typeof plan.price === "number") {
+      return `Equivalent to $${Math.round(plan.price / 12)}/mo billed yearly`;
+    }
+
+    return "Billed monthly, cancel anytime";
+  };
 
   const handleChoosePlan = async (planKey: string) => {
     if (!tenant?._id || typeof tenant._id !== "string") {
@@ -166,19 +217,17 @@ export default function ManageSubscriptionPage() {
     }
   };
 
-  const requestCancelSubscription = (atPeriodEnd: boolean) => {
+  const requestCancelSubscription = () => {
     Alert.alert(
       "Cancel subscription",
-      atPeriodEnd
-        ? "Cancel at period end? Users will keep access until the billing period ends."
-        : "Cancel immediately? This will stop access now.",
+      "Cancel at period end? Users will keep access until the billing period ends.",
       [
         { text: "No", style: "cancel" },
         {
           text: "Yes",
           style: "destructive",
           onPress: () => {
-            void handleCancelSubscription({ atPeriodEnd });
+            void handleCancelSubscription({ atPeriodEnd: true });
           },
         },
       ],
@@ -218,6 +267,22 @@ export default function ManageSubscriptionPage() {
       setError(message);
     } finally {
       setLoadingPlan(null);
+    }
+  };
+
+  const handleGetQuote = async () => {
+    const calendlyUrl = "https://calendly.com/wisershifts-info/30min";
+
+    try {
+      const canOpen = await Linking.canOpenURL(calendlyUrl);
+      if (!canOpen) {
+        setError("Unable to open scheduling link on this device.");
+        return;
+      }
+
+      await Linking.openURL(calendlyUrl);
+    } catch {
+      setError("Unable to open scheduling link on this device.");
     }
   };
 
@@ -316,20 +381,13 @@ export default function ManageSubscriptionPage() {
             <Pressable
               style={styles.cancelBtn}
               disabled={loadingPlan === "cancel"}
-              onPress={() => requestCancelSubscription(true)}
+              onPress={requestCancelSubscription}
             >
               <Text style={styles.cancelBtnText}>
                 {loadingPlan === "cancel"
                   ? "Processing..."
-                  : "Cancel at period end"}
+                  : "Cancel subscription"}
               </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.cancelBtn, styles.cancelNowBtn]}
-              disabled={loadingPlan === "cancel"}
-              onPress={() => requestCancelSubscription(false)}
-            >
-              <Text style={styles.cancelBtnText}>Cancel now</Text>
             </Pressable>
           </View>
         </View>
@@ -359,20 +417,24 @@ export default function ManageSubscriptionPage() {
 
                 <Text style={styles.planPrice}>{plan.priceLabel}</Text>
                 <Text style={styles.planPriceHint}>
-                  {billingPeriod === "yearly"
-                    ? `Equivalent to $${Math.round(plan.price / 12)}/mo billed yearly`
-                    : "Billed monthly, cancel anytime"}
+                  {getPlanPriceHint(plan)}
                 </Text>
 
-                <Text style={styles.planSeats}>{plan.seats} seats</Text>
+                <Text style={styles.planSeats}>{getCapacityLabel(plan)}</Text>
 
                 <View style={styles.featureList}>
-                  {FEATURE_LIST.map((feature) => (
-                    <View key={feature} style={styles.featureItem}>
-                      <Feather name="check-circle" size={14} color="#2563eb" />
-                      <Text style={styles.featureText}>{feature}</Text>
-                    </View>
-                  ))}
+                  {[getSupportLabel(plan), ...SHARED_FEATURE_LIST].map(
+                    (feature) => (
+                      <View key={feature} style={styles.featureItem}>
+                        <Feather
+                          name="check-circle"
+                          size={14}
+                          color="#2563eb"
+                        />
+                        <Text style={styles.featureText}>{feature}</Text>
+                      </View>
+                    ),
+                  )}
                 </View>
               </View>
 
@@ -381,28 +443,43 @@ export default function ManageSubscriptionPage() {
                   <Text style={styles.currentPlanBtnText}>Current plan</Text>
                 </View>
               ) : (
-                <Pressable
-                  style={[
-                    styles.planActionBtn,
-                    plan.highlight ? styles.planActionBtnHighlight : null,
-                    loadingPlan === plan.key ? styles.planActionDisabled : null,
-                  ]}
-                  onPress={() => handleChoosePlan(plan.key)}
-                  disabled={loadingPlan === plan.key}
-                >
-                  {loadingPlan === plan.key ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <>
-                      <Feather
-                        name="arrow-up-right"
-                        size={14}
-                        color="#ffffff"
-                      />
-                      <Text style={styles.planActionText}>Get started</Text>
-                    </>
-                  )}
-                </Pressable>
+                <>
+                  {!plan.isEnterprise ? (
+                    <Text style={styles.trialText}>
+                      Includes a free 1-month trial
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    style={[
+                      styles.planActionBtn,
+                      plan.highlight ? styles.planActionBtnHighlight : null,
+                      loadingPlan === plan.key
+                        ? styles.planActionDisabled
+                        : null,
+                    ]}
+                    onPress={() =>
+                      plan.isEnterprise
+                        ? void handleGetQuote()
+                        : void handleChoosePlan(plan.key)
+                    }
+                    disabled={loadingPlan === plan.key && !plan.isEnterprise}
+                  >
+                    {loadingPlan === plan.key && !plan.isEnterprise ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <>
+                        <Feather
+                          name="arrow-up-right"
+                          size={14}
+                          color="#ffffff"
+                        />
+                        <Text style={styles.planActionText}>
+                          {plan.isEnterprise ? "Get quote" : "Start trial"}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                </>
               )}
             </View>
           ))}
@@ -519,7 +596,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 8,
     flexDirection: "row",
-    flexWrap: "wrap",
   },
   cancelBtn: {
     minHeight: 40,
@@ -528,9 +604,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center",
-  },
-  cancelNowBtn: {
-    backgroundColor: "#1d4ed8",
   },
   cancelBtnText: {
     color: "#ffffff",
@@ -609,6 +682,10 @@ const styles = StyleSheet.create({
   featureText: {
     color: "#111827",
     fontSize: 13,
+  },
+  trialText: {
+    color: "#6b7280",
+    fontSize: 11,
   },
   currentPlanBtn: {
     minHeight: 40,

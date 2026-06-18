@@ -104,6 +104,23 @@ function toDisplayLabel(value: unknown) {
     .join(" ");
 }
 
+function to12HourTime(value: unknown) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+
+  if (!match) {
+    return raw;
+  }
+
+  let hours = Number(match[1]);
+  const minutes = match[2];
+  const meridiem = hours >= 12 ? "PM" : "AM";
+
+  hours = hours % 12 || 12;
+
+  return `${hours}:${minutes} ${meridiem}`;
+}
+
 function normalizeArrayValues(values: unknown) {
   return Array.from(
     new Set(
@@ -574,8 +591,9 @@ export default function FacilityPreferencesPage() {
                             style={styles.slotRow}
                           >
                             <Text style={styles.slotRowText}>
-                              {toDisplayLabel(slot.tag)} ({slot.startLocalTime}{" "}
-                              - {slot.endLocalTime})
+                              {toDisplayLabel(slot.tag)} (
+                              {to12HourTime(slot.startLocalTime)} -{" "}
+                              {to12HourTime(slot.endLocalTime)})
                               {slot.spansOvernight ? " - Overnight" : ""}
                             </Text>
                             <Pressable

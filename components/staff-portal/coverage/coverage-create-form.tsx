@@ -115,6 +115,23 @@ function toDisplayLabel(value: string) {
     .join(" ");
 }
 
+function to12HourTime(value: unknown) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+
+  if (!match) {
+    return raw;
+  }
+
+  let hours = Number(match[1]);
+  const minutes = match[2];
+  const meridiem = hours >= 12 ? "PM" : "AM";
+
+  hours = hours % 12 || 12;
+
+  return `${hours}:${minutes} ${meridiem}`;
+}
+
 function toDayKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -267,7 +284,7 @@ export default function CoverageCreateForm({
         value: `${definition.key}:${slot.tag}`,
         shiftType: definition.key,
         shiftTag: slot.tag,
-        label: `${definition.label || toDisplayLabel(definition.key)} - ${slot.label || toDisplayLabel(slot.tag)} (${slot.startLocalTime} - ${slot.endLocalTime})`,
+        label: `${definition.label || toDisplayLabel(definition.key)} - ${slot.label || toDisplayLabel(slot.tag)} (${to12HourTime(slot.startLocalTime)} - ${to12HourTime(slot.endLocalTime)})`,
       })),
     );
   }, [shiftTypeDefinitions]);
@@ -316,7 +333,7 @@ export default function CoverageCreateForm({
       rows: requirements.map((req, index) => ({
         id: `${dateValue}-${index}`,
         role: req.role ? getRoleDisplayName(req.role) : "-",
-        timeLabel: `${req.startTime} - ${req.endTime}`,
+        timeLabel: `${to12HourTime(req.startTime)} - ${to12HourTime(req.endTime)}`,
         unitArea: req.unitArea,
         shiftType: req.shiftType,
         shiftTag: req.shiftTag,

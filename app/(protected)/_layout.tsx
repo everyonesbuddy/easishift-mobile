@@ -13,11 +13,13 @@ export default function ProtectedLayout() {
     typeof tenant?.seatLimit === "number"
       ? tenant.seatLimit
       : Number.POSITIVE_INFINITY;
+  const hasPaywallExemptStatus =
+    !!tenant &&
+    ["active", "trialing"].includes(tenant.subscriptionStatus ?? "");
   const showPaywall =
     isAdmin &&
     !!tenant &&
-    (tenant.subscriptionStatus !== "active" ||
-      (Number.isFinite(seatLimit) && seatLimit <= 1));
+    (!hasPaywallExemptStatus || (Number.isFinite(seatLimit) && seatLimit <= 1));
   const inPaywallFlow = segments.some(
     (segment) => String(segment) === "paywall" || String(segment) === "billing",
   );
