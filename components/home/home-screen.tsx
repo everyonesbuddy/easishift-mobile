@@ -288,7 +288,7 @@ export default function HomeScreen() {
           <View style={styles.heroLeft}>
             <Text style={styles.heroTitle}>
               Workforce Scheduling{"\n"}
-              Made For You
+              That Works For Your People and Your Profits.
             </Text>
 
             <Text style={styles.heroSubtitle}>
