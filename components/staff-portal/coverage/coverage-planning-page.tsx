@@ -114,6 +114,26 @@ function spansOvernight(coverage: CoverageItem) {
   return start.toDateString() !== end.toDateString();
 }
 
+function getCoverageCalendarDayKeys(coverage: CoverageItem) {
+  const primaryKey = getCoverageDayKey(coverage.date || coverage.startTime);
+  if (!primaryKey) {
+    return [];
+  }
+
+  const keys = [primaryKey];
+  const start = toLocal(coverage.startTime);
+  const end = toLocal(coverage.endTime);
+
+  if (start && end && start.toDateString() !== end.toDateString()) {
+    const endKey = toDayKey(end);
+    if (endKey && endKey !== primaryKey) {
+      keys.push(endKey);
+    }
+  }
+
+  return keys;
+}
+
 function formatCoverageDateLabel(coverage: CoverageItem) {
   const start = toLocal(coverage.startTime);
 
@@ -227,6 +247,7 @@ export default function CoveragePlanningPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(10);
   const [error, setError] = useState("");
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
 
   const roleOptions = useMemo(() => {
     return getRoleOptionsFromFacilityPreferences(facilityPreferences).map(
@@ -240,6 +261,9 @@ export default function CoveragePlanningPage() {
       .filter(Boolean) as string[];
     return Array.from(new Set([...roleOptions, ...existingRoles]));
   }, [coverages, roleOptions]);
+
+  const selectedRoleLabel =
+    selectedRole === "all" ? "All Roles" : getRoleDisplayName(selectedRole);
 
   useEffect(() => {
     fetchCoverages();
@@ -422,16 +446,18 @@ export default function CoveragePlanningPage() {
     const meta: Record<string, { count: number; color: string }> = {};
 
     displayedCoverages.forEach((item) => {
-      const key = getCoverageDayKey(item.date || item.startTime);
-      if (!key) {
+      const dayKeys = getCoverageCalendarDayKeys(item);
+      if (dayKeys.length === 0) {
         return;
       }
 
-      const nextCount = (meta[key]?.count || 0) + 1;
-      meta[key] = {
-        count: nextCount,
-        color: getCoverageStatusColor(item),
-      };
+      dayKeys.forEach((key) => {
+        const nextCount = (meta[key]?.count || 0) + 1;
+        meta[key] = {
+          count: nextCount,
+          color: getCoverageStatusColor(item),
+        };
+      });
     });
 
     return meta;
@@ -439,9 +465,8 @@ export default function CoveragePlanningPage() {
 
   const selectedDayItems = useMemo(
     () =>
-      displayedCoverages.filter(
-        (item) =>
-          getCoverageDayKey(item.date || item.startTime) === selectedDay,
+      displayedCoverages.filter((item) =>
+        getCoverageCalendarDayKeys(item).includes(selectedDay),
       ),
     [displayedCoverages, selectedDay],
   );
@@ -550,29 +575,30 @@ export default function CoveragePlanningPage() {
 
         <View style={styles.filterCard}>
           <Text style={styles.filterLabel}>Filter by role</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.roleChips}>
-              <RoleFilterChip
-                label="All Roles"
-                active={selectedRole === "all"}
-                onPress={() => {
-                  setSelectedRole("all");
-                  setPage(0);
-                }}
-              />
-              {filterRoleOptions.map((role) => (
-                <RoleFilterChip
-                  key={role}
-                  label={getRoleDisplayName(role)}
-                  active={selectedRole === role}
-                  onPress={() => {
-                    setSelectedRole(role);
-                    setPage(0);
-                  }}
-                />
-              ))}
-            </View>
-          </ScrollView>
+
+          <View style={styles.filterField}>
+            <Text style={styles.filterFieldLabel}>Role</Text>
+            <Pressable
+              style={styles.filterSelect}
+              onPress={() => setRolePickerOpen(true)}
+            >
+              <Text style={styles.filterSelectText} numberOfLines={1}>
+                {selectedRoleLabel}
+              </Text>
+              <Feather name="chevron-down" size={16} color="#6b7280" />
+            </Pressable>
+          </View>
+
+          <Pressable
+            style={styles.clearFiltersBtn}
+            onPress={() => {
+              setSelectedRole("all");
+              setPage(0);
+            }}
+          >
+            <Feather name="rotate-ccw" size={13} color="#475569" />
+            <Text style={styles.clearFiltersText}>Reset Filters</Text>
+          </Pressable>
         </View>
 
         {loading ? (
@@ -780,6 +806,11 @@ export default function CoveragePlanningPage() {
                               minute: "2-digit",
                             }) || "-"}
                           </Text>
+                          {spansOvernight(item) ? (
+                            <Text style={styles.calendarOvernightTag}>
+                              Overnight shift
+                            </Text>
+                          ) : null}
                         </View>
                       </Pressable>
                     );
@@ -965,36 +996,92 @@ export default function CoveragePlanningPage() {
         onCancel={() => setBulkConfirmOpen(false)}
         onConfirm={confirmBulkDelete}
       />
+
+      <PickerModal
+        open={rolePickerOpen}
+        title="Filter by Role"
+        value={selectedRole}
+        onClose={() => setRolePickerOpen(false)}
+        onSelect={(value) => {
+          setSelectedRole(value);
+          setPage(0);
+        }}
+        options={[
+          { value: "all", label: "All Roles" },
+          ...filterRoleOptions.map((role) => ({
+            value: role,
+            label: getRoleDisplayName(role),
+          })),
+        ]}
+      />
     </SafeAreaView>
   );
 }
 
-function RoleFilterChip({
-  label,
-  active,
-  onPress,
+function PickerModal({
+  open,
+  title,
+  value,
+  onClose,
+  onSelect,
+  options,
 }: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
+  open: boolean;
+  title: string;
+  value: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: { value: string; label: string }[];
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.roleFilterChip,
-        active ? styles.roleFilterChipActive : null,
-      ]}
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
     >
-      <Text
-        style={[
-          styles.roleFilterChipText,
-          active ? styles.roleFilterChipTextActive : null,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
+      <Pressable style={styles.pickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.pickerCard} onPress={() => {}}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>{title}</Text>
+            <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Feather name="x" size={18} color="#6b7280" />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.pickerList}>
+            {options.map((option) => {
+              const selected = option.value === value;
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.pickerItem,
+                    selected ? styles.pickerItemActive : null,
+                  ]}
+                  onPress={() => {
+                    onSelect(option.value);
+                    onClose();
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.pickerItemText,
+                      selected ? styles.pickerItemTextActive : null,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {selected ? (
+                    <Feather name="check" size={16} color="#2563eb" />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1120,29 +1207,102 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  roleChips: {
-    flexDirection: "row",
+  filterField: {
     gap: 6,
   },
-  roleFilterChip: {
-    borderRadius: 999,
+  filterFieldLabel: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  filterSelect: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  filterSelectText: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 13,
+  },
+  clearFiltersBtn: {
+    minHeight: 34,
+    alignSelf: "flex-start",
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: "#d1d5db",
     backgroundColor: "#ffffff",
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  roleFilterChipActive: {
-    borderColor: "#1d4ed8",
-    backgroundColor: "#dbeafe",
-  },
-  roleFilterChipText: {
-    color: "#374151",
+  clearFiltersText: {
+    color: "#475569",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  roleFilterChipTextActive: {
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  pickerCard: {
+    maxHeight: "70%",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 12,
+    gap: 8,
+  },
+  pickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  closeBtn: {
+    padding: 8,
+    marginRight: 2,
+  },
+  pickerTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  pickerList: {
+    gap: 6,
+  },
+  pickerItem: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    backgroundColor: "#f9fafb",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pickerItemActive: {
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
+  },
+  pickerItemText: {
+    color: "#111827",
+    fontSize: 13,
+  },
+  pickerItemTextActive: {
     color: "#1d4ed8",
+    fontWeight: "700",
   },
   loadingWrap: {
     marginTop: 16,
@@ -1349,6 +1509,11 @@ const styles = StyleSheet.create({
   calendarMeta: {
     color: "#6b7280",
     fontSize: 12,
+  },
+  calendarOvernightTag: {
+    color: "#1d4ed8",
+    fontSize: 11,
+    fontWeight: "600",
   },
   modalPage: {
     flex: 1,

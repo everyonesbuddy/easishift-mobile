@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -166,12 +167,18 @@ export default function StaffListPage() {
       : getRolesForIndustry(tenant?.industry, {
           includeAdmin: true,
         });
-    const existingRoles = staff.map((member) => member.role).filter(Boolean);
+    const existingRoles = staff
+      .map((member) => member.role)
+      .filter((roleValue): roleValue is string => Boolean(roleValue));
 
-    return [
-      "all",
-      ...Array.from(new Set([...industryRoles, ...existingRoles])),
-    ];
+    const normalizedRoles = Array.from(
+      new Set([...industryRoles, ...existingRoles]),
+    ).filter(
+      (roleValue): roleValue is string =>
+        typeof roleValue === "string" && roleValue.length > 0,
+    );
+
+    return ["all", ...normalizedRoles];
   }, [facilityPreferences, staff, tenant?.industry]);
 
   const formatStringArray = (
@@ -291,9 +298,18 @@ export default function StaffListPage() {
                         },
                       ]}
                     >
-                      <Text style={styles.avatarText}>
-                        {getInitials(member.name)}
-                      </Text>
+                      {typeof member.profilePicture === "string" &&
+                      member.profilePicture ? (
+                        <Image
+                          source={{ uri: member.profilePicture }}
+                          style={styles.avatarImage}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <Text style={styles.avatarText}>
+                          {getInitials(member.name)}
+                        </Text>
+                      )}
                     </View>
 
                     <View style={styles.staffBody}>
@@ -657,6 +673,11 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "800",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 24,
   },
   staffBody: {
     flex: 1,

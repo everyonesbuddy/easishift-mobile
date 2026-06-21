@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -19,22 +20,28 @@ type Props = {
   onSuccess: () => void;
 };
 
-function parseInputToIso(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
+function formatDateLabel(value: Date | null) {
+  if (!value) {
+    return "Select date";
   }
 
-  const normalized = trimmed.includes("T")
-    ? trimmed
-    : trimmed.replace(" ", "T");
+  return value.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
+function formatTimeLabel(value: Date | null) {
+  if (!value) {
+    return "Select time";
   }
 
-  return parsed.toISOString();
+  return value.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 export default function TimeOffRequestModal({
@@ -42,17 +49,48 @@ export default function TimeOffRequestModal({
   onClose,
   onSuccess,
 }: Props) {
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startDateTime, setStartDateTime] = useState<Date | null>(null);
+  const [endDateTime, setEndDateTime] = useState<Date | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pickerState, setPickerState] = useState<{
+    target: "start" | "end";
+    mode: "date" | "time";
+    value: Date;
+  } | null>(null);
 
   const reset = () => {
-    setStartTime("");
-    setEndTime("");
+    setStartDateTime(null);
+    setEndDateTime(null);
     setReason("");
     setError("");
+    setPickerState(null);
+  };
+
+  const openPicker = (target: "start" | "end", mode: "date" | "time") => {
+    const seed =
+      (target === "start" ? startDateTime : endDateTime) || new Date();
+
+    setPickerState({
+      target,
+      mode,
+      value: new Date(seed),
+    });
+  };
+
+  const applyPicker = () => {
+    if (!pickerState) {
+      return;
+    }
+
+    if (pickerState.target === "start") {
+      setStartDateTime(new Date(pickerState.value));
+    } else {
+      setEndDateTime(new Date(pickerState.value));
+    }
+
+    setPickerState(null);
   };
 
   const handleClose = () => {
@@ -67,11 +105,11 @@ export default function TimeOffRequestModal({
   const handleSubmit = async () => {
     setError("");
 
-    const startIso = parseInputToIso(startTime);
-    const endIso = parseInputToIso(endTime);
+    const startIso = startDateTime?.toISOString() || "";
+    const endIso = endDateTime?.toISOString() || "";
 
     if (!startIso || !endIso) {
-      setError("Start and end date/time are required. Use YYYY-MM-DD HH:mm.");
+      setError("Start and end date/time are required.");
       return;
     }
 
@@ -127,23 +165,53 @@ export default function TimeOffRequestModal({
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <View style={styles.fieldWrap}>
-              <Text style={styles.label}>Start Date/Time</Text>
-              <TextInput
-                value={startTime}
-                onChangeText={setStartTime}
-                style={styles.input}
-                placeholder="YYYY-MM-DD HH:mm"
-              />
+              <Text style={styles.label}>Start</Text>
+              <View style={styles.dateTimeRow}>
+                <Pressable
+                  style={styles.selectField}
+                  onPress={() => openPicker("start", "date")}
+                >
+                  <Feather name="calendar" size={14} color="#6b7280" />
+                  <Text style={styles.selectFieldText} numberOfLines={1}>
+                    {formatDateLabel(startDateTime)}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.selectField}
+                  onPress={() => openPicker("start", "time")}
+                >
+                  <Feather name="clock" size={14} color="#6b7280" />
+                  <Text style={styles.selectFieldText} numberOfLines={1}>
+                    {formatTimeLabel(startDateTime)}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.fieldWrap}>
-              <Text style={styles.label}>End Date/Time</Text>
-              <TextInput
-                value={endTime}
-                onChangeText={setEndTime}
-                style={styles.input}
-                placeholder="YYYY-MM-DD HH:mm"
-              />
+              <Text style={styles.label}>End</Text>
+              <View style={styles.dateTimeRow}>
+                <Pressable
+                  style={styles.selectField}
+                  onPress={() => openPicker("end", "date")}
+                >
+                  <Feather name="calendar" size={14} color="#6b7280" />
+                  <Text style={styles.selectFieldText} numberOfLines={1}>
+                    {formatDateLabel(endDateTime)}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.selectField}
+                  onPress={() => openPicker("end", "time")}
+                >
+                  <Feather name="clock" size={14} color="#6b7280" />
+                  <Text style={styles.selectFieldText} numberOfLines={1}>
+                    {formatTimeLabel(endDateTime)}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
 
             <View style={styles.fieldWrap}>
@@ -184,6 +252,65 @@ export default function TimeOffRequestModal({
           </ScrollView>
         </Pressable>
       </Pressable>
+
+      <Modal
+        visible={pickerState !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerState(null)}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setPickerState(null)}>
+          <Pressable style={styles.pickerCard} onPress={() => {}}>
+            <View style={styles.header}>
+              <Text style={styles.pickerTitle}>
+                {pickerState?.target === "start"
+                  ? "Select Start"
+                  : "Select End"}{" "}
+                {pickerState?.mode === "date" ? "Date" : "Time"}
+              </Text>
+              <Pressable
+                onPress={() => setPickerState(null)}
+                style={styles.closeBtn}
+              >
+                <Feather name="x" size={20} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            <DateTimePicker
+              value={pickerState?.value || new Date()}
+              mode={pickerState?.mode || "date"}
+              display="spinner"
+              onChange={(_, selectedDate) => {
+                if (selectedDate) {
+                  setPickerState((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          value: selectedDate,
+                        }
+                      : prev,
+                  );
+                }
+              }}
+            />
+
+            <View style={styles.pickerActions}>
+              <Pressable
+                style={[styles.actionBtn, styles.cancelBtn]}
+                onPress={() => setPickerState(null)}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.actionBtn, styles.submitBtn]}
+                onPress={applyPicker}
+              >
+                <Text style={styles.submitText}>Apply</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
@@ -238,14 +365,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  input: {
+  dateTimeRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  selectField: {
+    flex: 1,
     minHeight: 42,
     borderWidth: 1,
     borderColor: "#d1d5db",
     borderRadius: 8,
     paddingHorizontal: 10,
-    color: "#111827",
     backgroundColor: "#ffffff",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  selectFieldText: {
+    color: "#111827",
+    fontSize: 12,
+    flex: 1,
   },
   textArea: {
     minHeight: 100,
@@ -286,5 +425,22 @@ const styles = StyleSheet.create({
   submitText: {
     color: "#ffffff",
     fontWeight: "800",
+  },
+  pickerCard: {
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 12,
+    gap: 10,
+  },
+  pickerTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  pickerActions: {
+    flexDirection: "row",
+    gap: 8,
   },
 });

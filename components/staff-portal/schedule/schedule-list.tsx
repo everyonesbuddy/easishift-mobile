@@ -61,6 +61,30 @@ function getScheduleCalendarDayKey(schedule: ScheduleItem) {
   return toDayKey(parsed);
 }
 
+function getScheduleCalendarDayKeys(schedule: ScheduleItem) {
+  const primaryKey = getScheduleCalendarDayKey(schedule);
+  if (!primaryKey) {
+    return [];
+  }
+
+  const keys = [primaryKey];
+  const start = new Date(schedule?.startTime || "");
+  const end = new Date(schedule?.endTime || "");
+
+  if (
+    !Number.isNaN(start.getTime()) &&
+    !Number.isNaN(end.getTime()) &&
+    start.toDateString() !== end.toDateString()
+  ) {
+    const endKey = toDayKey(end);
+    if (endKey && endKey !== primaryKey) {
+      keys.push(endKey);
+    }
+  }
+
+  return keys;
+}
+
 function getTimeKey(value?: string) {
   if (!value) {
     return "";
@@ -177,6 +201,9 @@ export default function ScheduleListPage() {
     "mine",
   );
   const [shiftTimeFilter, setShiftTimeFilter] = useState("");
+  const [filterPickerOpen, setFilterPickerOpen] = useState<
+    "visibility" | "role" | "status" | "shift" | null
+  >(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -443,6 +470,17 @@ export default function ScheduleListPage() {
     return options.sort((a, b) => a.key.localeCompare(b.key));
   }, [schedules]);
 
+  const selectedRoleLabel =
+    roleFilter === "all" ? "All Roles" : getRoleDisplayName(roleFilter);
+  const selectedStatusLabel = statusFilter
+    ? statusFilter.replace("_", " ").toUpperCase()
+    : "All Statuses";
+  const selectedVisibilityLabel =
+    staffVisibility === "mine" ? "My Schedule" : "Everyone";
+  const selectedShiftTimeLabel =
+    uniqueShiftTimes.find((option) => option.key === shiftTimeFilter)?.label ||
+    "All Times";
+
   const filteredSchedules = useMemo(
     () =>
       schedules.filter((schedule) => {
@@ -509,15 +547,17 @@ export default function ScheduleListPage() {
     const meta: Record<string, { count: number; color: string }> = {};
 
     filteredSchedules.forEach((schedule) => {
-      const key = getScheduleCalendarDayKey(schedule);
-      if (!key) {
+      const dayKeys = getScheduleCalendarDayKeys(schedule);
+      if (dayKeys.length === 0) {
         return;
       }
       const color = STATUS_COLORS[schedule.status || "scheduled"] || "#6b7280";
-      meta[key] = {
-        count: (meta[key]?.count || 0) + 1,
-        color,
-      };
+      dayKeys.forEach((key) => {
+        meta[key] = {
+          count: (meta[key]?.count || 0) + 1,
+          color,
+        };
+      });
     });
 
     return meta;
@@ -525,8 +565,8 @@ export default function ScheduleListPage() {
 
   const selectedDayEntries = useMemo(
     () =>
-      filteredSchedules.filter(
-        (schedule) => getScheduleCalendarDayKey(schedule) === selectedDay,
+      filteredSchedules.filter((schedule) =>
+        getScheduleCalendarDayKeys(schedule).includes(selectedDay),
       ),
     [filteredSchedules, selectedDay],
   );
@@ -689,118 +729,78 @@ export default function ScheduleListPage() {
         <View style={styles.filterCard}>
           <Text style={styles.filterLabel}>Filter</Text>
 
-          {!isAdmin ? (
-            <View style={styles.pillsWrap}>
-              {(["mine", "all"] as const).map((visibility) => {
-                const selected = staffVisibility === visibility;
-
-                return (
-                  <Pressable
-                    key={visibility}
-                    style={[styles.pill, selected ? styles.pillActive : null]}
-                    onPress={() => setStaffVisibility(visibility)}
-                  >
-                    <Text
-                      style={[
-                        styles.pillText,
-                        selected ? styles.pillTextActive : null,
-                      ]}
-                    >
-                      {visibility === "mine" ? "My Schedule" : "Everyone"}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
-
-          {isAdmin ? (
-            <View style={styles.pillsWrap}>
-              {roleFilterOptions.map((role) => {
-                const selected = roleFilter === role;
-                return (
-                  <Pressable
-                    key={role}
-                    style={[styles.pill, selected ? styles.pillActive : null]}
-                    onPress={() => setRoleFilter(role)}
-                  >
-                    <Text
-                      style={[
-                        styles.pillText,
-                        selected ? styles.pillTextActive : null,
-                      ]}
-                    >
-                      {role === "all" ? "All Roles" : getRoleDisplayName(role)}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
-
-          <View style={styles.pillsWrap}>
-            {STATUS_FILTERS.map((status) => {
-              const selected = statusFilter === status;
-              return (
+          <View style={styles.filterFieldsWrap}>
+            {!isAdmin ? (
+              <View style={styles.filterField}>
+                <Text style={styles.filterFieldLabel}>Schedule</Text>
                 <Pressable
-                  key={status || "all"}
-                  style={[styles.pill, selected ? styles.pillActive : null]}
-                  onPress={() => setStatusFilter(status)}
+                  style={styles.filterSelect}
+                  onPress={() => setFilterPickerOpen("visibility")}
                 >
-                  <Text
-                    style={[
-                      styles.pillText,
-                      selected ? styles.pillTextActive : null,
-                    ]}
-                  >
-                    {status ? status.replace("_", " ").toUpperCase() : "All"}
+                  <Text style={styles.filterSelectText} numberOfLines={1}>
+                    {selectedVisibilityLabel}
                   </Text>
+                  <Feather name="chevron-down" size={16} color="#6b7280" />
                 </Pressable>
-              );
-            })}
+              </View>
+            ) : null}
+
+            {isAdmin ? (
+              <View style={styles.filterField}>
+                <Text style={styles.filterFieldLabel}>Role</Text>
+                <Pressable
+                  style={styles.filterSelect}
+                  onPress={() => setFilterPickerOpen("role")}
+                >
+                  <Text style={styles.filterSelectText} numberOfLines={1}>
+                    {selectedRoleLabel}
+                  </Text>
+                  <Feather name="chevron-down" size={16} color="#6b7280" />
+                </Pressable>
+              </View>
+            ) : null}
+
+            <View style={styles.filterField}>
+              <Text style={styles.filterFieldLabel}>Status</Text>
+              <Pressable
+                style={styles.filterSelect}
+                onPress={() => setFilterPickerOpen("status")}
+              >
+                <Text style={styles.filterSelectText} numberOfLines={1}>
+                  {selectedStatusLabel}
+                </Text>
+                <Feather name="chevron-down" size={16} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            {uniqueShiftTimes.length > 0 ? (
+              <View style={styles.filterField}>
+                <Text style={styles.filterFieldLabel}>Shift Time</Text>
+                <Pressable
+                  style={styles.filterSelect}
+                  onPress={() => setFilterPickerOpen("shift")}
+                >
+                  <Text style={styles.filterSelectText} numberOfLines={1}>
+                    {selectedShiftTimeLabel}
+                  </Text>
+                  <Feather name="chevron-down" size={16} color="#6b7280" />
+                </Pressable>
+              </View>
+            ) : null}
           </View>
 
-          {uniqueShiftTimes.length > 0 ? (
-            <View style={styles.pillsWrap}>
-              <Pressable
-                key="all-times"
-                style={[
-                  styles.pill,
-                  !shiftTimeFilter ? styles.pillActive : null,
-                ]}
-                onPress={() => setShiftTimeFilter("")}
-              >
-                <Text
-                  style={[
-                    styles.pillText,
-                    !shiftTimeFilter ? styles.pillTextActive : null,
-                  ]}
-                >
-                  All Times
-                </Text>
-              </Pressable>
-
-              {uniqueShiftTimes.map((option) => {
-                const selected = shiftTimeFilter === option.key;
-                return (
-                  <Pressable
-                    key={option.key}
-                    style={[styles.pill, selected ? styles.pillActive : null]}
-                    onPress={() => setShiftTimeFilter(option.key)}
-                  >
-                    <Text
-                      style={[
-                        styles.pillText,
-                        selected ? styles.pillTextActive : null,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
+          <Pressable
+            style={styles.clearFiltersBtn}
+            onPress={() => {
+              setRoleFilter("all");
+              setStatusFilter("");
+              setShiftTimeFilter("");
+              setStaffVisibility("mine");
+            }}
+          >
+            <Feather name="rotate-ccw" size={13} color="#475569" />
+            <Text style={styles.clearFiltersText}>Reset Filters</Text>
+          </Pressable>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -1159,9 +1159,24 @@ export default function ScheduleListPage() {
                       </Text>
                     </View>
                     <Text style={styles.dayEntryMeta}>
-                      {getRoleDisplayName(entry.role)} |{" "}
-                      {formatLocal(entry.startTime)}
+                      {getRoleDisplayName(entry.role)}
                     </Text>
+                    <Text style={styles.dayEntryMeta}>
+                      Start: {formatLocal(entry.startTime)}
+                    </Text>
+                    <Text style={styles.dayEntryMeta}>
+                      End: {formatLocal(entry.endTime)}
+                    </Text>
+                    {isOvernightShift(entry) ? (
+                      <>
+                        <Text style={styles.overnightText}>
+                          Overnight shift
+                        </Text>
+                        <Text style={styles.dayEntrySpanMeta}>
+                          Spans: {formatScheduleDateRange(entry)}
+                        </Text>
+                      </>
+                    ) : null}
                   </Pressable>
                 ))
               )}
@@ -1364,7 +1379,144 @@ export default function ScheduleListPage() {
         schedule={swapSchedule}
         staffList={staff}
       />
+
+      <PickerModal
+        open={filterPickerOpen !== null}
+        title={
+          filterPickerOpen === "visibility"
+            ? "Schedule Scope"
+            : filterPickerOpen === "role"
+              ? "Filter by Role"
+              : filterPickerOpen === "status"
+                ? "Filter by Status"
+                : "Filter by Shift Time"
+        }
+        value={
+          filterPickerOpen === "visibility"
+            ? staffVisibility
+            : filterPickerOpen === "role"
+              ? roleFilter
+              : filterPickerOpen === "status"
+                ? statusFilter
+                : shiftTimeFilter
+        }
+        onClose={() => setFilterPickerOpen(null)}
+        onSelect={(value) => {
+          if (filterPickerOpen === "visibility") {
+            setStaffVisibility(value as "mine" | "all");
+            return;
+          }
+
+          if (filterPickerOpen === "role") {
+            setRoleFilter(value);
+            return;
+          }
+
+          if (filterPickerOpen === "status") {
+            setStatusFilter(value);
+            return;
+          }
+
+          setShiftTimeFilter(value);
+        }}
+        options={
+          filterPickerOpen === "visibility"
+            ? [
+                { value: "mine", label: "My Schedule" },
+                { value: "all", label: "Everyone" },
+              ]
+            : filterPickerOpen === "role"
+              ? roleFilterOptions.map((roleValue) => ({
+                  value: roleValue,
+                  label:
+                    roleValue === "all"
+                      ? "All Roles"
+                      : getRoleDisplayName(roleValue),
+                }))
+              : filterPickerOpen === "status"
+                ? STATUS_FILTERS.map((statusValue) => ({
+                    value: statusValue,
+                    label: statusValue
+                      ? statusValue.replace("_", " ").toUpperCase()
+                      : "All Statuses",
+                  }))
+                : [
+                    { value: "", label: "All Times" },
+                    ...uniqueShiftTimes.map((option) => ({
+                      value: option.key,
+                      label: option.label,
+                    })),
+                  ]
+        }
+      />
     </SafeAreaView>
+  );
+}
+
+function PickerModal({
+  open,
+  title,
+  value,
+  onClose,
+  onSelect,
+  options,
+}: {
+  open: boolean;
+  title: string;
+  value: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.pickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.pickerCard} onPress={() => {}}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>{title}</Text>
+            <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Feather name="x" size={18} color="#6b7280" />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.pickerList}>
+            {options.map((option) => {
+              const selected = option.value === value;
+              return (
+                <Pressable
+                  key={option.value || "all"}
+                  style={[
+                    styles.pickerItem,
+                    selected ? styles.pickerItemActive : null,
+                  ]}
+                  onPress={() => {
+                    onSelect(option.value);
+                    onClose();
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.pickerItemText,
+                      selected ? styles.pickerItemTextActive : null,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {selected ? (
+                    <Feather name="check" size={16} color="#2563eb" />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1466,6 +1618,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  filterFieldsWrap: {
+    gap: 10,
+  },
+  filterField: {
+    gap: 6,
+  },
+  filterFieldLabel: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  filterSelect: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  filterSelectText: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 13,
+  },
+  clearFiltersBtn: {
+    minHeight: 34,
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  clearFiltersText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   pillsWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1490,6 +1687,61 @@ const styles = StyleSheet.create({
   },
   pillTextActive: {
     color: "#1d4ed8",
+  },
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  pickerCard: {
+    maxHeight: "70%",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 12,
+    gap: 8,
+  },
+  pickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  closeBtn: {
+    padding: 8,
+    marginRight: 2,
+  },
+  pickerTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  pickerList: {
+    gap: 6,
+  },
+  pickerItem: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    backgroundColor: "#f9fafb",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pickerItemActive: {
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
+  },
+  pickerItemText: {
+    color: "#111827",
+    fontSize: 13,
+  },
+  pickerItemTextActive: {
+    color: "#1d4ed8",
+    fontWeight: "700",
   },
   error: {
     color: "#b91c1c",
@@ -1812,6 +2064,11 @@ const styles = StyleSheet.create({
   dayEntryMeta: {
     color: "#6b7280",
     fontSize: 12,
+  },
+  dayEntrySpanMeta: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "600",
   },
   calendarEmptyText: {
     color: "#6b7280",

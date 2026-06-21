@@ -1,9 +1,9 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -63,8 +63,7 @@ function normalizeTenant(input: TenantPayload | null) {
 }
 
 export default function StaffDashboardScreen() {
-  const { user, isAdmin } = useAuth();
-  const router = useRouter();
+  const { user, isAdmin, updateCurrentUser } = useAuth();
 
   const [summary, setSummary] = useState<Summary | null>(null);
   const [tenant, setTenant] =
@@ -75,6 +74,7 @@ export default function StaffDashboardScreen() {
   const [openScheduleModal, setOpenScheduleModal] = useState(false);
   const [openAutoScheduleModal, setOpenAutoScheduleModal] = useState(false);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [uploadingProfile, setUploadingProfile] = useState(false);
 
   const userId = typeof user?._id === "string" ? user._id : "";
   const tenantId = typeof user?.tenantId === "string" ? user.tenantId : "";
@@ -211,8 +211,133 @@ export default function StaffDashboardScreen() {
     },
   ];
 
-  const routeTo = (path: string) => {
-    router.push(path as Parameters<typeof router.push>[0]);
+  const handlePickAndUploadProfile = async () => {
+    if (!userId) {
+      return;
+    }
+
+    let ImagePickerModule: {
+      requestMediaLibraryPermissionsAsync: () => Promise<{
+        granted: boolean;
+      }>;
+      launchImageLibraryAsync: (options: Record<string, unknown>) => Promise<{
+        canceled: boolean;
+        assets?: {
+          type?: string;
+          mimeType?: string | null;
+          fileSize?: number;
+          base64?: string | null;
+        }[];
+      }>;
+      MediaTypeOptions?: {
+        Images?: unknown;
+      };
+    };
+
+    try {
+      ImagePickerModule =
+        (await import("expo-image-picker")) as typeof ImagePickerModule;
+    } catch {
+      Alert.alert(
+        "Upload unavailable",
+        "Profile image picker is not available in this build yet.",
+      );
+      return;
+    }
+
+    if (
+      typeof ImagePickerModule.requestMediaLibraryPermissionsAsync !==
+        "function" ||
+      typeof ImagePickerModule.launchImageLibraryAsync !== "function"
+    ) {
+      Alert.alert(
+        "Upload unavailable",
+        "Image picker is incompatible with the current Expo SDK.",
+      );
+      return;
+    }
+
+    const permission =
+      await ImagePickerModule.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        "Please allow photo library access to upload a profile picture.",
+      );
+      return;
+    }
+
+    const pickerResult = await ImagePickerModule.launchImageLibraryAsync({
+      mediaTypes: ImagePickerModule.MediaTypeOptions?.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (pickerResult.canceled || !pickerResult.assets?.length) {
+      return;
+    }
+
+    const asset = pickerResult.assets[0];
+    const maxSizeBytes = 2 * 1024 * 1024;
+    const isImageType =
+      asset.type === "image" ||
+      (typeof asset.mimeType === "string" &&
+        asset.mimeType.startsWith("image/"));
+
+    if (!isImageType) {
+      Alert.alert("Invalid file", "Please select an image file.");
+      return;
+    }
+
+    if (typeof asset.fileSize === "number" && asset.fileSize > maxSizeBytes) {
+      Alert.alert("Image too large", "Please use an image under 2MB.");
+      return;
+    }
+
+    if (!asset.base64) {
+      Alert.alert("Upload failed", "Unable to read the selected image.");
+      return;
+    }
+
+    const mimeType = asset.mimeType || "image/jpeg";
+    const base64Image = `data:${mimeType};base64,${asset.base64}`;
+
+    try {
+      setUploadingProfile(true);
+      const response = await api.put(`/auth/${userId}`, {
+        profilePicture: base64Image,
+      });
+
+      const updatedUser = response?.data?.user;
+      if (updatedUser && typeof updatedUser === "object") {
+        await updateCurrentUser({
+          ...(updatedUser as Record<string, unknown>),
+        });
+      } else {
+        await updateCurrentUser({ profilePicture: base64Image });
+      }
+
+      Alert.alert("Success", "Profile picture updated.");
+    } catch (error: unknown) {
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { message?: string } } })
+          .response?.data?.message === "string"
+          ? (error as { response?: { data?: { message?: string } } }).response
+              ?.data?.message
+          : "Failed to upload profile picture.";
+
+      Alert.alert(
+        "Upload failed",
+        message || "Failed to upload profile picture.",
+      );
+    } finally {
+      setUploadingProfile(false);
+    }
   };
 
   if (loading) {
@@ -257,16 +382,35 @@ export default function StaffDashboardScreen() {
             </View>
           </View>
 
-          <View style={styles.avatarWrap}>
-            {typeof user?.profilePicture === "string" && user.profilePicture ? (
-              <Image
-                source={{ uri: user.profilePicture }}
-                style={styles.avatarImage}
-                contentFit="cover"
-              />
-            ) : (
-              <Text style={styles.avatarText}>{initials}</Text>
-            )}
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarWrap}>
+              {typeof user?.profilePicture === "string" &&
+              user.profilePicture ? (
+                <Image
+                  source={{ uri: user.profilePicture }}
+                  style={styles.avatarImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>{initials}</Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={styles.profileUploadBtn}
+              onPress={handlePickAndUploadProfile}
+              disabled={uploadingProfile}
+              activeOpacity={0.85}
+            >
+              <Feather name="upload" size={12} color="#ffffff" />
+              <Text style={styles.profileUploadBtnText}>
+                {uploadingProfile
+                  ? "Uploading..."
+                  : typeof user?.profilePicture === "string" &&
+                      user.profilePicture
+                    ? "Change Picture"
+                    : "Add Picture"}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -534,6 +678,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
+  avatarSection: {
+    alignItems: "center",
+    gap: 8,
+  },
   avatarImage: {
     width: 64,
     height: 64,
@@ -543,6 +691,22 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "800",
     fontSize: 24,
+  },
+  profileUploadBtn: {
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  profileUploadBtnText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
   },
   quickActionsSection: {
     marginBottom: 8,

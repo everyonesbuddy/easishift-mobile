@@ -1,5 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import api from "@/config/api";
 
@@ -41,6 +48,7 @@ type AuthContextValue = {
   login: (data: LoginData) => Promise<void>;
   logout: () => Promise<void>;
   refreshTenant: () => Promise<Tenant | null>;
+  updateCurrentUser: (patch: Partial<AuthUser>) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -222,24 +230,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.multiRemove([USER_KEY, ROLE_KEY, TOKEN_KEY]);
   };
 
-  const isPatient = role === "patient";
-  const isAdmin = role === "admin";
-  const isStaff = [
-    "staff",
-    "admin",
-    "doctor",
-    "nurse",
-    "rn",
-    "lpn",
-    "cna",
-    "med_aide",
-    "caregiver",
-    "activity_aide",
-    "dietary_aide",
-    "housekeeper",
-    "receptionist",
-    "billing",
-  ].includes(role);
+  const updateCurrentUser = useCallback(async (patch: Partial<AuthUser>) => {
+    if (!patch) {
+      return;
+    }
+
+    setUser((prev) => {
+      const nextUser = { ...(prev || {}), ...patch } as AuthUser;
+
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser)).catch(() => {
+        // Ignore persistence errors here; state is still updated.
+      });
+
+      if (typeof nextUser.role === "string" && nextUser.role.length > 0) {
+        const nextRole = normalizeRole(nextUser.role);
+        setRole(nextRole);
+        AsyncStorage.setItem(ROLE_KEY, nextRole).catch(() => {
+          // Ignore persistence errors here; state is still updated.
+        });
+      }
+
+      return nextUser;
+    });
+  }, []);
+
+  const normalizedRole = String(role || "").toLowerCase();
+  const isPatient = normalizedRole === "patient";
+  const isAdmin = normalizedRole === "admin" || normalizedRole === "superadmin";
+  const isStaff = Boolean(user) && !isPatient;
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -253,8 +271,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       loading,
+      updateCurrentUser,
     }),
-    [isAdmin, isPatient, isStaff, loading, role, tenant, user],
+    [
+      isAdmin,
+      isPatient,
+      isStaff,
+      loading,
+      role,
+      tenant,
+      updateCurrentUser,
+      user,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

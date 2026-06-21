@@ -183,6 +183,7 @@ export default function PreferencesPage() {
                   onPress={() => togglePreferredDay(index)}
                 >
                   <Text
+                    numberOfLines={1}
                     style={[
                       styles.dayPillText,
                       isPreferred ? styles.dayPillTextPreferred : null,
@@ -368,14 +369,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dayPill: {
-    minWidth: 44,
+    minWidth: 40,
     flexBasis: "13.5%",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#d1d5db",
     backgroundColor: "#ffffff",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -386,7 +387,7 @@ const styles = StyleSheet.create({
   },
   dayPillText: {
     color: "#111827",
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "700",
   },
   dayPillTextPreferred: {

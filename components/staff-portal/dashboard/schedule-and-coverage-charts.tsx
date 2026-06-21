@@ -1,13 +1,14 @@
 import { Feather } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
+  Pressable,
   ScrollView,
   type ScrollViewProps,
   StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -166,6 +167,122 @@ function splitShiftByDay(
   return parts;
 }
 
+function SelectModal({
+  open,
+  title,
+  value,
+  options,
+  onSelect,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onSelect: (value: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <Pressable onPress={onClose} style={styles.closeBtnSmall}>
+              <Feather name="x" size={18} color="#6b7280" />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.modalList}>
+            {options.map((option) => {
+              const selected = option.value === value;
+              return (
+                <Pressable
+                  key={`${title}-${option.value}`}
+                  style={[
+                    styles.modalItem,
+                    selected ? styles.modalItemSelected : null,
+                  ]}
+                  onPress={() => {
+                    onSelect(option.value);
+                    onClose();
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.modalItemText,
+                      selected ? styles.modalItemTextSelected : null,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {selected ? (
+                    <Feather name="check" size={15} color="#1d4ed8" />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SelectField({
+  title,
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  title: string;
+  value: string;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel =
+    options.find((item) => item.value === value)?.label || placeholder;
+
+  return (
+    <View style={styles.selectFieldWrap}>
+      <Text style={styles.selectLabel}>{title}</Text>
+      <Pressable style={styles.selectField} onPress={() => setOpen(true)}>
+        <Text style={styles.selectText}>{selectedLabel}</Text>
+        <Feather name="chevron-down" size={16} color="#6b7280" />
+      </Pressable>
+
+      <SelectModal
+        open={open}
+        title={title}
+        value={value}
+        options={options}
+        onSelect={onChange}
+        onClose={() => setOpen(false)}
+      />
+    </View>
+  );
+}
+
+function parseDayKeyOrToday(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = parseLocalDayKey(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
 export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   const [schedules, setSchedules] = useState<Shift[]>([]);
   const [coverage, setCoverage] = useState<Coverage[]>([]);
@@ -173,6 +290,10 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   const [selectedOvertimeRole, setSelectedOvertimeRole] = useState("all");
   const [coverageStartDate, setCoverageStartDate] = useState("");
   const [coverageEndDate, setCoverageEndDate] = useState("");
+  const [datePickerState, setDatePickerState] = useState<{
+    field: "start" | "end";
+    draftDate: Date;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const weekDays = useMemo(() => getWeekDays(), []);
@@ -317,6 +438,17 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
       ),
     );
   }, [coverageNormalized, schedulesNormalized]);
+
+  const roleFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "All Roles" },
+      ...rolesWithCoverage.map((role) => ({
+        value: role,
+        label: getRoleDisplayName(role),
+      })),
+    ],
+    [rolesWithCoverage],
+  );
 
   const consolidatedCoverageWithStaffing = useMemo(() => {
     if (!isAdmin) {
@@ -557,6 +689,33 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
     return `${Math.round(h * 10) / 10}h`;
   }
 
+  function openDatePicker(field: "start" | "end") {
+    const dateSource =
+      field === "start"
+        ? coverageStartDate || coverageEndDate
+        : coverageEndDate || coverageStartDate;
+
+    setDatePickerState({
+      field,
+      draftDate: parseDayKeyOrToday(dateSource),
+    });
+  }
+
+  function applyPickedDate() {
+    if (!datePickerState) {
+      return;
+    }
+
+    const dayKey = getLocalDayKey(datePickerState.draftDate);
+    if (datePickerState.field === "start") {
+      setCoverageStartDate(dayKey);
+    } else {
+      setCoverageEndDate(dayKey);
+    }
+
+    setDatePickerState(null);
+  }
+
   if (loading) {
     return (
       <View style={styles.loadingWrap}>
@@ -576,41 +735,40 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
             </Text>
 
             <View style={styles.dateRangeRow}>
-              <TextInput
-                value={coverageStartDate}
-                onChangeText={setCoverageStartDate}
-                placeholder="Start YYYY-MM-DD"
-                style={styles.dateInput}
-                placeholderTextColor="#94a3b8"
-              />
-              <TextInput
-                value={coverageEndDate}
-                onChangeText={setCoverageEndDate}
-                placeholder="End YYYY-MM-DD"
-                style={styles.dateInput}
-                placeholderTextColor="#94a3b8"
-              />
+              <View style={styles.dateFieldWrap}>
+                <Text style={styles.selectLabel}>Start Date</Text>
+                <Pressable
+                  style={styles.selectField}
+                  onPress={() => openDatePicker("start")}
+                >
+                  <Text style={styles.selectText}>
+                    {coverageStartDate || "Select date"}
+                  </Text>
+                  <Feather name="calendar" size={16} color="#6b7280" />
+                </Pressable>
+              </View>
+
+              <View style={styles.dateFieldWrap}>
+                <Text style={styles.selectLabel}>End Date</Text>
+                <Pressable
+                  style={styles.selectField}
+                  onPress={() => openDatePicker("end")}
+                >
+                  <Text style={styles.selectText}>
+                    {coverageEndDate || "Select date"}
+                  </Text>
+                  <Feather name="calendar" size={16} color="#6b7280" />
+                </Pressable>
+              </View>
             </View>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipsRow}
-            >
-              <RoleChip
-                label="All Roles"
-                active={selectedCoverageRole === "all"}
-                onPress={() => setSelectedCoverageRole("all")}
-              />
-              {rolesWithCoverage.map((role) => (
-                <RoleChip
-                  key={role}
-                  label={getRoleDisplayName(role)}
-                  active={selectedCoverageRole === role}
-                  onPress={() => setSelectedCoverageRole(role)}
-                />
-              ))}
-            </ScrollView>
+            <SelectField
+              title="Coverage Role Filter"
+              value={selectedCoverageRole}
+              placeholder="All Roles"
+              options={roleFilterOptions}
+              onChange={setSelectedCoverageRole}
+            />
 
             <ScrollView
               horizontal
@@ -743,25 +901,13 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
               Scheduled hours this week ({weekRangeLabel})
             </Text>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipsRow}
-            >
-              <RoleChip
-                label="All Roles"
-                active={selectedOvertimeRole === "all"}
-                onPress={() => setSelectedOvertimeRole("all")}
-              />
-              {rolesWithCoverage.map((role) => (
-                <RoleChip
-                  key={role}
-                  label={getRoleDisplayName(role)}
-                  active={selectedOvertimeRole === role}
-                  onPress={() => setSelectedOvertimeRole(role)}
-                />
-              ))}
-            </ScrollView>
+            <SelectField
+              title="Overtime Role Filter"
+              value={selectedOvertimeRole}
+              placeholder="All Roles"
+              options={roleFilterOptions}
+              onChange={setSelectedOvertimeRole}
+            />
 
             <ScrollView
               horizontal
@@ -950,29 +1096,23 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           </View>
         </>
       )}
-    </View>
-  );
-}
 
-function RoleChip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={[styles.chip, active ? styles.chipActive : null]}
-    >
-      <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
+      <DatePickerModal
+        state={datePickerState}
+        onClose={() => setDatePickerState(null)}
+        onChange={(nextDate) =>
+          setDatePickerState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  draftDate: nextDate,
+                }
+              : prev,
+          )
+        }
+        onApply={applyPickedDate}
+      />
+    </View>
   );
 }
 
@@ -1016,6 +1156,62 @@ function OverflowScrollView({
   );
 }
 
+function DatePickerModal({
+  state,
+  onClose,
+  onChange,
+  onApply,
+}: {
+  state: { field: "start" | "end"; draftDate: Date } | null;
+  onClose: () => void;
+  onChange: (nextDate: Date) => void;
+  onApply: () => void;
+}) {
+  return (
+    <Modal
+      visible={Boolean(state)}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalBackdrop} onPress={onClose}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {state?.field === "start"
+                ? "Select Start Date"
+                : "Select End Date"}
+            </Text>
+            <Pressable onPress={onClose} style={styles.closeBtnSmall}>
+              <Feather name="x" size={18} color="#6b7280" />
+            </Pressable>
+          </View>
+
+          <DateTimePicker
+            value={state?.draftDate || new Date()}
+            mode="date"
+            display="spinner"
+            onChange={(_, selectedDate) => {
+              if (selectedDate) {
+                onChange(selectedDate);
+              }
+            }}
+          />
+
+          <View style={styles.modalActionsRow}>
+            <Pressable style={styles.secondaryAction} onPress={onClose}>
+              <Text style={styles.secondaryActionText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={styles.primaryActionSmall} onPress={onApply}>
+              <Text style={styles.primaryActionText}>Apply</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     marginTop: 16,
@@ -1043,30 +1239,30 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 13,
   },
-  chipsRow: {
-    flexGrow: 0,
+  selectFieldWrap: {
+    gap: 6,
   },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
+  selectLabel: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  selectField: {
+    minHeight: 40,
     borderWidth: 1,
     borderColor: "#d1d5db",
-    marginRight: 8,
+    borderRadius: 8,
     backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
-  chipActive: {
-    borderColor: "#1d4ed8",
-    backgroundColor: "#dbeafe",
-  },
-  chipText: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  chipTextActive: {
-    color: "#1d4ed8",
-    fontWeight: "600",
+  selectText: {
+    color: "#111827",
+    fontSize: 12,
+    flex: 1,
   },
   listWrap: {
     gap: 8,
@@ -1125,16 +1321,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  dateInput: {
+  dateFieldWrap: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    fontSize: 13,
-    color: "#111827",
-    backgroundColor: "#ffffff",
+    gap: 6,
   },
   summaryChipsRow: {
     flexDirection: "row",
@@ -1239,5 +1428,94 @@ const styles = StyleSheet.create({
   durationText: {
     color: "#64748b",
     fontSize: 12,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 18,
+  },
+  modalCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    backgroundColor: "#ffffff",
+    maxHeight: "75%",
+    padding: 12,
+    gap: 10,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalTitle: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  closeBtnSmall: {
+    padding: 8,
+  },
+  modalList: {
+    gap: 6,
+  },
+  modalItem: {
+    minHeight: 38,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  modalItemSelected: {
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
+  },
+  modalItemText: {
+    color: "#374151",
+    fontSize: 12,
+    flex: 1,
+  },
+  modalItemTextSelected: {
+    color: "#1d4ed8",
+    fontWeight: "700",
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  primaryActionSmall: {
+    minHeight: 34,
+    borderRadius: 8,
+    backgroundColor: "#1d4ed8",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  primaryActionText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  secondaryAction: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  secondaryActionText: {
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

@@ -315,6 +315,14 @@ export default function AutoGenerateScheduleForm({
     return getRoleOptionsForIndustry(tenant?.industry);
   }, [facilityPreferences, tenant?.industry]);
 
+  const roleFilterOptions = useMemo(
+    () => [
+      { value: "", label: "All Roles" },
+      ...roleOptions.map((item) => ({ value: item.value, label: item.label })),
+    ],
+    [roleOptions],
+  );
+
   const selectableCoverageIds = useMemo(
     () =>
       coverages
@@ -920,46 +928,13 @@ export default function AutoGenerateScheduleForm({
           </View>
         </View>
 
-        <Text style={styles.fieldLabel}>Role Filter</Text>
-        <View style={styles.rolesWrap}>
-          <Pressable
-            onPress={() => setSelectedRole("")}
-            style={[
-              styles.rolePill,
-              !selectedRole ? styles.rolePillActive : null,
-            ]}
-          >
-            <Text
-              style={[
-                styles.rolePillText,
-                !selectedRole ? styles.rolePillTextActive : null,
-              ]}
-            >
-              All Roles
-            </Text>
-          </Pressable>
-          {roleOptions.map((item) => (
-            <Pressable
-              key={item.value}
-              onPress={() => setSelectedRole(item.value)}
-              style={[
-                styles.rolePill,
-                selectedRole === item.value ? styles.rolePillActive : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.rolePillText,
-                  selectedRole === item.value
-                    ? styles.rolePillTextActive
-                    : null,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <PickerField
+          title="Role Filter"
+          value={selectedRole}
+          placeholder="All Roles"
+          options={roleFilterOptions}
+          onChange={setSelectedRole}
+        />
 
         {fetchingCoverages ? (
           <ActivityIndicator size="small" color="#1d4ed8" />

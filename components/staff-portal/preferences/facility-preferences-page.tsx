@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -206,6 +207,7 @@ export default function FacilityPreferencesPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [patternPickerOpen, setPatternPickerOpen] = useState(false);
 
   const [arrayInputs, setArrayInputs] = useState({
     roleFamilies: "",
@@ -480,7 +482,7 @@ export default function FacilityPreferencesPage() {
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerTextWrap}>
             <Text style={styles.title}>Facility Preferences</Text>
             <Text style={styles.subtitle}>
               Configure facility-level scheduling policy and rules
@@ -499,31 +501,19 @@ export default function FacilityPreferencesPage() {
         {success ? <Text style={styles.success}>{success}</Text> : null}
 
         <Section title="Scheduling Pattern">
-          <View style={styles.chipsWrap}>
-            {SCHEDULING_PATTERNS.map((pattern) => {
-              const active = safePrefs.schedulingPattern === pattern.value;
-              return (
-                <Pressable
-                  key={pattern.value}
-                  style={[
-                    styles.choiceChip,
-                    active ? styles.choiceChipActive : null,
-                  ]}
-                  onPress={() =>
-                    handleChange("schedulingPattern", pattern.value)
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.choiceChipText,
-                      active ? styles.choiceChipTextActive : null,
-                    ]}
-                  >
-                    {pattern.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
+          <View style={styles.fieldWrap}>
+            <Text style={styles.fieldLabel}>Scheduling Pattern</Text>
+            <Pressable
+              style={styles.selectField}
+              onPress={() => setPatternPickerOpen(true)}
+            >
+              <Text style={styles.selectFieldText} numberOfLines={1}>
+                {SCHEDULING_PATTERNS.find(
+                  (pattern) => pattern.value === safePrefs.schedulingPattern,
+                )?.label || "Select pattern"}
+              </Text>
+              <Feather name="chevron-down" size={16} color="#6b7280" />
+            </Pressable>
           </View>
         </Section>
 
@@ -733,6 +723,61 @@ export default function FacilityPreferencesPage() {
         onCancel={() => setResetDialogOpen(false)}
         onConfirm={handleReset}
       />
+
+      <Modal
+        visible={patternPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPatternPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.pickerBackdrop}
+          onPress={() => setPatternPickerOpen(false)}
+        >
+          <Pressable style={styles.pickerCard} onPress={() => {}}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Scheduling Pattern</Text>
+              <Pressable
+                onPress={() => setPatternPickerOpen(false)}
+                style={styles.closeBtn}
+              >
+                <Feather name="x" size={18} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.pickerList}>
+              {SCHEDULING_PATTERNS.map((pattern) => {
+                const selected = safePrefs.schedulingPattern === pattern.value;
+                return (
+                  <Pressable
+                    key={pattern.value}
+                    style={[
+                      styles.pickerItem,
+                      selected ? styles.pickerItemActive : null,
+                    ]}
+                    onPress={() => {
+                      handleChange("schedulingPattern", pattern.value);
+                      setPatternPickerOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerItemText,
+                        selected ? styles.pickerItemTextActive : null,
+                      ]}
+                    >
+                      {pattern.label}
+                    </Text>
+                    {selected ? (
+                      <Feather name="check" size={16} color="#2563eb" />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -868,25 +913,30 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   title: {
     color: "#111827",
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "800",
   },
   subtitle: {
     color: "#6b7280",
-    fontSize: 13,
+    fontSize: 12,
+    marginTop: 2,
   },
   resetBtn: {
     borderWidth: 1,
     borderColor: "#fca5a5",
     backgroundColor: "#fff1f2",
     borderRadius: 8,
-    minHeight: 36,
-    paddingHorizontal: 10,
+    minHeight: 34,
+    paddingHorizontal: 9,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -1000,6 +1050,23 @@ const styles = StyleSheet.create({
     color: "#111827",
     backgroundColor: "#ffffff",
   },
+  selectField: {
+    minHeight: 36,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  selectFieldText: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 12,
+  },
   smallBtn: {
     borderRadius: 8,
     backgroundColor: "#2563eb",
@@ -1102,5 +1169,61 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "700",
     fontSize: 14,
+  },
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  pickerCard: {
+    maxHeight: "70%",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 10,
+    gap: 8,
+  },
+  pickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pickerTitle: {
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "800",
+    flex: 1,
+    minWidth: 0,
+  },
+  closeBtn: { padding: 8, marginRight: 2 },
+  pickerList: {
+    gap: 6,
+  },
+  pickerItem: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    backgroundColor: "#f9fafb",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  pickerItemActive: {
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
+  },
+  pickerItemText: {
+    color: "#111827",
+    fontSize: 12,
+    flex: 1,
+  },
+  pickerItemTextActive: {
+    color: "#1d4ed8",
+    fontWeight: "700",
   },
 });
