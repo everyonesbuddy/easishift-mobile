@@ -371,19 +371,19 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.roiStripCard}>
-          <Text style={styles.roiEyebrow}>New for operators</Text>
+          <Text style={styles.roiEyebrow}>Workforce calculators</Text>
           <Text style={styles.roiTitle}>
-            See your annual turnover cost in dollars
+            Estimate labor impact with practical calculators
           </Text>
           <Text style={styles.roiSubtitle}>
-            Use the LTC ROI Calculator to estimate turnover impact and projected
-            WiserShifts savings in under 2 minutes.
+            Compare turnover and labor cost leakage in one place, with projected
+            Easishift savings.
           </Text>
           <View style={styles.roiButtonWrap}>
             <ActionButton
-              label="Open LTC ROI Calculator"
+              label="Open Calculators"
               variant="filled"
-              onPress={() => router.push("/turnover-roi-calculator")}
+              onPress={() => router.push("/calculators")}
               fullWidth
             />
           </View>

@@ -15,22 +15,20 @@ import {
 
 import api from "@/config/api";
 
-const DEFAULTS = {
-  employees: 50,
-  hourlyWage: 22,
-  weeklyHours: 40,
-  turnoverRate: 65,
-  vacancyDays: 30,
-};
-
-const RECRUITMENT_COST_PER_HIRE = 2000;
-const MANAGER_HOURLY_RATE = 25;
-const SCHEDULING_HOURS_PER_WEEK = 10;
 const WEEKS_PER_YEAR = 52;
-const PRODUCTIVITY_FACTOR = 0.5;
-const WISERSHIFTS_SAVINGS_RATE = 0.28;
+const MONTHS_PER_YEAR = 12;
+const TEMP_PREMIUM_RATE = 0.35;
+const SAVINGS_RATE = 0.24;
 const BEEHIIV_MAGIC_LINK_TEMPLATE =
   "https://magic.beehiiv.com/v1/d46e492b-b716-407d-80d5-80ad8b9b4512?email=<email>";
+
+const DEFAULTS = {
+  employees: 120,
+  hourlyWage: 20,
+  overtimeCostPerWeek: 800,
+  tempMonthlySpend: 6000,
+  schedulingHoursPerWeek: 18,
+};
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -38,6 +36,10 @@ function formatMoney(value: number) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(Math.max(0, value));
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value)}%`;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -211,69 +213,46 @@ function ActionButton({
   );
 }
 
-export default function TurnoverRoiCalculatorScreen() {
+export default function CostLeakCalculatorScreen() {
   const [employees, setEmployees] = useState(DEFAULTS.employees);
   const [hourlyWage, setHourlyWage] = useState(DEFAULTS.hourlyWage);
-  const [weeklyHours, setWeeklyHours] = useState(DEFAULTS.weeklyHours);
-  const [turnoverRate, setTurnoverRate] = useState(DEFAULTS.turnoverRate);
-  const [vacancyDays, setVacancyDays] = useState(DEFAULTS.vacancyDays);
+  const [overtimeCostPerWeek, setOvertimeCostPerWeek] = useState(
+    DEFAULTS.overtimeCostPerWeek,
+  );
+  const [tempMonthlySpend, setTempMonthlySpend] = useState(
+    DEFAULTS.tempMonthlySpend,
+  );
+  const [schedulingHoursPerWeek, setSchedulingHoursPerWeek] = useState(
+    DEFAULTS.schedulingHoursPerWeek,
+  );
   const [email, setEmail] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
 
   const metrics = useMemo(() => {
-    const annualTurnoverEvents = employees * (turnoverRate / 100);
-    const vacancyWeeks = vacancyDays / 7;
+    const overtimeCostLeak = overtimeCostPerWeek * WEEKS_PER_YEAR;
+    const temporaryPremiumLeak =
+      tempMonthlySpend * MONTHS_PER_YEAR * TEMP_PREMIUM_RATE;
+    const managerHourlyRate = Math.max(hourlyWage * 1.8, 28);
+    const schedulingCoordinationLeak =
+      schedulingHoursPerWeek * managerHourlyRate * WEEKS_PER_YEAR;
 
-    const recruitmentPerEvent = RECRUITMENT_COST_PER_HIRE;
-    const onboardingPerEvent = hourlyWage * weeklyHours * 4;
-    const overtimePerEvent = hourlyWage * 1.5 * weeklyHours * vacancyWeeks;
-    const productivityPerEvent =
-      hourlyWage * weeklyHours * 8 * PRODUCTIVITY_FACTOR;
-
-    const costPerTurnoverEvent =
-      recruitmentPerEvent +
-      onboardingPerEvent +
-      overtimePerEvent +
-      productivityPerEvent;
-
-    const recruitmentAnnual = recruitmentPerEvent * annualTurnoverEvents;
-    const onboardingAnnual = onboardingPerEvent * annualTurnoverEvents;
-    const overtimeAnnual = overtimePerEvent * annualTurnoverEvents;
-    const productivityAnnual = productivityPerEvent * annualTurnoverEvents;
-
-    const annualTurnoverCost =
-      recruitmentAnnual +
-      onboardingAnnual +
-      overtimeAnnual +
-      productivityAnnual;
-
-    const schedulingAdminCost =
-      MANAGER_HOURLY_RATE * SCHEDULING_HOURS_PER_WEEK * WEEKS_PER_YEAR;
-
-    const totalCost = annualTurnoverCost + schedulingAdminCost;
-    const projectedSavings = totalCost * WISERSHIFTS_SAVINGS_RATE;
+    const totalAnnualLeak =
+      overtimeCostLeak + temporaryPremiumLeak + schedulingCoordinationLeak;
+    const projectedSavings = totalAnnualLeak * SAVINGS_RATE;
 
     return {
-      annualTurnoverEvents,
-      costPerTurnoverEvent,
-      annualTurnoverCost,
-      schedulingAdminCost,
-      totalCost,
+      overtimeCostLeak,
+      temporaryPremiumLeak,
+      schedulingCoordinationLeak,
+      totalAnnualLeak,
       projectedSavings,
-      drivers: [
-        {
-          label: `Recruitment (${Math.round(annualTurnoverEvents)} hires @ ${formatMoney(
-            RECRUITMENT_COST_PER_HIRE,
-          )})`,
-          value: recruitmentAnnual,
-        },
-        { label: "Onboarding and training", value: onboardingAnnual },
-        { label: "Overtime or agency fill", value: overtimeAnnual },
-        { label: "Productivity loss", value: productivityAnnual },
-        { label: "Scheduling admin time", value: schedulingAdminCost },
-      ],
     };
-  }, [employees, hourlyWage, weeklyHours, turnoverRate, vacancyDays]);
+  }, [
+    hourlyWage,
+    overtimeCostPerWeek,
+    schedulingHoursPerWeek,
+    tempMonthlySpend,
+  ]);
 
   const handleSendSummary = async () => {
     const trimmedEmail = email.trim();
@@ -286,28 +265,23 @@ export default function TurnoverRoiCalculatorScreen() {
 
     const payload = {
       recipientEmail: trimmedEmail,
-      source: "wisershifts.com/turnover-roi-calculator",
-      calculatorType: "LTC turnover ROI calculator",
+      source: "wisershifts.com/cost-leak-calculator",
+      calculatorType: "Labor cost leak estimator",
       inputs: {
         employees,
         hourlyWage,
-        weeklyHours,
-        turnoverRate,
-        vacancyDays,
+        overtimeCostPerWeek,
+        tempMonthlySpend,
+        schedulingHoursPerWeek,
       },
       outputs: {
-        annualTurnoverEvents: metrics.annualTurnoverEvents,
-        costPerTurnoverEvent: metrics.costPerTurnoverEvent,
-        annualTurnoverCost: metrics.annualTurnoverCost,
-        schedulingAdminCost: metrics.schedulingAdminCost,
-        totalCost: metrics.totalCost,
+        overtimeCostLeak: metrics.overtimeCostLeak,
+        temporaryPremiumLeak: metrics.temporaryPremiumLeak,
+        schedulingCoordinationLeak: metrics.schedulingCoordinationLeak,
+        totalAnnualLeak: metrics.totalAnnualLeak,
         projectedSavings: metrics.projectedSavings,
-        savingsRate: WISERSHIFTS_SAVINGS_RATE,
+        savingsRate: SAVINGS_RATE,
       },
-      costDrivers: metrics.drivers.map((driver) => ({
-        label: driver.label,
-        value: driver.value,
-      })),
       meta: {
         sentAt: new Date().toISOString(),
       },
@@ -316,8 +290,11 @@ export default function TurnoverRoiCalculatorScreen() {
     try {
       setSendingEmail(true);
       await Linking.openURL(buildBeehiivMagicLink(trimmedEmail));
-      await api.post("/marketing/turnover-roi/email-summary", payload);
-      Alert.alert("Summary sent", "Check your inbox for the ROI summary.");
+      await api.post("/marketing/cost-leak/email-summary", payload);
+      Alert.alert(
+        "Summary sent",
+        "Check your inbox for the cost leak summary.",
+      );
     } catch (error) {
       Alert.alert("Send failed", getErrorMessage(error));
     } finally {
@@ -329,112 +306,130 @@ export default function TurnoverRoiCalculatorScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerWrap}>
-          <Text style={styles.title}>Turnover To ROI Calculator</Text>
+          <Text style={styles.title}>Cost Leak Calculator (Estimator)</Text>
           <Text style={styles.subtitle}>
-            Estimate your annual turnover burden and see what Wisershifts can
-            save.
+            Estimate your annual labor cost leak in under 60 seconds. No
+            spreadsheets. Just numbers you already know.
           </Text>
         </View>
 
         <View style={styles.panelCard}>
-          <Text style={styles.cardTitle}>Facility Inputs</Text>
+          <Text style={styles.cardTitle}>Your Numbers</Text>
           <View style={styles.stack}>
             <InputWithSlider
               label="Number of employees"
               value={employees}
               onChange={setEmployees}
               min={10}
-              max={500}
+              max={1500}
             />
             <InputWithSlider
               label="Average hourly wage"
               value={hourlyWage}
               onChange={setHourlyWage}
-              min={12}
-              max={60}
+              min={10}
+              max={80}
               step={0.5}
+              adornment="$"
+              helper="Approximate is fine - default $20/hr"
+            />
+            <InputWithSlider
+              label="Estimated overtime cost per week"
+              value={overtimeCostPerWeek}
+              onChange={setOvertimeCostPerWeek}
+              min={0}
+              max={50000}
+              step={50}
+              adornment="$"
+              helper="If unsure, estimate total weekly overtime payroll cost"
+            />
+            <InputWithSlider
+              label="Monthly spend on temporary / contract workers"
+              value={tempMonthlySpend}
+              onChange={setTempMonthlySpend}
+              min={0}
+              max={120000}
+              step={500}
               adornment="$"
             />
             <InputWithSlider
-              label="Average hours per week"
-              value={weeklyHours}
-              onChange={setWeeklyHours}
-              min={20}
-              max={50}
-            />
-            <InputWithSlider
-              label="Annual turnover rate"
-              value={turnoverRate}
-              onChange={setTurnoverRate}
-              min={10}
-              max={100}
-              helper="Default: 65%"
-            />
-            <InputWithSlider
-              label="Average time to fill vacancy"
-              value={vacancyDays}
-              onChange={setVacancyDays}
-              min={7}
-              max={90}
-              helper="Default: 30 days"
+              label="Hours per week managers spend scheduling or filling shifts"
+              value={schedulingHoursPerWeek}
+              onChange={setSchedulingHoursPerWeek}
+              min={0}
+              max={120}
+              helper="Include time spent filling gaps, coordinating, and chasing coverage"
             />
           </View>
         </View>
 
         <View style={styles.impactCard}>
-          <Text style={styles.cardTitle}>Live Annual Impact</Text>
+          <Text style={styles.sectionEyebrow}>
+            Total Estimated Annual Labor Cost Leak
+          </Text>
+          <Text style={styles.metricPrimaryLarge}>
+            {formatMoney(metrics.totalAnnualLeak)}
+          </Text>
+          <Text style={styles.helperText}>
+            This estimate is based on typical labor patterns for organizations
+            of similar size and structure.
+          </Text>
+
+          <Divider />
+
           <View style={styles.metricRow}>
-            <Text style={styles.metricLabel}>Cost per turnover event</Text>
-            <Text style={styles.metricPrimary}>
-              {formatMoney(metrics.costPerTurnoverEvent)}
-            </Text>
-          </View>
-          <View style={styles.metricRow}>
-            <Text style={styles.metricLabel}>Annual turnover cost</Text>
-            <Text style={styles.metricPrimary}>
-              {formatMoney(metrics.annualTurnoverCost)}
-            </Text>
-          </View>
-          <View style={styles.metricRow}>
-            <Text style={styles.metricLabel}>Scheduling admin cost</Text>
+            <Text style={styles.metricLabel}>Overtime Cost</Text>
             <Text style={styles.metricSecondary}>
-              {formatMoney(metrics.schedulingAdminCost)}
+              {formatMoney(metrics.overtimeCostLeak)}
+            </Text>
+            <Text style={styles.driverLabel}>
+              Weekly overtime spend x 52 weeks
+            </Text>
+          </View>
+
+          <View style={styles.metricRow}>
+            <Text style={styles.metricLabel}>Temporary Labor Cost Premium</Text>
+            <Text style={styles.metricSecondary}>
+              {formatMoney(metrics.temporaryPremiumLeak)}
+            </Text>
+            <Text style={styles.driverLabel}>
+              Monthly temp spend x 12 x 35% agency markup premium
+            </Text>
+          </View>
+
+          <View style={styles.metricRow}>
+            <Text style={styles.metricLabel}>
+              Scheduling and Admin Time Cost
+            </Text>
+            <Text style={styles.metricSecondary}>
+              {formatMoney(metrics.schedulingCoordinationLeak)}
+            </Text>
+            <Text style={styles.driverLabel}>
+              Scheduling hrs/wk x estimated manager rate x 52 weeks
             </Text>
           </View>
 
           <Divider />
 
           <View style={styles.metricRow}>
-            <Text style={styles.metricLabel}>Total annual cost</Text>
-            <Text style={styles.metricPrimaryLarge}>
-              {formatMoney(metrics.totalCost)}
-            </Text>
-          </View>
-          <View style={styles.metricRow}>
             <Text style={styles.metricLabel}>
-              Projected savings with Wisershifts (28%)
+              Projected savings with Wisershifts (
+              {formatPercent(SAVINGS_RATE * 100)})
             </Text>
             <Text style={styles.metricSavings}>
               {formatMoney(metrics.projectedSavings)}/yr
             </Text>
+            <Text style={styles.driverLabel}>
+              Total annual leak x 24% - based on typical reduction seen with
+              improved scheduling visibility
+            </Text>
           </View>
 
           <Divider />
 
-          <View style={styles.stackCompact}>
-            {metrics.drivers.map((driver) => (
-              <View key={driver.label} style={styles.driverRow}>
-                <Text style={styles.driverLabel}>{driver.label}</Text>
-                <Text style={styles.driverValue}>
-                  {formatMoney(driver.value)}
-                </Text>
-              </View>
-            ))}
-          </View>
-
           <View style={styles.stack}>
             <TextInput
-              placeholder="you@facility.com"
+              placeholder="you@company.com"
               value={email}
               onChangeText={setEmail}
               style={styles.emailInput}
@@ -509,11 +504,15 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     marginBottom: 4,
   },
+  sectionEyebrow: {
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    fontSize: 11,
+    fontWeight: "700",
+  },
   stack: {
     gap: 10,
-  },
-  stackCompact: {
-    gap: 6,
   },
   inputCard: {
     borderWidth: 1,
@@ -570,13 +569,6 @@ const styles = StyleSheet.create({
     color: "#475569",
     fontSize: 13,
   },
-  metricPrimary: {
-    color: "#0f172a",
-    fontSize: 28,
-    lineHeight: 30,
-    fontWeight: "900",
-    letterSpacing: -0.4,
-  },
   metricPrimaryLarge: {
     color: "#0f172a",
     fontSize: 32,
@@ -602,21 +594,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.12)",
     marginVertical: 4,
   },
-  driverRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
   driverLabel: {
     color: "#334155",
     fontSize: 13,
-    flex: 1,
     lineHeight: 18,
-  },
-  driverValue: {
-    color: "#0f172a",
-    fontWeight: "800",
-    fontSize: 13,
   },
   emailInput: {
     borderWidth: 1,
