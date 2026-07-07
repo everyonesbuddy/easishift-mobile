@@ -62,6 +62,12 @@ const STAFF_MAIN_ITEMS: NavItem[] = [
 const ADMIN_MORE_ITEMS: NavItem[] = [
   { id: "staff", label: "Staff Management", icon: "users", to: "/staffs" },
   {
+    id: "how-to-use",
+    label: "How To Use",
+    icon: "book-open",
+    to: "/how-to-use",
+  },
+  {
     id: "messages",
     label: "Messages",
     icon: "message-square",
@@ -94,6 +100,12 @@ const ADMIN_MORE_ITEMS: NavItem[] = [
 ];
 
 const STAFF_MORE_ITEMS: NavItem[] = [
+  {
+    id: "how-to-use",
+    label: "How To Use",
+    icon: "book-open",
+    to: "/how-to-use",
+  },
   {
     id: "timeoff-requests",
     label: "My Time Off Requests",

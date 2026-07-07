@@ -212,6 +212,7 @@ export default function ScheduleListPage() {
   const [swapModalOpen, setSwapModalOpen] = useState(false);
   const [swapSchedule, setSwapSchedule] = useState<ScheduleItem | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [calendarDetailsOpen, setCalendarDetailsOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleItem | null>(
     null,
   );
@@ -571,6 +572,22 @@ export default function ScheduleListPage() {
     [filteredSchedules, selectedDay],
   );
 
+  const selectedDayLabel = useMemo(() => {
+    const [year, month, day] = selectedDay.split("-").map(Number);
+    const parsed = new Date(year, (month || 1) - 1, day || 1);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return selectedDay;
+    }
+
+    return parsed.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [selectedDay]);
+
   const monthYear = calendarMonth.toLocaleString("default", {
     month: "long",
     year: "numeric",
@@ -595,6 +612,11 @@ export default function ScheduleListPage() {
     }
 
     return String(extractStaffId(schedule)) === String(user?._id || "");
+  };
+
+  const handleCalendarDaySelect = (dayKey: string) => {
+    setSelectedDay(dayKey);
+    setCalendarDetailsOpen(true);
   };
 
   return (
@@ -679,7 +701,7 @@ export default function ScheduleListPage() {
                 onPress={() => setOpenAutoModal(true)}
               >
                 <Feather name="cpu" size={14} color="#ffffff" />
-                <Text style={styles.actionText}>AI Generated Schedule</Text>
+                <Text style={styles.actionText}>Review AI Draft Schedules</Text>
               </Pressable>
             ) : null}
 
@@ -1121,13 +1143,42 @@ export default function ScheduleListPage() {
               month={calendarMonth}
               selectedDay={selectedDay}
               dayMeta={dayMeta}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleCalendarDaySelect}
               onChangeMonth={setCalendarMonth}
             />
 
-            <View style={styles.dayGroup}>
-              <Text style={styles.dayTitle}>{selectedDay}</Text>
+            <Text style={styles.calendarHintText}>
+              Tap a day to view schedule details.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
 
+      <Modal
+        visible={calendarDetailsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarDetailsOpen(false)}
+      >
+        <Pressable
+          style={styles.calendarDetailsBackdrop}
+          onPress={() => setCalendarDetailsOpen(false)}
+        >
+          <Pressable style={styles.calendarDetailsCard} onPress={() => {}}>
+            <View style={styles.calendarDetailsHeader}>
+              <View style={styles.detailsHeaderText}>
+                <Text style={styles.detailsTitle}>Day Schedules</Text>
+                <Text style={styles.detailsSubtitle}>{selectedDayLabel}</Text>
+              </View>
+              <Pressable
+                style={styles.closeAction}
+                onPress={() => setCalendarDetailsOpen(false)}
+              >
+                <Feather name="x" size={20} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.calendarDetailsBody}>
               {selectedDayEntries.length === 0 ? (
                 <Text style={styles.calendarEmptyText}>
                   No schedules on this day.
@@ -1137,7 +1188,10 @@ export default function ScheduleListPage() {
                   <Pressable
                     key={entry._id}
                     style={styles.dayEntry}
-                    onPress={() => openDetails(entry)}
+                    onPress={() => {
+                      setCalendarDetailsOpen(false);
+                      openDetails(entry);
+                    }}
                   >
                     <View style={styles.dayEntryTop}>
                       <Text style={styles.dayEntryStaff}>
@@ -1180,10 +1234,10 @@ export default function ScheduleListPage() {
                   </Pressable>
                 ))
               )}
-            </View>
-          </View>
-        )}
-      </ScrollView>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={detailsOpen}
@@ -1349,6 +1403,7 @@ export default function ScheduleListPage() {
           <AutoGenerateScheduleForm
             onClose={() => setOpenAutoModal(false)}
             onSuccess={() => fetchSchedules()}
+            schedules={schedules}
           />
         </SafeAreaView>
       </Modal>
@@ -1942,6 +1997,35 @@ const styles = StyleSheet.create({
   },
   calendarWrap: {
     gap: 10,
+  },
+  calendarHintText: {
+    color: "#64748b",
+    fontSize: 12,
+  },
+  calendarDetailsBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.38)",
+    justifyContent: "center",
+    padding: 18,
+  },
+  calendarDetailsCard: {
+    maxHeight: "82%",
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    borderRadius: 14,
+    backgroundColor: "#ffffff",
+    padding: 12,
+    gap: 10,
+  },
+  calendarDetailsHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  calendarDetailsBody: {
+    gap: 8,
+    paddingBottom: 4,
   },
   rosterHeader: {
     flexDirection: "row",

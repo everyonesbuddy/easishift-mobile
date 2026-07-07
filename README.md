@@ -1,402 +1,369 @@
-# WiserShifts Mobile
+# WiserShifts Mobile — Frontend
 
-WiserShifts Mobile is the React Native staff portal for facility onboarding, staffing operations, scheduling, coverage planning, time-off workflows, shift swaps, messaging, preferences, and subscription management.
+WiserShifts Mobile is the Expo React Native frontend for the WiserShifts multi-tenant workforce scheduling platform used by care facilities.
 
-This README is written as a product-flow guide so a new developer, tester, or stakeholder can understand how the mobile app behaves from first entry to daily operations.
+Admins can manage coverage, schedules, staff, time off, messages, and subscription billing. Staff can self-manage schedules, shift swaps, time-off requests, messaging, and preferences.
+
+---
+
+## Table of Contents
+
+1. Tech Stack
+2. Project Structure
+3. Getting Started
+4. Environment and API Configuration
+5. Authentication Flow
+6. Role System
+7. App Entry Point and Routing
+8. Paywall and Billing Guard
+9. Feature Areas
+10. Shared Components
+11. Key Developer Patterns
+12. Recent Major Changes
+
+---
 
 ## Tech Stack
 
-- Expo + React Native
-- Expo Router for file-based routing
-- TypeScript
-- Central API client in `config/api.ts`
-- Auth/session state in `context/auth-context.tsx`
+| Concern               | Library / Version                  |
+| --------------------- | ---------------------------------- |
+| Framework             | Expo SDK 54 + React Native 0.81    |
+| React                 | React 19                           |
+| Routing               | Expo Router 6 (file-based routing) |
+| Navigation Primitives | React Navigation 7                 |
+| HTTP                  | Axios via config/api.ts            |
+| Storage               | AsyncStorage                       |
+| Calendar UI           | Shared MonthCalendar component     |
+| Icons                 | @expo/vector-icons (Feather)       |
+| Language              | TypeScript                         |
+| Linting               | eslint-config-expo                 |
 
-## Running the App
+Note: this mobile app does not use Vite, MUI, React Router DOM, or FullCalendar.
 
-1. Install dependencies.
+---
+
+## Project Structure
+
+```text
+app/
+	_layout.tsx
+	(public)/
+		_layout.tsx
+		index.tsx
+		login.tsx
+		signup-tenant.tsx
+		reset-password.tsx
+		turnover-roi-calculator.tsx
+		calculators.tsx
+		cost-leak-calculator.tsx
+	(protected)/
+		_layout.tsx
+		dashboard.tsx
+		coverage-planning.tsx
+		schedule.tsx
+		staffs.tsx
+		timeoff-decisions.tsx
+		timeoff-requests.tsx
+		swap-requests.tsx
+		messages.tsx
+		preferences.tsx
+		paywall.tsx
+		billing/
+			index.tsx
+			success.tsx
+			cancel.tsx
+
+components/
+	auth/
+	home/
+	shared/
+	staff-portal/
+		billing/
+		coverage/
+		dashboard/
+		messages/
+		preferences/
+		schedule/
+		staff/
+		timeoff/
+		shared/
+
+config/
+	api.ts
+
+context/
+	auth-context.tsx
+
+constants/
+	industry-roles.ts
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+
+### Install and Run
 
 ```bash
 npm install
+npm run start
 ```
 
-2. Start the Expo app.
+Other useful scripts:
 
 ```bash
-npx expo start
+npm run android
+npm run ios
+npm run web
+npm run lint
 ```
 
-3. Open the app in Expo Go, simulator, or a development build.
+---
 
-## Route Structure
+## Environment and API Configuration
 
-The app is split into two main route groups:
+All network requests go through a shared Axios client in config/api.ts.
 
-- `app/(public)` for unauthenticated screens
-- `app/(protected)` for authenticated staff portal screens
+Typical behavior:
 
-Public routes currently include:
+- Central base URL and credentials setup
+- Shared auth header behavior
+- One import path used consistently across modules
 
-- landing page
-- login
-- tenant signup
-- reset password
-- turnover ROI calculator
+If backend URL behavior changes, update only config/api.ts.
 
-Protected routes currently include:
+---
 
-- dashboard
-- coverage planning
-- schedule
-- staff management
-- messages
-- preferences
-- time off requests
-- time off decisions
-- shift swaps
-- paywall (initial subscription gate for inactive admins)
-- billing (ongoing subscription management for active admins)
-- billing success and cancel states
+## Authentication Flow
 
-## High-Level User Flow
+Auth state is managed in context/auth-context.tsx.
 
-### 1. Public Entry
+Core responsibilities:
 
-Users land on the marketing/entry experience first. From there they can:
+- Session hydration from local storage on app start
+- User/role/tenant state management
+- Login/logout helpers
+- Tenant refresh after billing events
 
-- log in if they already belong to a facility
-- create a new tenant/facility account
-- access password reset flows
+Protected routes are rendered inside app/(protected), while unauthenticated entry is in app/(public).
 
-### 2. Tenant Signup
+---
 
-Tenant signup is the facility onboarding flow. The form captures:
+## Role System
 
-- hospital or facility name
-- facility phone
-- facility address
-- admin name
-- admin email
-- admin password
-- admin phone
+Two role categories drive UI and behavior:
 
-On successful signup, the app sends the request to `/auth/signup/tenant` and then redirects the user to login.
+- Admin roles: admin, superadmin
+- Staff role: staff
 
-### 3. Login
+Role-aware navigation and feature behavior is implemented in protected layouts and screen-level logic.
 
-Staff and admins log in through the mobile login screen. The login flow:
+---
 
-- posts to `/auth/login/staff`
-- stores the authenticated user, role, and token in local storage
-- restores the session on app relaunch
-- loads the tenant record if the user belongs to a tenant
+## App Entry Point and Routing
 
-After login, the app routes the user into the protected experience at `/dashboard`.
+This app uses Expo Router file-based routing.
 
-## Protected App Shell
+Public routes:
 
-Once authenticated, users enter the protected shell, which contains:
+- /
+- /login
+- /signup-tenant
+- /reset-password
+- /turnover-roi-calculator
+- /calculators
+- /cost-leak-calculator
 
-- a top bar with the current page title and logout action
-- the active screen content
-- a role-based bottom navigation bar
+Protected routes:
 
-The bottom navigation differs by role.
+- /dashboard
+- /coverage-planning
+- /schedule
+- /staffs
+- /timeoff-decisions
+- /timeoff-requests
+- /swap-requests
+- /messages
+- /preferences
+- /paywall
+- /billing
+- /billing/success
+- /billing/cancel
 
-### Admin Main Tabs
+---
 
-- Dashboard
-- Coverage
-- Schedule
-- Preferences
-- More
+## Paywall and Billing Guard
 
-### Admin More Menu
+Admin users are gated when subscription is inactive (or tenant limits require upgrade). In that case, navigation is redirected into paywall/billing flow.
 
-- Messages
-- Staff Management
-- Time Off Decisions
-- My Time Off Requests
-- Manage Subscription
+Flow summary:
 
-### Staff Main Tabs
+1. Inactive admin enters protected area.
+2. Redirect to /paywall.
+3. Checkout starts via backend Stripe session endpoint.
+4. Return to /billing/success or /billing/cancel.
+5. Tenant state refresh controls unlock behavior.
 
-- Dashboard
-- Schedule
-- Preferences
-- Messages
-- More
+---
 
-### Staff More Menu
+## Feature Areas
 
-- My Time Off Requests
-- Shift Swaps
+### Dashboard
 
-## Subscription Gate and Paywall Route
+Admin and staff dashboards present role-appropriate operational views.
 
-The protected layout checks subscription state for admins on every navigation.
+Recent changes:
 
-An admin is redirected to `/paywall` when all of the following are true:
+- Dashboard quick-action block removed for a lighter experience.
 
-- the user is an admin
-- a tenant record exists
-- the subscription status is not `"active"`, or the tenant seat limit is `1` or less
+### Coverage Planning
 
-This is the initial paywall behavior for a newly created or inactive account.
+Coverage planning supports:
 
-In practice, that means:
+- List and calendar views
+- Add coverage, edit headcount, delete coverage
+- Taxonomy-aware fields:
+  - unitArea
+  - shiftType
+  - shiftTag
+  - requiredCertificationTags
 
-- a brand-new facility can sign up and log in
-- the admin reaches the protected area
-- if the facility is inactive or still limited to a single seat, the app redirects to `/paywall`
-- the admin must choose a subscription before normal admin operations fully open up
+Coverage create flow updates:
 
-The `/paywall` route renders the `Paywall` component. It is a standalone full-screen plan selection page — not embedded inside another screen.
+- Slot-definition-first time selection
+- Searchable slot selection
+- Save-only and save-plus-generate-draft actions
 
-To prevent redirect loops, the protected layout tracks whether the current route is already inside the paywall or billing flow (`inPaywallFlow`). If the user is already on `/paywall` or `/billing`, no further redirects happen.
+Calendar UX update:
 
-The dashboard does **not** show an inline paywall. All subscription gating flows through the `/paywall` route.
+- Clicking a day opens a popup day-details panel (instead of persistent bottom list).
 
-## Billing Flow
+### Schedule Builder
 
-Billing is split into two separate routes with distinct purposes.
+Schedule module supports:
 
-### `/paywall` — Initial Plan Selection
+- List view
+- Calendar view
+- Roster view
+- Shift create/edit
+- Swap requests
+- AI draft workspace
 
-The `/paywall` route is where new or inactive admins choose their first subscription plan.
+Auto-generate draft workspace includes:
 
-The Paywall screen includes:
+- Open coverage intake
+- Draft create/review/edit/publish flow
+- Assignment-level edit/state controls
+- Fill with AI for unfilled draft slots
+- Publish selected or publish all
+- Live schedule overlay support (schedules prop wired from schedule list)
 
-- a yearly vs monthly billing period toggle (centered header)
-- three plan cards displayed in a vertical stack: **Starter**, **Growth**, and **Premium**
-- each card shows price, seat count, and feature highlights
-- a checkout button per plan
+UX updates:
 
-When the admin selects a plan, the app posts to `/stripe/create-checkout-session` with:
+- Day details shown in popup modals
+- Needs-coverage summary simplified
+- Improved legend presentation
+- Toast feedback moved to temporary bottom toast
 
-- `tenantId`
-- `planKey`
+### Staff Management
 
-If the backend returns a checkout URL, the app opens it on the device via the system browser.
+Staff management includes:
 
-### Billing Success
+- Create/edit staff
+- Bulk staff import/add flows
+- Capability tags:
+  - allowedAreas
+  - allowedShiftTypes
+  - allowedShiftTags
+  - certificationTags
 
-After a successful checkout, the success screen:
+### Time Off
 
-- confirms payment success
-- refreshes tenant state
-- returns the user to the dashboard
+Screens:
 
-### Billing Cancel
+- timeoff-requests (all users for personal requests)
+- timeoff-decisions (admin review flow)
 
-If checkout is cancelled or interrupted, the cancel screen:
+### Shift Swaps
 
-- informs the user that payment did not complete
-- sends them back to the paywall to retry
+Includes swap request creation and inbox/sent handling.
 
-### `/billing` — Ongoing Subscription Management
+### Messages
 
-Once the account is active and has a valid seat count, the admin no longer hits the paywall redirect. The `/billing` route becomes the subscription management area for active accounts.
+Internal tenant-scoped messaging with list and composer workflows.
 
-Admins reach `/billing` from `More → Manage Subscription`.
+### Preferences
 
-The `ManageSubscriptionPage` component at `/billing` lets admins:
+Staff-facing preferences flow with backend-supported payload only.
 
-- review current plan name, status, seat count, and billing email
-- switch to a different plan
-- cancel at period end
-- cancel immediately
+### Billing and Subscription
 
-Subscription cancellation posts to `/stripe/cancel-subscription`.
+Screens:
 
-### Route Separation Summary
+- paywall
+- billing
+- billing/success
+- billing/cancel
 
-| Condition                                          | Route      | Component                |
-| -------------------------------------------------- | ---------- | ------------------------ |
-| Admin with inactive subscription or seat limit ≤ 1 | `/paywall` | `Paywall`                |
-| Active admin managing existing subscription        | `/billing` | `ManageSubscriptionPage` |
+---
 
-## Dashboard Flow
+## Shared Components
 
-The dashboard is the operational landing page after login.
+Key shared building blocks include:
 
-### Admin Dashboard
+- ConfirmDialog
+- MonthCalendar
+- Protected top bar / bottom navigation components
+- Modal-based forms for create/edit flows
 
-Admins use the dashboard as the command center for setup and staffing operations. It includes quick actions for:
+---
 
-- Add Staff
-- Add Coverage
-- Manual Schedule
-- AI Generated Schedule
+## Key Developer Patterns
 
-These actions open working native forms and modals directly from the dashboard.
+1. Taxonomy-first options
 
-### Staff Dashboard
+- Prefer facility preference taxonomy values.
+- Fall back to industry defaults when facility config is missing.
 
-Staff see a simplified dashboard focused on their own work. Their primary quick action is:
+2. Central API usage
 
-- Pick Up Shift
+- Use config/api.ts for all requests.
+- Avoid direct Axios instance creation inside feature files.
 
-Both admin and staff dashboards also show schedule and coverage charts relevant to the current role.
+3. Role-aware rendering
 
-## Recommended Operational Flow for a New Facility
+- Use auth-context role flags for role-specific UI.
 
-This is the typical lifecycle after signup.
+4. Modal-first mobile UX
 
-### Step 1. Activate subscription
+- Create/edit flows are primarily modal-driven.
 
-The admin signs up, logs in, and is automatically redirected to `/paywall` by the protected layout. The admin selects a plan and completes Stripe checkout.
+5. Calendar day drill-down
 
-### Step 2. Add staff
+- Day click opens popup details for schedule and coverage modules.
 
-After activation, the admin uses Staff Management or the dashboard `Add Staff` action to create users.
+---
 
-Staff management supports:
+## Recent Major Changes
 
-- creating staff manually
-- editing existing staff
-- bulk import or bulk add workflows adapted for mobile
-- assigning role, unit areas, shift slot permissions, and certification tags per staff member
+1. Schedules and coverage now support expanded taxonomy fields.
+2. Auto-generate schedule workspace migrated to richer draft lifecycle UX.
+3. Manual scheduling safeguards added for draft-linked coverage conflicts.
+4. Coverage create flow split into save-only and save-and-generate-draft paths.
+5. Coverage slot selection hardened to configured slot definitions.
+6. Dashboard quick actions removed for simplification.
+7. Schedule and coverage calendar UX updated to popup day details.
+8. Auto-generate workspace now consumes live schedules directly via props.
+9. In-app feedback moved to temporary bottom toast UX.
 
-### Step 3. Create coverage needs
+---
 
-The admin defines open staffing needs in Coverage Planning.
-
-Coverage supports:
-
-- list view and calendar view (real month-grid calendar with day badges showing coverage counts)
-- role filtering
-- add, edit, and delete for admins
-- tracking required staffing counts and note fields
-
-Coverage is the supply of open shifts that later feed scheduling.
-
-### Step 4. Build schedules
-
-Once coverage exists, the admin creates schedules using either:
-
-- Manual Schedule
-- AI Generated Schedule
-
-Manual scheduling assigns staff into available coverage windows.
-
-AI scheduling works from unfilled coverage and sends selected coverage items to `/schedules/auto-generate`.
-
-Staff users can use the schedule area for their own view and pickup flow rather than full admin scheduling.
-
-Schedule currently includes:
-
-- List view with role, status, visibility, and shift-time filters
-- Calendar day view with date badges and day drill-down
-- Roster month view for print-style daily staffing matrix checks
-- Admin bulk selection and bulk delete for schedule rows
-
-Both the Schedule and Coverage modules include a real month-grid calendar (`MonthCalendar` component). The calendar shows navigation arrows to move between months, weekday headers, and per-day badges indicating how many items exist on each day. Tapping a day filters the list below the calendar to that day's items.
-
-### Step 5. Manage time off
-
-Time off has two role-aware screens.
-
-#### My Time Off Requests
-
-Available to both admins and staff.
-
-Users can:
-
-- open the time-off request modal
-- submit a request to `/timeoff`
-- review submitted requests
-- see current status and review notes
-
-#### Time Off Decisions
-
-Admin-only navigation entry.
-
-Admins can:
-
-- review pending requests
-- filter by status
-- approve or deny requests
-- attach review notes
-
-Review actions patch `/timeoff/{id}/review`.
-
-## Shift Swap Flow
-
-Shift swaps are staff-focused, but admins can still observe or process the workflow where supported.
-
-The swap flow includes:
-
-- opening a swap request modal from available schedules
-- selecting a target or replacement shift context
-- sending swap requests through the schedules API
-- viewing inbox and outbox swap requests
-- responding to incoming requests
-
-This allows staff to resolve scheduling conflicts without requiring all changes to be manually coordinated by an admin.
-
-## Preferences Flow
-
-Preferences are staff-facing and help improve scheduling quality.
-
-The Preferences screen lets a user manage:
-
-- preferred days of the week
-- email notifications
-- SMS notifications
-
-The app loads and saves these values through `/preferences/me`.
-
-These settings are soft constraints. They guide scheduling decisions but do not guarantee assignments.
-
-## Messages Flow
-
-The Messages module supports internal communication.
-
-Users can:
-
-- view inbox and sent messages
-- search messages
-- open message details
-- mark inbox messages as read
-- compose a new message
-- reply to an existing thread with prefilled defaults
-
-Messages use user-specific sender and receiver API endpoints.
-
-## Role Summary
-
-### Admin
-
-Admins can:
-
-- manage subscription and billing
-- add staff
-- create and edit coverage
-- manually schedule staff
-- trigger AI scheduling
-- review time-off decisions
-- submit their own time-off requests
-- use messaging
-
-### Staff
-
-Staff can:
-
-- view their dashboard
-- view schedules and pick up shifts
-- manage personal preferences
-- submit time-off requests
-- use shift swaps
-- use messaging
-
-## Core Business Rules to Remember
-
-**Subscription gate**: An admin with an inactive subscription or a tenant seat limit of `1` or less is redirected to `/paywall` on every protected navigation until the account is activated. That rule is what separates the initial onboarding paywall from the normal post-subscription admin experience.
-
-**Route separation**: `/paywall` is strictly for plan selection by new/inactive admins. `/billing` is strictly for subscription management by already-active admins. The two routes serve different purposes and should not be confused.
-
-**No inline paywall**: The dashboard does not contain any embedded subscription gate. All paywall logic lives in the protected layout and the `/paywall` route.
+If you also want a second README section specifically for backend contract endpoints (per feature), I can append an API matrix next.
 
 **Loop prevention**: The `inPaywallFlow` check in the protected layout prevents the redirect logic from looping when the admin is already on `/paywall` or `/billing`.
 

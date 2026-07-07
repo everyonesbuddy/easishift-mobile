@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -29,6 +30,7 @@ type Props = {
   schedule: ScheduleItem | null;
   staffList: StaffUser[];
   initialStaffId?: string;
+  initialCoverage?: CoverageItem | null;
   disableStaffSelect?: boolean;
 };
 
@@ -81,6 +83,38 @@ function normalizeTag(value: unknown) {
   return String(value || "")
     .trim()
     .toLowerCase();
+}
+
+function getCoverageId(coverage: CoverageItem) {
+  const rawCoverage = coverage as CoverageItem & {
+    coverageId?: { _id?: string } | string | null;
+  };
+
+  return String(
+    rawCoverage?.coverageId && typeof rawCoverage.coverageId === "object"
+      ? rawCoverage.coverageId._id || ""
+      : rawCoverage?.coverageId || coverage?._id || "",
+  );
+}
+
+function buildCoverageSignature(coverage: Partial<CoverageItem>) {
+  const startRaw = coverage?.startTime;
+  const endRaw = coverage?.endTime;
+  const startMs = new Date(startRaw || "").getTime();
+  const endMs = new Date(endRaw || "").getTime();
+
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+    return "";
+  }
+
+  return [
+    String(startMs),
+    String(endMs),
+    normalizeTag(coverage?.role),
+    normalizeTag(coverage?.unitArea),
+    normalizeTag(coverage?.shiftType),
+    normalizeTag(coverage?.shiftTag),
+  ].join("|");
 }
 
 function toNormalizedSet(values: unknown) {
@@ -270,6 +304,7 @@ export default function ScheduleForm({
   schedule,
   staffList,
   initialStaffId = "",
+  initialCoverage = null,
   disableStaffSelect = false,
 }: Props) {
   const isEditing = Boolean(schedule);
@@ -293,8 +328,39 @@ export default function ScheduleForm({
   const [coverageOptions, setCoverageOptions] = useState<CoverageOption[]>([]);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [includeDraftCoverages, setIncludeDraftCoverages] = useState(false);
+  const [draftCoverageIds, setDraftCoverageIds] = useState<string[]>([]);
+  const [draftCoverageSignatures, setDraftCoverageSignatures] = useState<
+    string[]
+  >([]);
+  const [hasLoadedDraftCoverageRefs, setHasLoadedDraftCoverageRefs] =
+    useState(false);
+  const [draftCoverageFetchFailed, setDraftCoverageFetchFailed] =
+    useState(false);
   const [staffSelectOpen, setStaffSelectOpen] = useState(false);
   const [shiftSelectOpen, setShiftSelectOpen] = useState(false);
+
+  const activeCoverageContext = !isEditing
+    ? initialCoverage ||
+      coverageOptions.find(
+        (coverage) => coverage._id === formData.coverageId,
+      ) ||
+      null
+    : null;
+
+  const compatibleStaffOptions = useMemo(() => {
+    return staffList.filter((member) => {
+      if (!activeCoverageContext) {
+        return true;
+      }
+
+      if (!isRoleCompatible(member?.role, activeCoverageContext?.role)) {
+        return false;
+      }
+
+      return doesCoverageMatchStaffTags(member, activeCoverageContext);
+    });
+  }, [activeCoverageContext, staffList]);
 
   useEffect(() => {
     if (!schedule) {
@@ -337,8 +403,158 @@ export default function ScheduleForm({
     }));
   }, [initialStaffId, schedule, staffList]);
 
+  useEffect(() => {
+    if (isEditing || !initialCoverage) {
+      return;
+    }
+
+    const coverageId = getCoverageId(initialCoverage);
+
+    setFormData((prev) => ({
+      ...prev,
+      coverageId,
+      role: initialCoverage.role || prev.role,
+      unitArea: initialCoverage.unitArea || "",
+      shiftType: initialCoverage.shiftType || "",
+      shiftTag: initialCoverage.shiftTag || "",
+      certificationTags: Array.isArray(
+        initialCoverage.requiredCertificationTags,
+      )
+        ? normalizeStringArray(initialCoverage.requiredCertificationTags)
+        : prev.certificationTags,
+      startTime: toLocalInputValue(initialCoverage.startTime),
+      endTime: toLocalInputValue(initialCoverage.endTime),
+    }));
+  }, [initialCoverage, isEditing]);
+
+  useEffect(() => {
+    if (isEditing) {
+      setHasLoadedDraftCoverageRefs(true);
+      setDraftCoverageFetchFailed(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadDraftCoverageReferences() {
+      setHasLoadedDraftCoverageRefs(false);
+      setDraftCoverageFetchFailed(false);
+
+      try {
+        const res = await api.get("/schedules/draft-schedules", {
+          params: { status: "all", limit: 50 },
+        });
+
+        const drafts = Array.isArray(res.data) ? res.data : [];
+        const activeDrafts = drafts.filter((draft) =>
+          ["draft", "partially_published"].includes(
+            String(draft?.status || "").toLowerCase(),
+          ),
+        );
+
+        const idSet = new Set<string>();
+        const signatureSet = new Set<string>();
+
+        activeDrafts.forEach((draft) => {
+          const draftCoverages = [
+            ...(Array.isArray(draft?.coverageSnapshot)
+              ? draft.coverageSnapshot
+              : []),
+            ...(Array.isArray(draft?.coverages) ? draft.coverages : []),
+            ...(Array.isArray(draft?.sourceCoverages)
+              ? draft.sourceCoverages
+              : []),
+            ...(Array.isArray(draft?.inputCoverages)
+              ? draft.inputCoverages
+              : []),
+            ...(Array.isArray(draft?.requestedCoverages)
+              ? draft.requestedCoverages
+              : []),
+          ];
+
+          draftCoverages.forEach((coverage: CoverageItem) => {
+            const coverageId = getCoverageId(coverage);
+            if (coverageId) {
+              idSet.add(coverageId);
+            }
+
+            const signature = buildCoverageSignature(coverage);
+            if (signature) {
+              signatureSet.add(signature);
+            }
+          });
+
+          [
+            ...(Array.isArray(draft?.coverageIds) ? draft.coverageIds : []),
+            ...(Array.isArray(draft?.sourceCoverageIds)
+              ? draft.sourceCoverageIds
+              : []),
+            ...(Array.isArray(draft?.inputCoverageIds)
+              ? draft.inputCoverageIds
+              : []),
+          ].forEach((coverageId: unknown) => {
+            const normalized = String(coverageId || "");
+            if (normalized) {
+              idSet.add(normalized);
+            }
+          });
+
+          (Array.isArray(draft?.assignments) ? draft.assignments : []).forEach(
+            (assignment: { coverageId?: { _id?: string } | string }) => {
+              const assignmentCoverageId = String(
+                typeof assignment?.coverageId === "object"
+                  ? assignment.coverageId?._id || ""
+                  : assignment?.coverageId || "",
+              );
+              if (assignmentCoverageId) {
+                idSet.add(assignmentCoverageId);
+              }
+            },
+          );
+        });
+
+        if (!isMounted) {
+          return;
+        }
+
+        setDraftCoverageIds(Array.from(idSet));
+        setDraftCoverageSignatures(Array.from(signatureSet));
+      } catch (error) {
+        console.warn("Failed to load draft coverage references", error);
+        if (!isMounted) {
+          return;
+        }
+
+        setDraftCoverageIds([]);
+        setDraftCoverageSignatures([]);
+        setDraftCoverageFetchFailed(true);
+      } finally {
+        if (isMounted) {
+          setHasLoadedDraftCoverageRefs(true);
+        }
+      }
+    }
+
+    void loadDraftCoverageReferences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isEditing]);
+
   const loadCoverage = useCallback(async () => {
     if (!formData.staffId || isEditing) {
+      return;
+    }
+
+    const excludeDraftCoverages = !isAdmin || !includeDraftCoverages;
+    if (excludeDraftCoverages && !hasLoadedDraftCoverageRefs) {
+      setCoverageOptions([]);
+      return;
+    }
+
+    if (excludeDraftCoverages && draftCoverageFetchFailed) {
+      setCoverageOptions([]);
       return;
     }
 
@@ -364,6 +580,9 @@ export default function ScheduleForm({
       const raw = Array.isArray(coverageRes.data)
         ? (coverageRes.data as CoverageItem[])
         : [];
+
+      const draftCoverageIdSet = new Set(draftCoverageIds);
+      const draftCoverageSignatureSet = new Set(draftCoverageSignatures);
 
       const getScheduledCount = (coverage: CoverageItem) => {
         const assignedCount = Number(coverage?.assignedCount);
@@ -396,6 +615,19 @@ export default function ScheduleForm({
         .filter((item) => {
           const start = new Date(item.startTime || "");
 
+          if (excludeDraftCoverages) {
+            const coverageId = getCoverageId(item);
+            const coverageSignature = buildCoverageSignature(item);
+            const isDraftLinked =
+              (coverageId && draftCoverageIdSet.has(coverageId)) ||
+              (coverageSignature &&
+                draftCoverageSignatureSet.has(coverageSignature));
+
+            if (isDraftLinked) {
+              return false;
+            }
+          }
+
           return (
             !Number.isNaN(start.getTime()) &&
             start > now &&
@@ -425,7 +657,17 @@ export default function ScheduleForm({
       console.warn("Failed to load coverage for schedule form", error);
       setCoverageOptions([]);
     }
-  }, [formData.staffId, isEditing, staffList]);
+  }, [
+    draftCoverageFetchFailed,
+    draftCoverageIds,
+    draftCoverageSignatures,
+    formData.staffId,
+    hasLoadedDraftCoverageRefs,
+    includeDraftCoverages,
+    isAdmin,
+    isEditing,
+    staffList,
+  ]);
 
   useEffect(() => {
     loadCoverage();
@@ -466,6 +708,27 @@ export default function ScheduleForm({
   const submit = async () => {
     setMessage("");
     setSubmitting(true);
+
+    if (!isEditing && activeCoverageContext) {
+      const selectedStaff = staffList.find(
+        (staff) => staff._id === formData.staffId,
+      );
+      const isCompatible =
+        Boolean(selectedStaff) &&
+        isRoleCompatible(selectedStaff?.role, activeCoverageContext?.role) &&
+        doesCoverageMatchStaffTags(
+          selectedStaff as StaffUser,
+          activeCoverageContext,
+        );
+
+      if (!isCompatible) {
+        setMessage(
+          "Selected staff is not compatible with this coverage requirements.",
+        );
+        setSubmitting(false);
+        return;
+      }
+    }
 
     const payload: Record<string, unknown> = {
       staffId: formData.staffId,
@@ -559,18 +822,57 @@ export default function ScheduleForm({
         </Pressable>
       </View>
 
-      {!isEditing ? (
-        <View style={styles.fieldWrap}>
-          <Text style={styles.label}>Select Shift</Text>
-          <Pressable
-            style={styles.selectBtn}
-            onPress={() => setShiftSelectOpen(true)}
-            disabled={!coverageOptions.length}
-          >
-            <Text style={styles.selectText}>{selectedShiftLabel}</Text>
-            <Feather name="chevron-down" size={16} color="#6b7280" />
-          </Pressable>
+      {!isEditing && initialCoverage ? (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoText}>
+            Scheduling open coverage: {getRoleDisplayName(initialCoverage.role)}
+            {initialCoverage.unitArea
+              ? ` | ${getUnitAreaDisplayName(initialCoverage.unitArea)}`
+              : ""}
+            {initialCoverage.startTime && initialCoverage.endTime
+              ? ` | ${formatShiftLabel(initialCoverage)}`
+              : ""}
+            {Array.isArray(initialCoverage.requiredCertificationTags) &&
+            initialCoverage.requiredCertificationTags.length > 0
+              ? ` | Cert: ${initialCoverage.requiredCertificationTags.join(", ")}`
+              : ""}
+          </Text>
         </View>
+      ) : null}
+
+      {!isEditing && !initialCoverage ? (
+        <>
+          {isAdmin ? (
+            <View style={styles.switchRow}>
+              <Text style={styles.label}>Include draft-flow coverages</Text>
+              <Switch
+                value={includeDraftCoverages}
+                onValueChange={setIncludeDraftCoverages}
+              />
+            </View>
+          ) : null}
+
+          {!includeDraftCoverages && draftCoverageFetchFailed ? (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
+                Unable to verify draft coverages right now. To prevent
+                conflicts, draft-linked shifts are hidden.
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.fieldWrap}>
+            <Text style={styles.label}>Select Shift</Text>
+            <Pressable
+              style={styles.selectBtn}
+              onPress={() => setShiftSelectOpen(true)}
+              disabled={!coverageOptions.length}
+            >
+              <Text style={styles.selectText}>{selectedShiftLabel}</Text>
+              <Feather name="chevron-down" size={16} color="#6b7280" />
+            </Pressable>
+          </View>
+        </>
       ) : null}
 
       <View style={styles.fieldWrap}>
@@ -713,17 +1015,21 @@ export default function ScheduleForm({
           setFormData((prev) => ({
             ...prev,
             staffId: value,
-            coverageId: "",
-            startTime: "",
-            endTime: "",
-            role: selected?.role || "",
-            unitArea: "",
-            shiftType: "",
-            shiftTag: "",
-            certificationTags: [],
+            ...(initialCoverage && !isEditing
+              ? { role: selected?.role || prev.role }
+              : {
+                  coverageId: "",
+                  startTime: "",
+                  endTime: "",
+                  role: selected?.role || "",
+                  unitArea: "",
+                  shiftType: "",
+                  shiftTag: "",
+                  certificationTags: [],
+                }),
           }));
         }}
-        options={staffList.map((staff) => ({
+        options={compatibleStaffOptions.map((staff) => ({
           value: staff._id || "",
           label: `${staff.name || "Unknown"} (${getRoleDisplayName(staff.role)})`,
         }))}
@@ -809,10 +1115,42 @@ const styles = StyleSheet.create({
   fieldWrap: {
     gap: 6,
   },
+  infoBox: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  infoText: {
+    color: "#1e3a8a",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  warningBox: {
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    backgroundColor: "#fffbeb",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  warningText: {
+    color: "#92400e",
+    fontSize: 12,
+    lineHeight: 18,
+  },
   label: {
     color: "#374151",
     fontSize: 12,
     fontWeight: "700",
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
   selectBtn: {
     minHeight: 42,

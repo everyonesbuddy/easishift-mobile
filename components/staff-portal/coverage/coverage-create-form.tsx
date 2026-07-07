@@ -145,13 +145,56 @@ function parseDayKey(value: string) {
 }
 
 function toUTCISOString(dateKey: string, timeValue: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const [hour, minute] = timeValue.split(":").map(Number);
+  const [year, month, day] = String(dateKey || "")
+    .split("-")
+    .map(Number);
+  const [hour, minute] = String(timeValue || "")
+    .split(":")
+    .map(Number);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute)
+  ) {
+    return new Date(`${dateKey}T${timeValue}:00`).toISOString();
+  }
+
   return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
 }
 
 function isOvernight(startTime: string, endTime: string) {
   return !!startTime && !!endTime && endTime <= startTime;
+}
+
+function formatShiftPreview(
+  dateValue: string,
+  startTime: string,
+  endTime: string,
+) {
+  if (!dateValue || !startTime || !endTime) {
+    return `${startTime || "--:--"} - ${endTime || "--:--"}`;
+  }
+
+  const start = new Date(`${dateValue}T${startTime}:00`);
+  const end = new Date(`${dateValue}T${endTime}:00`);
+
+  if (isOvernight(startTime, endTime)) {
+    end.setDate(end.getDate() + 1);
+  }
+
+  return `${start.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  })} - ${end.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  })} ${end.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
 }
 
 function buildDates(
@@ -209,8 +252,12 @@ export default function CoverageCreateForm({
   const [requirements, setRequirements] = useState<Requirement[]>([
     { ...defaultRequirement },
   ]);
+  const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"create" | "ai">("create");
+  const [submitMode, setSubmitMode] = useState<"save-only" | "generate">(
+    "generate",
+  );
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [repeatOpen, setRepeatOpen] = useState(false);
@@ -333,30 +380,6 @@ export default function CoverageCreateForm({
 
   const includedDateSet = useMemo(() => new Set(activeDates), [activeDates]);
 
-  const previewByDate = useMemo(() => {
-    return activeDates.map((dateValue) => ({
-      dateValue,
-      dateLabel: new Date(`${dateValue}T00:00:00`).toLocaleDateString(
-        undefined,
-        {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        },
-      ),
-      rows: requirements.map((req, index) => ({
-        id: `${dateValue}-${index}`,
-        role: req.role ? getRoleDisplayName(req.role) : "-",
-        timeLabel: `${to12HourTime(req.startTime)} - ${to12HourTime(req.endTime)}`,
-        unitArea: req.unitArea,
-        shiftType: req.shiftType,
-        shiftTag: req.shiftTag,
-        count: Number(req.requiredCount) || 0,
-        overnight: isOvernight(req.startTime, req.endTime),
-      })),
-    }));
-  }, [activeDates, requirements]);
-
   const totalShiftBlocks = activeDates.length * requirements.length;
   const totalRequestedStaff =
     activeDates.length *
@@ -400,6 +423,53 @@ export default function CoverageCreateForm({
     const shiftTag = normalizeToken(req.shiftTag);
     if (!shiftType || !shiftTag) return null;
     return slotLookup.get(`${shiftType}:${shiftTag}`) || null;
+  };
+
+  const previewByDate = useMemo(() => {
+    return activeDates.map((dateValue) => ({
+      dateValue,
+      dateLabel: new Date(`${dateValue}T00:00:00`).toLocaleDateString(
+        undefined,
+        {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        },
+      ),
+      rows: requirements.map((req, index) => {
+        const selectedSlot = getSelectedSlot(req);
+        const startTime = selectedSlot?.startLocalTime || req.startTime;
+        const endTime = selectedSlot?.endLocalTime || req.endTime;
+
+        return {
+          id: `${dateValue}-${index}`,
+          role: req.role ? getRoleDisplayName(req.role) : "-",
+          timeLabel: formatShiftPreview(dateValue, startTime, endTime),
+          unitArea: req.unitArea || "",
+          shiftType: req.shiftType || "",
+          shiftTag: req.shiftTag || "",
+          count: Number(req.requiredCount) || 0,
+          overnight: isOvernight(startTime, endTime),
+        };
+      }),
+    }));
+  }, [activeDates, requirements, slotLookup]);
+
+  const getShiftSlotsForType = (shiftType: string) => {
+    const key = normalizeToken(shiftType);
+    if (!key) {
+      return [] as {
+        tag: string;
+        label: string;
+        startLocalTime: string;
+        endLocalTime: string;
+      }[];
+    }
+
+    const matched = shiftTypeDefinitions.find(
+      (definition) => definition.key === key,
+    );
+    return matched?.timeSlots || [];
   };
 
   const getShiftDefinitionValue = (req: Requirement) => {
@@ -478,9 +548,12 @@ export default function CoverageCreateForm({
     setExcludedDates([]);
   };
 
-  const handleSubmit = async (autoGenerate = false) => {
+  const handleSubmit = async (modeOverride?: "save-only" | "generate") => {
     setError("");
     setSuccess("");
+
+    const mode = modeOverride || submitMode;
+    const shouldGenerateDraft = mode !== "save-only";
 
     if (!activeDates.length) {
       setError("Please include at least one active date.");
@@ -489,20 +562,37 @@ export default function CoverageCreateForm({
 
     for (let index = 0; index < requirements.length; index += 1) {
       const req = requirements[index];
+      const slotsForType = getShiftSlotsForType(req.shiftType);
+      const selectedSlot = getSelectedSlot(req);
+      const requiresSlotTag =
+        !!normalizeToken(req.shiftType) && slotsForType.length > 0;
+
       if (!req.role) {
         setError(`Requirement ${index + 1} must include a role.`);
         return;
       }
-      if (!req.shiftType && (!req.startTime || !req.endTime)) {
-        setError(`Requirement ${index + 1} must include a time range.`);
+
+      if (requiresSlotTag && !selectedSlot) {
+        setError(
+          `Requirement ${index + 1} must include a shift slot for selected shift type.`,
+        );
+        return;
+      }
+
+      if (!selectedSlot && (!req.startTime || !req.endTime)) {
+        setError(
+          `Requirement ${index + 1} must include start time and end time.`,
+        );
         return;
       }
     }
 
     setLoading(true);
-    setLoadingMode(autoGenerate ? "ai" : "create");
+    setLoadingMode(shouldGenerateDraft ? "ai" : "create");
 
     try {
+      const createdCoverages: Array<{ _id?: string }> = [];
+
       const createResponses = await Promise.all(
         activeDates.map((dateValue) => {
           const shifts = requirements.map((req) => {
@@ -510,9 +600,13 @@ export default function CoverageCreateForm({
             const startTime = selectedSlot?.startLocalTime || req.startTime;
             const endTime = selectedSlot?.endLocalTime || req.endTime;
             const overnight = isOvernight(startTime, endTime);
-            const endDate = overnight
-              ? toDayKey(new Date(`${dateValue}T00:00:00`))
-              : dateValue;
+            let endDate = dateValue;
+
+            if (overnight) {
+              const nextDay = new Date(`${dateValue}T00:00:00`);
+              nextDay.setDate(nextDay.getDate() + 1);
+              endDate = toDayKey(nextDay);
+            }
 
             return {
               role: req.role,
@@ -525,6 +619,7 @@ export default function CoverageCreateForm({
               requiredCertificationTags: dedupeStrings(
                 req.requiredCertificationTags,
               ),
+              note,
             };
           });
 
@@ -536,25 +631,37 @@ export default function CoverageCreateForm({
         }),
       );
 
-      if (autoGenerate) {
-        const coverageIds = createResponses
-          .flatMap((response) =>
-            Array.isArray(response.data)
-              ? response.data
-              : response.data?.created || [],
-          )
-          .map((item) => item?._id)
-          .filter(Boolean);
+      createResponses.forEach((response) => {
+        const createdForDate = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.created)
+            ? response.data.created
+            : [];
 
-        if (coverageIds.length) {
-          await api.post("/schedules/auto-generate", { coverageIds });
+        createdCoverages.push(...createdForDate);
+      });
+
+      let draftWasGenerated = false;
+
+      if (shouldGenerateDraft && createdCoverages.length) {
+        try {
+          await api.post("/schedules/auto-generate", {
+            coverageIds: createdCoverages
+              .map((item) => item._id)
+              .filter(Boolean),
+          });
+          draftWasGenerated = true;
+        } catch {
+          draftWasGenerated = false;
         }
       }
 
       setSuccess(
-        autoGenerate
-          ? "Coverage created and AI schedule generation started."
-          : "Coverage requirements added successfully.",
+        shouldGenerateDraft
+          ? draftWasGenerated
+            ? "Coverage created and AI draft is ready. Review, adjust, and publish from Draft Schedule Board."
+            : "Coverage created successfully."
+          : "Coverage requirements saved successfully.",
       );
       setRequirements([{ ...defaultRequirement }]);
       setPlannerStartDate(toDayKey(new Date()));
@@ -562,6 +669,7 @@ export default function CoverageCreateForm({
       setRepeatMode("weekdays");
       setSelectedWeekdays([1, 2, 3, 4, 5]);
       setExcludedDates([]);
+      setNote("");
       onSuccess?.();
     } catch (requestError: unknown) {
       const message =
@@ -643,14 +751,16 @@ export default function CoverageCreateForm({
       ];
     }
 
-    return [
-      { value: "", label: "Manual Time Entry" },
-      ...shiftDefinitionOptions.map((option) => ({
-        value: option.value,
-        label: option.label,
-      })),
-    ];
+    return shiftDefinitionOptions.map((option) => ({
+      value: option.value,
+      label: option.label,
+    }));
   }, [pickerState, roleOptions, shiftDefinitionOptions, unitAreas]);
+
+  const shiftDefinitionHelperText =
+    shiftDefinitionOptions.length === 0
+      ? "No time slots are configured yet. Add one in Facility Preferences."
+      : "Type to search this select. Only an existing slot can be chosen; if it is not listed, add it in Facility Preferences.";
 
   const pickerTitle =
     pickerState?.field === "role"
@@ -713,8 +823,14 @@ export default function CoverageCreateForm({
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>Coverage Planner</Text>
           <Text style={styles.subtitle}>
-            Set the horizon, repeat pattern, and coverage requirements in one
-            pass.
+            Define your date pattern and requirements. When you create coverage,
+            AI automatically builds the best draft it can from available,
+            qualified staff.
+          </Text>
+          <Text style={styles.subtleNote}>
+            If a draft is partially filled, there may not be enough available
+            staff who meet role, certification, shift, unit, or policy
+            constraints.
           </Text>
         </View>
         {onClose ? (
@@ -823,7 +939,7 @@ export default function CoverageCreateForm({
           <AccordionHeader
             icon="calendar"
             title="Generated Dates"
-            subtitle={`${activeDates.length} active`}
+            subtitle={`${activeDates.length} active${excludedDates.length ? ` · ${excludedDates.length} excluded` : ""}`}
             open={datesOpen}
             onToggle={() => setDatesOpen((prev) => !prev)}
             badge={
@@ -970,23 +1086,45 @@ export default function CoverageCreateForm({
                   <View style={[styles.fieldWrap, styles.timeSlotWrap]}>
                     <Text style={styles.fieldLabel}>Time Slot</Text>
                     <Pressable
-                      style={styles.selectField}
+                      style={[
+                        styles.selectField,
+                        shiftDefinitionOptions.length === 0
+                          ? styles.selectFieldDisabled
+                          : null,
+                      ]}
                       onPress={() =>
-                        setPickerState({
-                          requirementIndex: index,
-                          field: "shiftDefinition",
-                        })
+                        shiftDefinitionOptions.length > 0
+                          ? setPickerState({
+                              requirementIndex: index,
+                              field: "shiftDefinition",
+                            })
+                          : null
                       }
+                      disabled={shiftDefinitionOptions.length === 0}
                     >
-                      <Text style={styles.selectFieldText} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.selectFieldText,
+                          !shiftDefinitionValue
+                            ? styles.selectFieldTextMuted
+                            : null,
+                          shiftDefinitionOptions.length === 0
+                            ? styles.selectFieldTextDisabled
+                            : null,
+                        ]}
+                        numberOfLines={1}
+                      >
                         {shiftDefinitionValue
                           ? shiftDefinitionOptions.find(
                               (option) => option.value === shiftDefinitionValue,
-                            )?.label || "Manual Time Entry"
-                          : "Manual Time Entry"}
+                            )?.label || "Select time slot"
+                          : "Select time slot"}
                       </Text>
                       <Feather name="chevron-down" size={16} color="#6b7280" />
                     </Pressable>
+                    <Text style={styles.fieldHelperText}>
+                      {shiftDefinitionHelperText}
+                    </Text>
                   </View>
                 </View>
 
@@ -1057,37 +1195,6 @@ export default function CoverageCreateForm({
                     <Feather name="chevron-down" size={16} color="#9ca3af" />
                   </View>
                 )}
-
-                <View style={styles.inlineInputsRow}>
-                  <View style={styles.fieldWrap}>
-                    <Text style={styles.fieldLabel}>Start</Text>
-                    <TextInput
-                      value={selectedSlot?.startLocalTime || req.startTime}
-                      onChangeText={(value) =>
-                        handleRequirementChange(index, "startTime", value)
-                      }
-                      editable={!selectedSlot}
-                      style={[
-                        styles.input,
-                        selectedSlot ? styles.inputDisabled : null,
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.fieldWrap}>
-                    <Text style={styles.fieldLabel}>End</Text>
-                    <TextInput
-                      value={selectedSlot?.endLocalTime || req.endTime}
-                      onChangeText={(value) =>
-                        handleRequirementChange(index, "endTime", value)
-                      }
-                      editable={!selectedSlot}
-                      style={[
-                        styles.input,
-                        selectedSlot ? styles.inputDisabled : null,
-                      ]}
-                    />
-                  </View>
-                </View>
               </View>
             );
           })}
@@ -1135,16 +1242,50 @@ export default function CoverageCreateForm({
         ) : null}
       </View>
 
+      <View style={styles.fieldWrap}>
+        <Text style={styles.fieldLabel}>Notes (Optional)</Text>
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="Any additional notes about these coverage requirements..."
+          placeholderTextColor="#9ca3af"
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+          style={[styles.input, styles.notesInput]}
+        />
+      </View>
+
       <View style={styles.actionRow}>
         <Pressable
-          style={[styles.actionBtn, styles.primaryBtn]}
-          onPress={() => handleSubmit(false)}
+          style={[styles.actionBtn, styles.secondaryBtn]}
+          onPress={() => {
+            setSubmitMode("save-only");
+            void handleSubmit("save-only");
+          }}
           disabled={loading}
         >
           {loading && loadingMode === "create" ? (
+            <ActivityIndicator size="small" color="#1e3a8a" />
+          ) : (
+            <Text style={styles.secondaryBtnText}>Save Requirement Only</Text>
+          )}
+        </Pressable>
+
+        <Pressable
+          style={[styles.actionBtn, styles.primaryBtn]}
+          onPress={() => {
+            setSubmitMode("generate");
+            void handleSubmit("generate");
+          }}
+          disabled={loading}
+        >
+          {loading && loadingMode === "ai" ? (
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Text style={styles.primaryBtnText}>Save Requirements</Text>
+            <Text style={styles.primaryBtnText}>
+              Save Requirements and Generate Draft Schedule
+            </Text>
           )}
         </Pressable>
       </View>
@@ -1172,6 +1313,8 @@ export default function CoverageCreateForm({
         title={pickerTitle}
         value={pickerValue}
         options={pickerOptions}
+        searchable={pickerState?.field === "shiftDefinition"}
+        searchPlaceholder="Search time slots"
         onClose={() => setPickerState(null)}
         onSelect={(value) => {
           handlePickerSelect(value);
@@ -1239,6 +1382,8 @@ function PickerModal({
   options,
   onClose,
   onSelect,
+  searchable = false,
+  searchPlaceholder = "Search...",
 }: {
   open: boolean;
   title: string;
@@ -1246,7 +1391,28 @@ function PickerModal({
   options: { value: string; label: string }[];
   onClose: () => void;
   onSelect: (value: string) => void;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+    }
+  }, [open]);
+
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = normalizeToken(query);
+    if (!normalizedQuery) {
+      return options;
+    }
+
+    return options.filter((option) =>
+      normalizeToken(option.label).includes(normalizedQuery),
+    );
+  }, [options, query]);
+
   return (
     <Modal
       visible={open}
@@ -1263,8 +1429,18 @@ function PickerModal({
             </Pressable>
           </View>
 
+          {searchable ? (
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={searchPlaceholder}
+              placeholderTextColor="#9ca3af"
+              style={styles.searchInput}
+            />
+          ) : null}
+
           <ScrollView contentContainerStyle={styles.pickerList}>
-            {options.map((option) => {
+            {filteredOptions.map((option) => {
               const selected = option.value === value;
               return (
                 <Pressable
@@ -1289,6 +1465,9 @@ function PickerModal({
                 </Pressable>
               );
             })}
+            {filteredOptions.length === 0 ? (
+              <Text style={styles.emptyInline}>No matching options.</Text>
+            ) : null}
           </ScrollView>
         </Pressable>
       </Pressable>
@@ -1308,6 +1487,12 @@ const styles = StyleSheet.create({
   closeBtn: { padding: 8, marginRight: 2 },
   title: { color: "#111827", fontSize: 18, fontWeight: "800" },
   subtitle: { color: "#6b7280", fontSize: 12, marginTop: 1 },
+  subtleNote: {
+    color: "#6b7280",
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 16,
+  },
   error: {
     color: "#b91c1c",
     backgroundColor: "#fee2e2",
@@ -1490,6 +1675,10 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 12,
   },
+  notesInput: {
+    minHeight: 74,
+    paddingTop: 8,
+  },
   inputDisabled: { backgroundColor: "#eef2f7", color: "#64748b" },
   selectField: {
     minHeight: 34,
@@ -1512,8 +1701,16 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 12,
   },
+  selectFieldTextMuted: {
+    color: "#6b7280",
+  },
   selectFieldTextDisabled: {
     color: "#9ca3af",
+  },
+  fieldHelperText: {
+    color: "#6b7280",
+    fontSize: 10,
+    lineHeight: 14,
   },
   rowWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   token: {
@@ -1620,10 +1817,17 @@ const styles = StyleSheet.create({
     minHeight: 42,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 12,
   },
   primaryBtn: { backgroundColor: "#2563eb" },
+  secondaryBtn: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#93c5fd",
+  },
   darkBtn: { backgroundColor: "#111827" },
   primaryBtnText: { color: "#ffffff", fontWeight: "700" },
+  secondaryBtnText: { color: "#1e3a8a", fontWeight: "700" },
   darkBtnText: { color: "#ffffff", fontWeight: "700" },
   pickerBackdrop: {
     flex: 1,
@@ -1653,6 +1857,17 @@ const styles = StyleSheet.create({
   pickerList: {
     gap: 6,
   },
+  searchInput: {
+    minHeight: 40,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    color: "#111827",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+  },
   pickerItem: {
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -1677,6 +1892,10 @@ const styles = StyleSheet.create({
   pickerItemTextActive: {
     color: "#1d4ed8",
     fontWeight: "700",
+  },
+  emptyInline: {
+    color: "#6b7280",
+    fontSize: 12,
   },
   pickerActionRow: {
     flexDirection: "row",

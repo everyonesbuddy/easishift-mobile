@@ -9,6 +9,7 @@ function getTitle(pathname: string) {
   if (pathname.startsWith("/dashboard")) return "Dashboard";
   if (pathname.startsWith("/coverage-planning")) return "Coverage Planning";
   if (pathname.startsWith("/schedule")) return "Schedule";
+  if (pathname.startsWith("/how-to-use")) return "How To Use";
   if (pathname.startsWith("/staffs")) return "Staff Management";
   if (pathname.startsWith("/messages")) return "Messages";
   if (pathname.startsWith("/billing")) return "Billing";

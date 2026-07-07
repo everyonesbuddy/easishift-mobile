@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,12 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-create-form";
 import ScheduleAndCoverageCharts from "@/components/staff-portal/dashboard/schedule-and-coverage-charts";
 import StatCard from "@/components/staff-portal/dashboard/stat-card";
-import AutoGenerateScheduleForm from "@/components/staff-portal/schedule/auto-generate-schedule-form";
-import ScheduleForm from "@/components/staff-portal/schedule/schedule-form";
-import StaffCreateAndEditForm from "@/components/staff-portal/staff/staff-create-and-edit-form";
 import type { StaffMember } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
@@ -69,10 +64,6 @@ export default function StaffDashboardScreen() {
   const [tenant, setTenant] =
     useState<ReturnType<typeof normalizeTenant>>(null);
   const [loading, setLoading] = useState(true);
-  const [openCoverageModal, setOpenCoverageModal] = useState(false);
-  const [openAddStaffModal, setOpenAddStaffModal] = useState(false);
-  const [openScheduleModal, setOpenScheduleModal] = useState(false);
-  const [openAutoScheduleModal, setOpenAutoScheduleModal] = useState(false);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [uploadingProfile, setUploadingProfile] = useState(false);
 
@@ -414,51 +405,6 @@ export default function StaffDashboardScreen() {
           </View>
         </View>
 
-        <View style={styles.quickActionsSection}>
-          <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-          <Text style={styles.quickActionsSub}>
-            Manage staff, coverage, and schedules
-          </Text>
-        </View>
-
-        <View style={styles.actionsRow}>
-          {isAdmin ? (
-            <>
-              <ActionButton
-                label="Add Staff"
-                icon="users"
-                onPress={() => setOpenAddStaffModal(true)}
-                variant="light"
-              />
-              <ActionButton
-                label="Add Coverage"
-                icon="plus"
-                onPress={() => setOpenCoverageModal(true)}
-                variant="blue"
-              />
-              <ActionButton
-                label="Manual Schedule"
-                icon="calendar"
-                onPress={() => setOpenScheduleModal(true)}
-                variant="dark"
-              />
-              <ActionButton
-                label="AI Gen Schedule"
-                icon="user-check"
-                onPress={() => setOpenAutoScheduleModal(true)}
-                variant="blueDark"
-              />
-            </>
-          ) : (
-            <ActionButton
-              label="Pick Up Shift"
-              icon="plus"
-              onPress={() => setOpenScheduleModal(true)}
-              variant="blue"
-            />
-          )}
-        </View>
-
         <View style={styles.cardsWrap}>
           {(isAdmin ? adminCards : staffCards).map((card) => (
             <View key={card.title} style={styles.cardCell}>
@@ -476,121 +422,8 @@ export default function StaffDashboardScreen() {
         </View>
 
         <ScheduleAndCoverageCharts isAdmin={isAdmin} userId={userId} />
-
-        <Modal
-          visible={openCoverageModal}
-          animationType="slide"
-          onRequestClose={() => setOpenCoverageModal(false)}
-        >
-          <View style={styles.modalPage}>
-            <CoverageCreateForm
-              tenantId={
-                typeof user?.tenantId === "string" ? user.tenantId : undefined
-              }
-              onClose={() => setOpenCoverageModal(false)}
-              onSuccess={() => {
-                setOpenCoverageModal(false);
-                loadDashboardData();
-              }}
-            />
-          </View>
-        </Modal>
-
-        <Modal
-          visible={openAddStaffModal}
-          animationType="slide"
-          onRequestClose={() => setOpenAddStaffModal(false)}
-        >
-          <View style={styles.modalPage}>
-            <StaffCreateAndEditForm
-              staff={null}
-              staffList={staffList}
-              onClose={() => setOpenAddStaffModal(false)}
-              onSuccess={() => {
-                setOpenAddStaffModal(false);
-                loadDashboardData();
-              }}
-            />
-          </View>
-        </Modal>
-
-        <Modal
-          visible={openScheduleModal}
-          animationType="slide"
-          onRequestClose={() => setOpenScheduleModal(false)}
-        >
-          <View style={styles.modalPage}>
-            <ScheduleForm
-              onClose={() => setOpenScheduleModal(false)}
-              onSuccess={() => {
-                setOpenScheduleModal(false);
-                loadDashboardData();
-              }}
-              schedule={null}
-              staffList={staffList}
-              initialStaffId={!isAdmin ? userId : ""}
-              disableStaffSelect={!isAdmin}
-            />
-          </View>
-        </Modal>
-
-        <Modal
-          visible={openAutoScheduleModal}
-          animationType="slide"
-          onRequestClose={() => setOpenAutoScheduleModal(false)}
-        >
-          <View style={styles.modalPage}>
-            <AutoGenerateScheduleForm
-              onClose={() => setOpenAutoScheduleModal(false)}
-              onSuccess={() => {
-                setOpenAutoScheduleModal(false);
-                loadDashboardData();
-              }}
-            />
-          </View>
-        </Modal>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function ActionButton({
-  label,
-  icon,
-  onPress,
-  variant,
-}: {
-  label: string;
-  icon: keyof typeof Feather.glyphMap;
-  onPress: () => void;
-  variant: "light" | "blue" | "dark" | "blueDark";
-}) {
-  return (
-    <TouchableOpacity
-      style={[
-        styles.actionBtn,
-        variant === "light" ? styles.actionLight : null,
-        variant === "blue" ? styles.actionBlue : null,
-        variant === "dark" ? styles.actionDark : null,
-        variant === "blueDark" ? styles.actionBlueDark : null,
-      ]}
-      onPress={onPress}
-      activeOpacity={0.85}
-    >
-      <Feather
-        name={icon}
-        size={16}
-        color={variant === "light" ? "#111827" : "#ffffff"}
-      />
-      <Text
-        style={[
-          styles.actionText,
-          variant === "light" ? styles.actionTextDark : styles.actionTextLight,
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
   );
 }
 
@@ -708,58 +541,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
-  quickActionsSection: {
-    marginBottom: 8,
-  },
-  quickActionsTitle: {
-    color: "#0F172A",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  quickActionsSub: {
-    color: "#64748B",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 10,
-    justifyContent: "center",
-  },
-  actionBtn: {
-    width: "48%",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  actionLight: {
-    backgroundColor: "#ffffff",
-  },
-  actionBlue: {
-    backgroundColor: "#2563eb",
-  },
-  actionDark: {
-    backgroundColor: "#111827",
-  },
-  actionBlueDark: {
-    backgroundColor: "#1d4ed8",
-  },
-  actionText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  actionTextDark: {
-    color: "#111827",
-  },
-  actionTextLight: {
-    color: "#ffffff",
-  },
   cardsWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -770,12 +551,5 @@ const styles = StyleSheet.create({
     width: "50%",
     paddingHorizontal: 4,
     paddingBottom: 8,
-  },
-  modalPage: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 16,
-    paddingTop: 32,
-    paddingBottom: 12,
   },
 });

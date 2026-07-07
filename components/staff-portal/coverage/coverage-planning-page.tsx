@@ -230,6 +230,7 @@ export default function CoveragePlanningPage() {
   const [selectedRole, setSelectedRole] = useState("all");
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<string>(toDayKey(new Date()));
+  const [calendarDetailsOpen, setCalendarDetailsOpen] = useState(false);
 
   const [openAdd, setOpenAdd] = useState(false);
   const [editingCoverage, setEditingCoverage] = useState<CoverageItem | null>(
@@ -471,6 +472,20 @@ export default function CoveragePlanningPage() {
     [displayedCoverages, selectedDay],
   );
 
+  const selectedDayLabel = useMemo(() => {
+    const parsed = parseCoverageDateAsLocal(selectedDay);
+    if (!parsed) {
+      return selectedDay;
+    }
+
+    return parsed.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [selectedDay]);
+
   const totalPages = Math.max(
     1,
     Math.ceil(displayedCoverages.length / rowsPerPage),
@@ -483,6 +498,11 @@ export default function CoveragePlanningPage() {
       borderColor: `${roleColor}55`,
       borderWidth: 1,
     };
+  };
+
+  const handleCalendarDaySelect = (dayKey: string) => {
+    setSelectedDay(dayKey);
+    setCalendarDetailsOpen(true);
   };
 
   return (
@@ -753,74 +773,102 @@ export default function CoveragePlanningPage() {
               month={calendarMonth}
               selectedDay={selectedDay}
               dayMeta={dayMeta}
-              onSelectDay={setSelectedDay}
+              onSelectDay={handleCalendarDaySelect}
               onChangeMonth={setCalendarMonth}
             />
 
-            <View style={styles.dayBlock}>
-              <Text style={styles.dayTitle}>
-                {parseCoverageDateAsLocal(selectedDay)?.toLocaleDateString() ||
-                  selectedDay}
-              </Text>
-
-              <View style={styles.dayItems}>
-                {selectedDayItems.length === 0 ? (
-                  <Text style={styles.calendarEmptyText}>
-                    No coverage requirements for this day.
-                  </Text>
-                ) : (
-                  selectedDayItems.map((item) => {
-                    const start = toLocal(item.startTime);
-                    const end = toLocal(item.endTime);
-                    return (
-                      <Pressable
-                        key={item._id || `${item.role}-${item.startTime}`}
-                        style={styles.calendarItem}
-                        onPress={() => openDetails(item)}
-                      >
-                        <View
-                          style={[
-                            styles.calendarColorBar,
-                            { backgroundColor: getCoverageStatusColor(item) },
-                          ]}
-                        />
-                        <View style={styles.calendarContent}>
-                          <Text style={styles.calendarTitle}>
-                            {getRoleDisplayName(item.role)} (
-                            {Number(item.requiredCount) || 0})
-                            {item.unitArea
-                              ? ` • ${getUnitAreaDisplayName(item.unitArea)}`
-                              : ""}
-                            {item.shiftType
-                              ? ` • ${getShiftTypeDisplayName(item.shiftType)}`
-                              : ""}
-                          </Text>
-                          <Text style={styles.calendarMeta}>
-                            {start?.toLocaleTimeString([], {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            }) || "-"}{" "}
-                            -{" "}
-                            {end?.toLocaleTimeString([], {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            }) || "-"}
-                          </Text>
-                          {spansOvernight(item) ? (
-                            <Text style={styles.calendarOvernightTag}>
-                              Overnight shift
-                            </Text>
-                          ) : null}
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                )}
-              </View>
-            </View>
+            <Text style={styles.calendarHintText}>
+              Tap a day to view coverage details.
+            </Text>
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={calendarDetailsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarDetailsOpen(false)}
+      >
+        <Pressable
+          style={styles.calendarDetailsBackdrop}
+          onPress={() => setCalendarDetailsOpen(false)}
+        >
+          <Pressable style={styles.calendarDetailsCard} onPress={() => {}}>
+            <View style={styles.detailHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailTitle}>Day Coverage</Text>
+                <Text style={styles.detailSubtitle}>{selectedDayLabel}</Text>
+              </View>
+              <Pressable
+                onPress={() => setCalendarDetailsOpen(false)}
+                style={styles.closeDetailBtn}
+              >
+                <Feather name="x" size={18} color="#6b7280" />
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.calendarDetailsBody}>
+              {selectedDayItems.length === 0 ? (
+                <Text style={styles.calendarEmptyText}>
+                  No coverage requirements for this day.
+                </Text>
+              ) : (
+                selectedDayItems.map((item) => {
+                  const start = toLocal(item.startTime);
+                  const end = toLocal(item.endTime);
+
+                  return (
+                    <Pressable
+                      key={item._id || `${item.role}-${item.startTime}`}
+                      style={styles.calendarItem}
+                      onPress={() => {
+                        setCalendarDetailsOpen(false);
+                        openDetails(item);
+                      }}
+                    >
+                      <View
+                        style={[
+                          styles.calendarColorBar,
+                          { backgroundColor: getCoverageStatusColor(item) },
+                        ]}
+                      />
+                      <View style={styles.calendarContent}>
+                        <Text style={styles.calendarTitle}>
+                          {getRoleDisplayName(item.role)} (
+                          {Number(item.requiredCount) || 0})
+                          {item.unitArea
+                            ? ` • ${getUnitAreaDisplayName(item.unitArea)}`
+                            : ""}
+                          {item.shiftType
+                            ? ` • ${getShiftTypeDisplayName(item.shiftType)}`
+                            : ""}
+                        </Text>
+                        <Text style={styles.calendarMeta}>
+                          {start?.toLocaleTimeString([], {
+                            hour: "numeric",
+                            minute: "2-digit",
+                          }) || "-"}{" "}
+                          -{" "}
+                          {end?.toLocaleTimeString([], {
+                            hour: "numeric",
+                            minute: "2-digit",
+                          }) || "-"}
+                        </Text>
+                        {spansOvernight(item) ? (
+                          <Text style={styles.calendarOvernightTag}>
+                            Overnight shift
+                          </Text>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={detailsOpen}
@@ -1463,6 +1511,29 @@ const styles = StyleSheet.create({
   },
   calendarWrap: {
     gap: 10,
+  },
+  calendarHintText: {
+    color: "#64748b",
+    fontSize: 12,
+  },
+  calendarDetailsBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.38)",
+    justifyContent: "center",
+    padding: 18,
+  },
+  calendarDetailsCard: {
+    maxHeight: "82%",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#ffffff",
+    padding: 12,
+    gap: 10,
+  },
+  calendarDetailsBody: {
+    gap: 8,
+    paddingBottom: 4,
   },
   dayBlock: {
     borderRadius: 10,
