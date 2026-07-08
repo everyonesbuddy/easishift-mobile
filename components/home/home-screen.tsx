@@ -377,7 +377,7 @@ export default function HomeScreen() {
           </Text>
           <Text style={styles.roiSubtitle}>
             Compare turnover and labor cost leakage in one place, with projected
-            Easishift savings.
+            Wisershifts savings.
           </Text>
           <View style={styles.roiButtonWrap}>
             <ActionButton

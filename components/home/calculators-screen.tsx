@@ -13,7 +13,7 @@ const CALCULATORS = [
   {
     title: "Turnover ROI Calculator",
     description:
-      "Estimate annual turnover burden and projected Easishift savings based on headcount, wage, turnover, and vacancy timeline.",
+      "Estimate annual turnover burden and projected Wisershifts savings based on headcount, wage, turnover, and vacancy timeline.",
     cta: "Open Turnover ROI",
     to: "/turnover-roi-calculator",
     icon: "trending-up",
@@ -40,7 +40,7 @@ export default function CalculatorsScreen() {
           <Text style={styles.title}>Workforce Calculators</Text>
           <Text style={styles.subtitle}>
             Explore practical estimators to quantify labor impact and potential
-            savings with Easishift.
+            savings with Wisershifts.
           </Text>
         </View>
 
