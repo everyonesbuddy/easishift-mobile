@@ -19,7 +19,8 @@ Admins can manage coverage, schedules, staff, time off, messages, and subscripti
 9. Feature Areas
 10. Shared Components
 11. Key Developer Patterns
-12. Recent Major Changes
+12. Deployment Guide
+13. Recent Major Changes
 
 ---
 
@@ -122,6 +123,8 @@ npm run ios
 npm run web
 npm run lint
 ```
+
+Deployment and store release instructions are documented in `docs/mobile-app-deployment-guide.md`.
 
 ---
 
