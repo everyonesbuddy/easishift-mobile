@@ -1,31 +1,13 @@
 import { Feather } from "@expo/vector-icons";
-import { usePathname } from "expo-router";
+import { Image } from "expo-image";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/context/auth-context";
 
-function getTitle(pathname: string) {
-  if (pathname.startsWith("/dashboard")) return "Dashboard";
-  if (pathname.startsWith("/coverage-planning")) return "Coverage Planning";
-  if (pathname.startsWith("/schedule")) return "Schedule";
-  if (pathname.startsWith("/how-to-use")) return "How To Use";
-  if (pathname.startsWith("/staffs")) return "Staff Management";
-  if (pathname.startsWith("/messages")) return "Messages";
-  if (pathname.startsWith("/billing")) return "Billing";
-  if (pathname.startsWith("/timeoff-decisions")) return "Time Off Requests";
-  if (pathname.startsWith("/timeoff-requests")) return "Time Off";
-  if (pathname.startsWith("/swap-requests")) return "Shift Swaps";
-  if (pathname.startsWith("/preferences")) return "Preferences";
-  return "WiserShifts";
-}
-
 export default function ProtectedTopBar() {
   const { logout } = useAuth();
-  const pathname = usePathname();
   const insets = useSafeAreaInsets();
-
-  const title = getTitle(pathname);
 
   const handleLogout = async () => {
     await logout();
@@ -40,7 +22,14 @@ export default function ProtectedTopBar() {
         },
       ]}
     >
-      <Text style={styles.title}>{title}</Text>
+      <View style={styles.logoSlot}>
+        <Image
+          source={require("@/assets/logos/wiserShifts-icon-light.svg")}
+          style={styles.logo}
+          contentFit="contain"
+        />
+      </View>
+
       <TouchableOpacity
         style={styles.logoutBtn}
         onPress={handleLogout}
@@ -56,7 +45,7 @@ export default function ProtectedTopBar() {
 const styles = StyleSheet.create({
   container: {
     minHeight: 58,
-    paddingHorizontal: 14,
+    paddingHorizontal: 6,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
@@ -65,10 +54,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  title: {
-    color: "#111827",
-    fontSize: 18,
-    fontWeight: "800",
+  logoSlot: {
+    width: "20%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logo: {
+    width: 30,
+    height: 30,
   },
   logoutBtn: {
     flexDirection: "row",

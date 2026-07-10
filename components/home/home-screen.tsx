@@ -1,12 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Linking,
+  Animated,
+  Easing,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -15,80 +15,30 @@ import {
   type ViewStyle,
 } from "react-native";
 
-const HERO_IMAGE_URI =
-  "https://images.pexels.com/photos/7579831/pexels-photo-7579831.jpeg?auto=compress&cs=tinysrgb&w=1200";
-
-const INDUSTRIES = [
-  "Healthcare",
-  "Hospitality",
-  "Retail",
-  "Warehousing & Logistics",
-  "Security Services",
-  "Manufacturing",
-  "Cleaning & Janitorial",
-  "Home Care",
-  "Construction",
-  "Education",
-  "Restaurants",
-  "Events & Venues",
-  "Transportation",
-  "Customer Support",
-] as const;
-
-const BENEFITS = [
-  {
-    icon: "shuffle",
-    title: "Handle call-outs calmly",
-    text: "Fill gaps without cascading changes or guesswork.",
-  },
-  {
-    icon: "clock",
-    title: "See risk early",
-    text: "Understand overtime impact before schedules go live.",
-  },
-  {
-    icon: "users",
-    title: "Rotating staff made manageable",
-    text: "Keep part-time, float, and rotating roles organized.",
-  },
-  {
-    icon: "check-circle",
-    title: "Clear communication",
-    text: "One publish updates everyone at once.",
-  },
-] as const;
-
-const TESTIMONIALS = [
-  {
-    quote: "Call-outs used to derail the entire day. Now they are manageable.",
-    name: "Nursing Home Operations Lead",
-    role: "Outpatient services",
-  },
-  {
-    quote: "We finally see overtime before it becomes a payroll problem.",
-    name: "Practice Manager",
-    role: "Specialty clinic",
-  },
-  {
-    quote: "Rotating staff no longer means spreadsheet chaos.",
-    name: "Scheduler",
-    role: "Multi-site clinic",
-  },
-] as const;
-
 type HomeScreenStyles = {
   safeArea: ViewStyle;
   content: ViewStyle;
-  heroWrap: ViewStyle;
-  heroLeft: ViewStyle;
-  heroTitle: TextStyle;
-  heroSubtitle: TextStyle;
-  industryStripWrap: ViewStyle;
-  industryStrip: ViewStyle;
-  industryChip: ViewStyle;
-  industryChipText: TextStyle;
-  heroImage: ImageStyle;
-  heroActionRow: ViewStyle;
+  backdrop: ViewStyle;
+  bubbleBase: ViewStyle;
+  bubbleOne: ViewStyle;
+  bubbleTwo: ViewStyle;
+  bubbleThree: ViewStyle;
+  bubbleFour: ViewStyle;
+  bubbleFive: ViewStyle;
+  brand: ViewStyle;
+  logoRow: ViewStyle;
+  logo: ImageStyle;
+  title: TextStyle;
+  subtitle: TextStyle;
+  featureWrap: ViewStyle;
+  featureCard: ViewStyle;
+  featureIconWrap: ViewStyle;
+  featureTitle: TextStyle;
+  featureText: TextStyle;
+  featureDots: ViewStyle;
+  featureDot: ViewStyle;
+  featureDotActive: ViewStyle;
+  actionStack: ViewStyle;
   buttonBase: ViewStyle;
   buttonFilled: ViewStyle;
   buttonOutline: ViewStyle;
@@ -97,128 +47,35 @@ type HomeScreenStyles = {
   buttonIcon: TextStyle;
   buttonPressed: ViewStyle;
   buttonFullWidth: ViewStyle;
-  divider: ViewStyle;
-  heroRight: ViewStyle;
-  scheduleCard: ViewStyle;
-  scheduleCardTitle: TextStyle;
-  healthRow: ViewStyle;
-  healthLabel: TextStyle;
-  healthChip: ViewStyle;
-  healthChipWarning: ViewStyle;
-  healthChipSuccess: ViewStyle;
-  healthChipText: TextStyle;
-  statRow: ViewStyle;
-  statWrap: ViewStyle;
-  statValue: TextStyle;
-  statLabel: TextStyle;
-  roiStripCard: ViewStyle;
-  roiEyebrow: TextStyle;
-  roiTitle: TextStyle;
-  roiSubtitle: TextStyle;
-  roiButtonWrap: ViewStyle;
-  section: ViewStyle;
-  sectionTitleWrap: ViewStyle;
-  sectionEyebrow: TextStyle;
-  sectionTitle: TextStyle;
-  sectionSubtitle: TextStyle;
-  benefitGrid: ViewStyle;
-  iconBulletRow: ViewStyle;
-  iconBulletIconWrap: ViewStyle;
-  iconBulletCopy: ViewStyle;
-  iconBulletTitle: TextStyle;
-  iconBulletText: TextStyle;
-  testimonialGrid: ViewStyle;
-  testimonialCard: ViewStyle;
-  testimonialQuote: TextStyle;
-  testimonialAuthorRow: ViewStyle;
-  avatarBubble: ViewStyle;
-  avatarText: TextStyle;
-  testimonialName: TextStyle;
-  testimonialRole: TextStyle;
-  ctaCard: ViewStyle;
-  ctaTitle: TextStyle;
-  ctaText: TextStyle;
-  ctaActionStack: ViewStyle;
-  mobileStickyCta: ViewStyle;
 };
 
-function Section({ children }: { children: React.ReactNode }) {
-  return <View style={styles.section}>{children}</View>;
-}
-
-function SectionTitle({
-  eyebrow,
-  title,
-  subtitle,
-}: {
-  eyebrow?: string;
-  title: string;
-  subtitle?: string;
-}) {
-  return (
-    <View style={styles.sectionTitleWrap}>
-      {eyebrow ? <Text style={styles.sectionEyebrow}>{eyebrow}</Text> : null}
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
-    </View>
-  );
-}
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={styles.statWrap}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function IconBullet({
-  icon,
-  title,
-  text,
-}: {
+type FeatureSlide = {
+  key: string;
   icon: React.ComponentProps<typeof Feather>["name"];
   title: string;
   text: string;
-}) {
-  return (
-    <View style={styles.iconBulletRow}>
-      <View style={styles.iconBulletIconWrap}>
-        <Feather name={icon} size={20} color="#1976d2" />
-      </View>
-      <View style={styles.iconBulletCopy}>
-        <Text style={styles.iconBulletTitle}>{title}</Text>
-        <Text style={styles.iconBulletText}>{text}</Text>
-      </View>
-    </View>
-  );
-}
+};
 
-function Testimonial({
-  quote,
-  name,
-  role,
-}: {
-  quote: string;
-  name: string;
-  role: string;
-}) {
-  return (
-    <View style={styles.testimonialCard}>
-      <Text style={styles.testimonialQuote}>{`"${quote}"`}</Text>
-      <View style={styles.testimonialAuthorRow}>
-        <View style={styles.avatarBubble}>
-          <Text style={styles.avatarText}>{name.charAt(0)}</Text>
-        </View>
-        <View>
-          <Text style={styles.testimonialName}>{name}</Text>
-          <Text style={styles.testimonialRole}>{role}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
+const FEATURE_SLIDES: FeatureSlide[] = [
+  {
+    key: "speed",
+    icon: "zap",
+    title: "Faster scheduling",
+    text: "Build your scheduling in minutes, not hours.",
+  },
+  {
+    key: "communication",
+    icon: "send",
+    title: "Better communication",
+    text: "Share updates instantly with the whole team.",
+  },
+  {
+    key: "coverage",
+    icon: "shield",
+    title: "Clear shift coverage",
+    text: "Catch gaps early and keep handoffs smooth.",
+  },
+];
 
 function ActionButton({
   label,
@@ -247,7 +104,7 @@ function ActionButton({
         <Feather
           name={icon}
           size={16}
-          color={variant === "filled" ? "#ffffff" : "#0f172a"}
+          color={variant === "filled" ? "#ffffff" : "#42a5f5"}
           style={styles.buttonIcon}
         />
       ) : null}
@@ -264,203 +121,253 @@ function ActionButton({
   );
 }
 
-export default function HomeScreen() {
-  const router = useRouter();
-  const industryScrollRef = useRef<ScrollView>(null);
+function Bubble({
+  size,
+  style,
+  duration,
+  delay,
+}: {
+  size: number;
+  style: ViewStyle;
+  duration: number;
+  delay: number;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    let offset = 0;
-    const step = 148;
-    const maxOffset = INDUSTRIES.length * step;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(progress, {
+          toValue: 1,
+          duration,
+          delay,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
 
+    loop.start();
+    return () => loop.stop();
+  }, [delay, duration, progress]);
+
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -14],
+  });
+
+  const scale = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.06],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.bubbleBase,
+        { width: size, height: size, borderRadius: size / 2 },
+        style,
+        { transform: [{ translateY }, { scale }] },
+      ]}
+    />
+  );
+}
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const [activeFeature, setActiveFeature] = useState(0);
+
+  const featureOpacity = useRef(new Animated.Value(1)).current;
+  const featureTranslate = useRef(new Animated.Value(0)).current;
+  const iconMotion = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(iconMotion, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(iconMotion, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [iconMotion]);
+
+  useEffect(() => {
     const timer = setInterval(() => {
-      offset = offset >= maxOffset ? 0 : offset + step;
-      industryScrollRef.current?.scrollTo({ x: offset, animated: true });
-    }, 3200);
+      Animated.parallel([
+        Animated.timing(featureOpacity, {
+          toValue: 0,
+          duration: 180,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(featureTranslate, {
+          toValue: -8,
+          duration: 180,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setActiveFeature((prev) => (prev + 1) % FEATURE_SLIDES.length);
+        featureTranslate.setValue(8);
+
+        Animated.parallel([
+          Animated.timing(featureOpacity, {
+            toValue: 1,
+            duration: 220,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(featureTranslate, {
+            toValue: 0,
+            duration: 220,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    }, 2000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [featureOpacity, featureTranslate]);
+
+  const activeSlide = FEATURE_SLIDES[activeFeature];
+
+  const iconScale = iconMotion.interpolate({
+    inputRange: [0, 1],
+    outputRange: activeFeature === 0 ? [1, 1.14] : [1, 1.06],
+  });
+  const iconRotate = iconMotion.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange:
+      activeFeature === 1
+        ? ["0deg", "10deg", "0deg"]
+        : ["0deg", "0deg", "0deg"],
+  });
+  const iconLift = iconMotion.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: activeFeature === 2 ? [0, -7, 0] : [0, -2, 0],
+  });
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heroWrap}>
-          <View style={styles.heroLeft}>
-            <Text style={styles.heroTitle}>
-              Workforce Scheduling{"\n"}
-              That Works For Your People and Your Profits.
-            </Text>
-
-            <Text style={styles.heroSubtitle}>
-              We support various industries like:
-            </Text>
-
-            <View style={styles.industryStripWrap}>
-              <ScrollView
-                ref={industryScrollRef}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.industryStrip}
-              >
-                {INDUSTRIES.map((industry) => (
-                  <View key={industry} style={styles.industryChip}>
-                    <Text style={styles.industryChipText}>{industry}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.heroActionRow}>
-              <ActionButton
-                label="Sign Up"
-                variant="filled"
-                icon="user"
-                onPress={() => router.push("/signup-tenant")}
-              />
-              <ActionButton
-                label="Log in"
-                variant="outline"
-                icon="user"
-                onPress={() => router.push("/login")}
-              />
-            </View>
-
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.heroRight}>
-            <Image
-              source={{ uri: HERO_IMAGE_URI }}
-              style={styles.heroImage}
-              contentFit="cover"
-              transition={220}
-            />
-
-            <View style={styles.scheduleCard}>
-              <Text style={styles.scheduleCardTitle}>
-                Today&apos;s schedule health
-              </Text>
-              <View style={styles.healthRow}>
-                <Text style={styles.healthLabel}>Coverage gaps</Text>
-                <View style={styles.healthChip}>
-                  <Text style={styles.healthChipText}>2</Text>
-                </View>
-              </View>
-              <View style={styles.healthRow}>
-                <Text style={styles.healthLabel}>Overtime risk</Text>
-                <View style={[styles.healthChip, styles.healthChipWarning]}>
-                  <Text style={styles.healthChipText}>Medium</Text>
-                </View>
-              </View>
-              <View style={styles.healthRow}>
-                <Text style={styles.healthLabel}>Last-minute change</Text>
-                <View style={[styles.healthChip, styles.healthChipSuccess]}>
-                  <Text style={styles.healthChipText}>Resolved</Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.statRow}>
-                <Stat value="↓" label="Fewer gaps" />
-                <Stat value="⚡" label="Faster changes" />
-                <Stat value="✓" label="Clear handoffs" />
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.roiStripCard}>
-          <Text style={styles.roiEyebrow}>Workforce calculators</Text>
-          <Text style={styles.roiTitle}>
-            Estimate labor impact with practical calculators
-          </Text>
-          <Text style={styles.roiSubtitle}>
-            Compare turnover and labor cost leakage in one place, with projected
-            Wisershifts savings.
-          </Text>
-          <View style={styles.roiButtonWrap}>
-            <ActionButton
-              label="Open Calculators"
-              variant="filled"
-              onPress={() => router.push("/calculators")}
-              fullWidth
-            />
-          </View>
-        </View>
-
-        <Section>
-          <SectionTitle
-            eyebrow="Why it works"
-            title="Workforce Scheduling built for real senior living facility conditions"
-            subtitle="Designed around constant change, not ideal scenarios."
-          />
-          <View style={styles.benefitGrid}>
-            {BENEFITS.map((benefit) => (
-              <IconBullet
-                key={benefit.title}
-                icon={benefit.icon}
-                title={benefit.title}
-                text={benefit.text}
-              />
-            ))}
-          </View>
-        </Section>
-
-        <Section>
-          <SectionTitle
-            eyebrow="What teams experience"
-            title="Less chaos. More predictability."
-          />
-          <View style={styles.testimonialGrid}>
-            {TESTIMONIALS.map((testimonial) => (
-              <Testimonial
-                key={testimonial.name}
-                quote={testimonial.quote}
-                name={testimonial.name}
-                role={testimonial.role}
-              />
-            ))}
-          </View>
-        </Section>
-
-        <Section>
-          <View style={styles.ctaCard}>
-            <Text style={styles.ctaTitle}>Start Scheduling The Smart Way</Text>
-            <Text style={styles.ctaText}>
-              Walk through your staffing patterns in a short demo.
-            </Text>
-            <View style={styles.ctaActionStack}>
-              <ActionButton
-                label="Request a demo"
-                variant="filled"
-                icon="phone-call"
-                onPress={() =>
-                  Linking.openURL("https://calendly.com/wisershifts-info/30min")
-                }
-                fullWidth
-              />
-              <ActionButton
-                label="Sign Up"
-                variant="outline"
-                onPress={() => router.push("/signup-tenant")}
-                fullWidth
-              />
-            </View>
-          </View>
-        </Section>
-      </ScrollView>
-
-      <View style={styles.mobileStickyCta}>
-        <ActionButton
-          label="Book a demo"
-          variant="filled"
-          icon="phone-call"
-          onPress={() =>
-            Linking.openURL("https://calendly.com/wisershifts-info/30min")
-          }
-          fullWidth
+      <View style={styles.content}>
+        <View style={styles.backdrop} />
+        <Bubble size={84} duration={4200} delay={0} style={styles.bubbleOne} />
+        <Bubble
+          size={56}
+          duration={5200}
+          delay={600}
+          style={styles.bubbleTwo}
         />
+        <Bubble
+          size={34}
+          duration={3800}
+          delay={1100}
+          style={styles.bubbleThree}
+        />
+        <Bubble
+          size={48}
+          duration={4600}
+          delay={350}
+          style={styles.bubbleFour}
+        />
+        <Bubble
+          size={24}
+          duration={3400}
+          delay={900}
+          style={styles.bubbleFive}
+        />
+
+        <View style={styles.brand}>
+          <View style={styles.logoRow}>
+            <Image
+              source={require("@/assets/logos/wiserShifts-icon-light.svg")}
+              style={styles.logo}
+              contentFit="contain"
+            />
+            <Text style={styles.title}>WiserShifts</Text>
+          </View>
+          <Text style={styles.subtitle}>
+            Login or create an account to open the staff portal.
+          </Text>
+
+          <View style={styles.featureWrap}>
+            <Animated.View
+              style={[
+                styles.featureCard,
+                {
+                  opacity: featureOpacity,
+                  transform: [{ translateY: featureTranslate }],
+                },
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.featureIconWrap,
+                  {
+                    transform: [
+                      { translateY: iconLift },
+                      { scale: iconScale },
+                      { rotate: iconRotate },
+                    ],
+                  },
+                ]}
+              >
+                <Feather name={activeSlide.icon} size={18} color="#1d4ed8" />
+              </Animated.View>
+              <Text style={styles.featureTitle}>{activeSlide.title}</Text>
+              <Text style={styles.featureText}>{activeSlide.text}</Text>
+            </Animated.View>
+
+            <View style={styles.featureDots}>
+              {FEATURE_SLIDES.map((slide, index) => (
+                <View
+                  key={slide.key}
+                  style={[
+                    styles.featureDot,
+                    index === activeFeature ? styles.featureDotActive : null,
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.actionStack}>
+          <ActionButton
+            label="Login"
+            variant="filled"
+            icon="log-in"
+            onPress={() => router.push("/login")}
+            fullWidth
+          />
+          <ActionButton
+            label="Sign Up"
+            variant="outline"
+            icon="user-plus"
+            onPress={() => router.push("/signup-tenant")}
+            fullWidth
+          />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -472,81 +379,156 @@ const styles = StyleSheet.create<HomeScreenStyles>({
     backgroundColor: "#ffffff",
   },
   content: {
+    flex: 1,
     paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 110,
-    gap: 22,
+    paddingVertical: 16,
+    justifyContent: "flex-end",
+    backgroundColor: "#ffffff",
+    position: "relative",
+    overflow: "hidden",
   },
-  heroWrap: {
-    gap: 18,
+  backdrop: {
+    position: "absolute",
+    top: -60,
+    right: -70,
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    backgroundColor: "rgba(59, 130, 246, 0.07)",
   },
-  heroLeft: {
+  bubbleBase: {
+    position: "absolute",
+    backgroundColor: "rgba(66, 165, 245, 0.14)",
+  },
+  bubbleOne: {
+    top: 90,
+    left: 10,
+  },
+  bubbleTwo: {
+    top: 170,
+    right: 18,
+    backgroundColor: "rgba(37, 99, 235, 0.12)",
+  },
+  bubbleThree: {
+    bottom: 110,
+    left: 40,
+    backgroundColor: "rgba(15, 23, 42, 0.06)",
+  },
+  bubbleFour: {
+    top: 260,
+    left: 24,
+    backgroundColor: "rgba(66, 165, 245, 0.1)",
+  },
+  bubbleFive: {
+    bottom: 220,
+    right: 34,
+    backgroundColor: "rgba(59, 130, 246, 0.08)",
+  },
+  brand: {
+    gap: 10,
+    alignItems: "center",
+    flex: 0,
+    justifyContent: "center",
+    marginBottom: 80,
+  },
+  logoRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
-  heroTitle: {
-    fontSize: 34,
-    lineHeight: 37,
+  logo: {
+    width: 34,
+    height: 34,
+  },
+  title: {
+    fontSize: 32,
+    lineHeight: 36,
     fontWeight: "900",
     letterSpacing: -1,
     color: "#0f172a",
+    textAlign: "center",
   },
-  heroSubtitle: {
-    fontSize: 17,
-    lineHeight: 24,
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 23,
     color: "#475569",
-    marginTop: 6,
+    textAlign: "center",
+    maxWidth: 320,
   },
-  industryStripWrap: {
-    marginTop: 2,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: "#e5e5ea",
-    borderRadius: 16,
-    backgroundColor: "#fafafc",
-    overflow: "hidden",
-  },
-  industryStrip: {
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+  featureWrap: {
+    width: "100%",
     alignItems: "center",
-  },
-  industryChip: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: "transparent",
-  },
-  industryChipText: {
-    color: "#1d1d1f",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  heroImage: {
-    height: 230,
-    borderRadius: 24,
-    backgroundColor: "#e2e8f0",
-  },
-  heroActionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    marginTop: 8,
     gap: 10,
-    marginTop: 4,
+  },
+  featureCard: {
+    width: "100%",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(66, 165, 245, 0.22)",
+    backgroundColor: "rgba(239, 246, 255, 0.72)",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    gap: 4,
+    minHeight: 112,
+    justifyContent: "center",
+  },
+  featureIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(29, 78, 216, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureTitle: {
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: "800",
+    color: "#0f172a",
+    textAlign: "center",
+  },
+  featureText: {
+    fontSize: 14,
+    lineHeight: 19,
+    color: "#475569",
+    textAlign: "center",
+    maxWidth: 280,
+  },
+  featureDots: {
+    flexDirection: "row",
+    gap: 7,
+  },
+  featureDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "rgba(148, 163, 184, 0.5)",
+  },
+  featureDotActive: {
+    width: 18,
+    backgroundColor: "#42a5f5",
+  },
+  actionStack: {
+    gap: 12,
+    marginTop: 0,
+    justifyContent: "center",
   },
   buttonBase: {
-    minHeight: 46,
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    minHeight: 54,
+    borderRadius: 16,
+    paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
   buttonFilled: {
-    backgroundColor: "#1565c0",
+    backgroundColor: "#42a5f5",
   },
   buttonOutline: {
     borderWidth: 1,
-    borderColor: "rgba(15, 23, 42, 0.2)",
+    borderColor: "rgba(66, 165, 245, 0.25)",
     backgroundColor: "#ffffff",
   },
   buttonFilledText: {
@@ -555,7 +537,7 @@ const styles = StyleSheet.create<HomeScreenStyles>({
     fontSize: 14,
   },
   buttonOutlineText: {
-    color: "#0f172a",
+    color: "#42a5f5",
     fontWeight: "800",
     fontSize: 14,
   },
@@ -567,234 +549,5 @@ const styles = StyleSheet.create<HomeScreenStyles>({
   },
   buttonFullWidth: {
     width: "100%",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.08)",
-    marginVertical: 4,
-  },
-  heroRight: {
-    gap: 12,
-  },
-  scheduleCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(15, 23, 42, 0.12)",
-    padding: 14,
-    gap: 10,
-    backgroundColor: "#ffffff",
-  },
-  scheduleCardTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#0f172a",
-  },
-  healthRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  healthLabel: {
-    color: "#0f172a",
-    fontSize: 14,
-  },
-  healthChip: {
-    borderRadius: 999,
-    backgroundColor: "rgba(15, 23, 42, 0.07)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  healthChipWarning: {
-    backgroundColor: "#fef3c7",
-  },
-  healthChipSuccess: {
-    backgroundColor: "#dcfce7",
-  },
-  healthChipText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  statRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  statWrap: {
-    flex: 1,
-    alignItems: "center",
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0f172a",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#475569",
-    textAlign: "center",
-  },
-  roiStripCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(21, 101, 192, 0.18)",
-    padding: 16,
-    backgroundColor: "#eff6ff",
-    gap: 8,
-  },
-  roiEyebrow: {
-    fontSize: 12,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-    color: "#475569",
-    fontWeight: "700",
-  },
-  roiTitle: {
-    fontSize: 24,
-    lineHeight: 27,
-    fontWeight: "900",
-    color: "#0f172a",
-  },
-  roiSubtitle: {
-    color: "#334155",
-    lineHeight: 21,
-  },
-  roiButtonWrap: {
-    marginTop: 6,
-  },
-  section: {
-    gap: 14,
-    paddingTop: 8,
-  },
-  sectionTitleWrap: {
-    alignItems: "center",
-    gap: 6,
-  },
-  sectionEyebrow: {
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-    color: "#64748b",
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  sectionTitle: {
-    fontSize: 28,
-    lineHeight: 31,
-    fontWeight: "900",
-    letterSpacing: -0.4,
-    color: "#0f172a",
-    textAlign: "center",
-  },
-  sectionSubtitle: {
-    color: "#475569",
-    textAlign: "center",
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  benefitGrid: {
-    gap: 16,
-  },
-  iconBulletRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  iconBulletIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(21, 101, 192, 0.09)",
-  },
-  iconBulletCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  iconBulletTitle: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  iconBulletText: {
-    color: "#475569",
-    lineHeight: 21,
-  },
-  testimonialGrid: {
-    gap: 10,
-  },
-  testimonialCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(15, 23, 42, 0.12)",
-    padding: 14,
-    gap: 12,
-    backgroundColor: "#ffffff",
-  },
-  testimonialQuote: {
-    color: "#475569",
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  testimonialAuthorRow: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-  },
-  avatarBubble: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#dbeafe",
-  },
-  avatarText: {
-    color: "#0f172a",
-    fontWeight: "800",
-  },
-  testimonialName: {
-    color: "#0f172a",
-    fontWeight: "800",
-    fontSize: 13,
-  },
-  testimonialRole: {
-    color: "#64748b",
-    fontSize: 12,
-  },
-  ctaCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(15, 23, 42, 0.12)",
-    padding: 16,
-    gap: 8,
-    backgroundColor: "#f8fafc",
-  },
-  ctaTitle: {
-    fontSize: 29,
-    lineHeight: 33,
-    fontWeight: "900",
-    color: "#0f172a",
-    letterSpacing: -0.6,
-  },
-  ctaText: {
-    color: "#475569",
-    fontSize: 15,
-  },
-  ctaActionStack: {
-    gap: 10,
-    marginTop: 8,
-  },
-  mobileStickyCta: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(15, 23, 42, 0.1)",
-    backgroundColor: "#ffffff",
   },
 });

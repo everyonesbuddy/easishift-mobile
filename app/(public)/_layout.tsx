@@ -1,12 +1,9 @@
 import { Slot } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
-import PublicTopBar from "@/components/shared/public-top-bar";
-
 export default function PublicLayout() {
   return (
     <View style={styles.page}>
-      <PublicTopBar />
       <View style={styles.content}>
         <Slot />
       </View>

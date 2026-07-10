@@ -63,6 +63,16 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
+          <Pressable
+            onPress={() => router.replace("/")}
+            style={({ pressed }) => [
+              styles.backButton,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={styles.backButtonText}>← Back to home</Text>
+          </Pressable>
+
           <Text style={styles.title}>Login</Text>
 
           {error ? (
@@ -156,6 +166,16 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     textAlign: "center",
     marginBottom: 2,
+  },
+  backButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  backButtonText: {
+    color: "#1d4ed8",
+    fontWeight: "700",
+    fontSize: 14,
   },
   input: {
     borderWidth: 1,
