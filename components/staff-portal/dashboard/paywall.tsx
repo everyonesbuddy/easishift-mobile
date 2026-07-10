@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -194,7 +195,12 @@ export default function Paywall({ tenant }: Props) {
   }
 
   return (
-    <View style={styles.wrap}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.wrap}>
       <Text style={styles.title}>Activate your clinic</Text>
       <Text style={styles.subtitle}>
         Select a plan to unlock staff seats and activate your subscription.
@@ -370,11 +376,18 @@ export default function Paywall({ tenant }: Props) {
       </Text>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-    </View>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 16,
+  },
   wrap: {
     marginTop: 12,
     backgroundColor: "#ffffff",
