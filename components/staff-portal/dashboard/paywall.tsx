@@ -201,181 +201,184 @@ export default function Paywall({ tenant }: Props) {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.wrap}>
-      <Text style={styles.title}>Activate your clinic</Text>
-      <Text style={styles.subtitle}>
-        Select a plan to unlock staff seats and activate your subscription.
-      </Text>
+        <Text style={styles.title}>Activate your clinic</Text>
+        <Text style={styles.subtitle}>
+          Select a plan to unlock staff seats and activate your subscription.
+        </Text>
 
-      <View style={styles.switchRow}>
-        <TouchableOpacity
-          onPress={() => setBillingPeriod("yearly")}
-          style={[
-            styles.switchBtn,
-            billingPeriod === "yearly" ? styles.switchBtnActive : null,
-          ]}
-        >
-          <Text
+        <View style={styles.switchRow}>
+          <TouchableOpacity
+            onPress={() => setBillingPeriod("yearly")}
             style={[
-              styles.switchText,
-              billingPeriod === "yearly" ? styles.switchTextActive : null,
+              styles.switchBtn,
+              billingPeriod === "yearly" ? styles.switchBtnActive : null,
             ]}
           >
-            Yearly
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setBillingPeriod("monthly")}
-          style={[
-            styles.switchBtn,
-            billingPeriod === "monthly" ? styles.switchBtnActive : null,
-          ]}
-        >
-          <Text
-            style={[
-              styles.switchText,
-              billingPeriod === "monthly" ? styles.switchTextActive : null,
-            ]}
-          >
-            Monthly
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.badgeText}>
-        {billingPeriod === "yearly" && yearlySavingsPercent
-          ? `Yearly saves ${yearlySavingsPercent}% compared to monthly`
-          : "Monthly offers flexibility with no long-term commitment"}
-      </Text>
-
-      <View style={styles.planColumn}>
-        {plans.map((plan) => (
-          <View
-            key={plan.key}
-            style={[
-              styles.planCard,
-              plan.highlight ? styles.planCardHighlight : null,
-            ]}
-          >
-            <View style={styles.planHeaderRow}>
-              <View>
-                <Text style={styles.planName}>{plan.name}</Text>
-                <Text style={styles.planPeriodLabel}>
-                  Per facility / {billingPeriod === "yearly" ? "year" : "month"}
-                </Text>
-              </View>
-              {plan.highlight ? (
-                <Text style={styles.popularPill}>Most popular</Text>
-              ) : null}
-            </View>
-
-            <Text style={styles.planPrice}>{plan.priceLabel}</Text>
-            <Text style={styles.planSub}>
-              {plan.isEnterprise
-                ? "Talk to sales for a custom package"
-                : billingPeriod === "yearly" && typeof plan.price === "number"
-                  ? `Equivalent to $${Math.round(plan.price / 12)}/mo billed yearly`
-                  : "Billed monthly, cancel anytime"}
+            <Text
+              style={[
+                styles.switchText,
+                billingPeriod === "yearly" ? styles.switchTextActive : null,
+              ]}
+            >
+              Yearly
             </Text>
-            <Text style={styles.planSeats}>{getCapacityLabel(plan)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setBillingPeriod("monthly")}
+            style={[
+              styles.switchBtn,
+              billingPeriod === "monthly" ? styles.switchBtnActive : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.switchText,
+                billingPeriod === "monthly" ? styles.switchTextActive : null,
+              ]}
+            >
+              Monthly
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-            <View style={styles.planDivider} />
+        <Text style={styles.badgeText}>
+          {billingPeriod === "yearly" && yearlySavingsPercent
+            ? `Yearly saves ${yearlySavingsPercent}% compared to monthly`
+            : "Monthly offers flexibility with no long-term commitment"}
+        </Text>
 
-            {[getSupportLabel(plan), ...sharedFeatureList].map((feature) => (
-              <View key={`${plan.key}-${feature}`} style={styles.featureRow}>
+        <View style={styles.planColumn}>
+          {plans.map((plan) => (
+            <View
+              key={plan.key}
+              style={[
+                styles.planCard,
+                plan.highlight ? styles.planCardHighlight : null,
+              ]}
+            >
+              <View style={styles.planHeaderRow}>
+                <View>
+                  <Text style={styles.planName}>{plan.name}</Text>
+                  <Text style={styles.planPeriodLabel}>
+                    Per facility /{" "}
+                    {billingPeriod === "yearly" ? "year" : "month"}
+                  </Text>
+                </View>
+                {plan.highlight ? (
+                  <Text style={styles.popularPill}>Most popular</Text>
+                ) : null}
+              </View>
+
+              <Text style={styles.planPrice}>{plan.priceLabel}</Text>
+              <Text style={styles.planSub}>
+                {plan.isEnterprise
+                  ? "Talk to sales for a custom package"
+                  : billingPeriod === "yearly" && typeof plan.price === "number"
+                    ? `Equivalent to $${Math.round(plan.price / 12)}/mo billed yearly`
+                    : "Billed monthly, cancel anytime"}
+              </Text>
+              <Text style={styles.planSeats}>{getCapacityLabel(plan)}</Text>
+
+              <View style={styles.planDivider} />
+
+              {[getSupportLabel(plan), ...sharedFeatureList].map((feature) => (
+                <View key={`${plan.key}-${feature}`} style={styles.featureRow}>
+                  <Text style={styles.featureBullet}>•</Text>
+                  <Text style={styles.featureText}>{feature}</Text>
+                </View>
+              ))}
+
+              {!plan.isEnterprise ? (
+                <Text style={styles.trialNote}>
+                  Includes a free 1-month trial
+                </Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.ctaBtn,
+                  plan.highlight ? styles.ctaBtnPrimary : null,
+                ]}
+                onPress={() =>
+                  plan.isEnterprise
+                    ? handleCalendlyOpen()
+                    : handleChoosePlan(plan.key)
+                }
+                disabled={loadingPlan === plan.key && !plan.isEnterprise}
+              >
+                {loadingPlan === plan.key && !plan.isEnterprise ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={plan.highlight ? "#ffffff" : "#1d4ed8"}
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.ctaText,
+                      plan.highlight ? styles.ctaTextPrimary : null,
+                    ]}
+                  >
+                    {plan.isEnterprise ? "Get quote" : "Start trial"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.implementationWrap}>
+          <View style={styles.implementationHeader}>
+            <Text style={styles.implementationBadge}>Recommended</Text>
+            <Text style={styles.implementationTitle}>
+              Guided Implementation
+            </Text>
+            <Text style={styles.implementationSub}>
+              A hands-on launch package for teams that want a smoother rollout
+              with direct support from day one.
+            </Text>
+
+            <View style={styles.startingAtWrap}>
+              <Text style={styles.startingAtLabel}>STARTING AT</Text>
+              <Text style={styles.startingAtPrice}>$2,500</Text>
+              <Text style={styles.startingAtSub}>per location</Text>
+            </View>
+          </View>
+
+          <View style={styles.implementationBody}>
+            <Text style={styles.includesLabel}>INCLUDES</Text>
+            {[
+              "Employee import",
+              "Schedule configuration",
+              "Manager training",
+              "Go-live support",
+            ].map((item) => (
+              <View key={item} style={styles.includesItem}>
                 <Text style={styles.featureBullet}>•</Text>
-                <Text style={styles.featureText}>{feature}</Text>
+                <Text style={styles.includesText}>{item}</Text>
               </View>
             ))}
 
-            {!plan.isEnterprise ? (
-              <Text style={styles.trialNote}>
-                Includes a free 1-month trial
+            <View style={styles.implementationAside}>
+              <Text style={styles.implementationAsideText}>
+                Self-serve setup is always available at no additional cost. Many
+                teams choose to get started on their own and add implementation
+                later if needed.
               </Text>
-            ) : null}
-
-            <TouchableOpacity
-              style={[
-                styles.ctaBtn,
-                plan.highlight ? styles.ctaBtnPrimary : null,
-              ]}
-              onPress={() =>
-                plan.isEnterprise
-                  ? handleCalendlyOpen()
-                  : handleChoosePlan(plan.key)
-              }
-              disabled={loadingPlan === plan.key && !plan.isEnterprise}
-            >
-              {loadingPlan === plan.key && !plan.isEnterprise ? (
-                <ActivityIndicator
-                  size="small"
-                  color={plan.highlight ? "#ffffff" : "#1d4ed8"}
-                />
-              ) : (
-                <Text
-                  style={[
-                    styles.ctaText,
-                    plan.highlight ? styles.ctaTextPrimary : null,
-                  ]}
-                >
-                  {plan.isEnterprise ? "Get quote" : "Start trial"}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.implementationWrap}>
-        <View style={styles.implementationHeader}>
-          <Text style={styles.implementationBadge}>Recommended</Text>
-          <Text style={styles.implementationTitle}>Guided Implementation</Text>
-          <Text style={styles.implementationSub}>
-            A hands-on launch package for teams that want a smoother rollout
-            with direct support from day one.
-          </Text>
-
-          <View style={styles.startingAtWrap}>
-            <Text style={styles.startingAtLabel}>STARTING AT</Text>
-            <Text style={styles.startingAtPrice}>$2,500</Text>
-            <Text style={styles.startingAtSub}>per location</Text>
-          </View>
-        </View>
-
-        <View style={styles.implementationBody}>
-          <Text style={styles.includesLabel}>INCLUDES</Text>
-          {[
-            "Employee import",
-            "Schedule configuration",
-            "Manager training",
-            "Go-live support",
-          ].map((item) => (
-            <View key={item} style={styles.includesItem}>
-              <Text style={styles.featureBullet}>•</Text>
-              <Text style={styles.includesText}>{item}</Text>
+              <TouchableOpacity
+                style={[styles.ctaBtn, styles.contactBtn]}
+                onPress={handleCalendlyOpen}
+              >
+                <Text style={styles.contactBtnText}>Contact us</Text>
+              </TouchableOpacity>
             </View>
-          ))}
-
-          <View style={styles.implementationAside}>
-            <Text style={styles.implementationAsideText}>
-              Self-serve setup is always available at no additional cost. Many
-              teams choose to get started on their own and add implementation
-              later if needed.
-            </Text>
-            <TouchableOpacity
-              style={[styles.ctaBtn, styles.contactBtn]}
-              onPress={handleCalendlyOpen}
-            >
-              <Text style={styles.contactBtnText}>Contact us</Text>
-            </TouchableOpacity>
           </View>
         </View>
-      </View>
 
-      <Text style={styles.footerNote}>
-        One price per facility. Each facility is billed independently.
-      </Text>
+        <Text style={styles.footerNote}>
+          One price per facility. Each facility is billed independently.
+        </Text>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
     </ScrollView>
   );
