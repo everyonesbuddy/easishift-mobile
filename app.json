@@ -2,7 +2,7 @@
   "expo": {
     "name": "WiserShifts Mobile",
     "slug": "wiser-shifts-mobile",
-    "version": "1.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon-1024.png",
     "scheme": "wiser-shifts-mobile",

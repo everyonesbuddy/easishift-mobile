@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Linking,
   ScrollView,
   StyleSheet,
@@ -8,8 +7,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-import api from "@/config/api";
 
 type TenantLike = {
   _id?: string;
@@ -104,11 +101,12 @@ const MONTHLY_PLANS: Plan[] = [
   },
 ];
 
+const WEBSITE_BILLING_URL = "https://www.wisershifts.com";
+
 export default function Paywall({ tenant }: Props) {
   const [billingPeriod, setBillingPeriod] = useState<"yearly" | "monthly">(
     "yearly",
   );
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const plans = billingPeriod === "yearly" ? YEARLY_PLANS : MONTHLY_PLANS;
@@ -140,43 +138,18 @@ export default function Paywall({ tenant }: Props) {
   const getSupportLabel = (plan: Plan) =>
     plan.supportTier === "priority" ? "Priority support" : "Standard support";
 
-  const handleChoosePlan = async (planKey: string) => {
-    if (!tenant?._id) {
-      setError("Missing tenant id.");
-      return;
-    }
-
-    setError(null);
-    setLoadingPlan(planKey);
-
+  const handleWebsiteBillingOpen = async () => {
     try {
-      const res = await api.post("/stripe/create-checkout-session", {
-        tenantId: tenant._id,
-        planKey,
-      });
-
-      const url = res.data?.url;
-      if (typeof url === "string" && url.length > 0) {
-        await Linking.openURL(url);
-      } else {
-        setError("Missing checkout URL from server.");
+      const canOpen = await Linking.canOpenURL(WEBSITE_BILLING_URL);
+      if (!canOpen) {
+        setError("Unable to open website billing on this device.");
+        return;
       }
-    } catch (err: unknown) {
-      const message =
-        typeof err === "object" &&
-        err !== null &&
-        "response" in err &&
-        typeof (err as { response?: { data?: { message?: string } } }).response
-          ?.data?.message === "string"
-          ? (err as { response?: { data?: { message?: string } } }).response
-              ?.data?.message
-          : err instanceof Error
-            ? err.message
-            : "Request failed";
 
-      setError(message || "Request failed");
-    } finally {
-      setLoadingPlan(null);
+      setError(null);
+      await Linking.openURL(WEBSITE_BILLING_URL);
+    } catch {
+      setError("Unable to open website billing on this device.");
     }
   };
 
@@ -201,9 +174,14 @@ export default function Paywall({ tenant }: Props) {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.wrap}>
-        <Text style={styles.title}>Activate your clinic</Text>
+        <Text style={styles.title}>Activate your facility</Text>
         <Text style={styles.subtitle}>
-          Select a plan to unlock staff seats and activate your subscription.
+          View your plan options below. Subscription setup and changes are
+          managed in the WiserShifts web portal.
+        </Text>
+        <Text style={styles.webOnlyNote}>
+          Mobile billing is view-only. A facility admin can manage subscription
+          details from the WiserShifts web portal.
         </Text>
 
         <View style={styles.switchRow}>
@@ -290,7 +268,8 @@ export default function Paywall({ tenant }: Props) {
 
               {!plan.isEnterprise ? (
                 <Text style={styles.trialNote}>
-                  Includes a free 1-month trial
+                  Free trial availability is managed by your admin on the web
+                  portal.
                 </Text>
               ) : null}
 
@@ -302,25 +281,17 @@ export default function Paywall({ tenant }: Props) {
                 onPress={() =>
                   plan.isEnterprise
                     ? handleCalendlyOpen()
-                    : handleChoosePlan(plan.key)
+                    : handleWebsiteBillingOpen()
                 }
-                disabled={loadingPlan === plan.key && !plan.isEnterprise}
               >
-                {loadingPlan === plan.key && !plan.isEnterprise ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={plan.highlight ? "#ffffff" : "#1d4ed8"}
-                  />
-                ) : (
-                  <Text
-                    style={[
-                      styles.ctaText,
-                      plan.highlight ? styles.ctaTextPrimary : null,
-                    ]}
-                  >
-                    {plan.isEnterprise ? "Get quote" : "Start trial"}
-                  </Text>
-                )}
+                <Text
+                  style={[
+                    styles.ctaText,
+                    plan.highlight ? styles.ctaTextPrimary : null,
+                  ]}
+                >
+                  {plan.isEnterprise ? "Get quote" : "Open web portal"}
+                </Text>
               </TouchableOpacity>
             </View>
           ))}
@@ -410,6 +381,18 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 13,
     textAlign: "center",
+  },
+  webOnlyNote: {
+    color: "#1e40af",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 17,
   },
   switchRow: {
     flexDirection: "row",

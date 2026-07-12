@@ -2,7 +2,6 @@ import { Feather } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Pressable,
   SafeAreaView,
@@ -12,7 +11,6 @@ import {
   View,
 } from "react-native";
 
-import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
 
 type Plan = {
@@ -115,6 +113,8 @@ const SHARED_FEATURE_LIST = [
   "Staff directory",
 ];
 
+const WEBSITE_BILLING_URL = "https://www.wisershifts.com";
+
 function getYearlySavingsPercent() {
   const sampleMonthly = MONTHLY_PLANS[0]?.price;
   const sampleYearly = YEARLY_PLANS[0]?.price;
@@ -132,10 +132,8 @@ function getYearlySavingsPercent() {
 }
 
 export default function ManageSubscriptionPage() {
-  const { tenant, refreshTenant } = useAuth();
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const { tenant } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState("");
   const [billingPeriod, setBillingPeriod] = useState<"yearly" | "monthly">(
     "yearly",
   );
@@ -167,122 +165,19 @@ export default function ManageSubscriptionPage() {
     return "Billed monthly, cancel anytime";
   };
 
-  const handleChoosePlan = async (planKey: string) => {
-    if (!tenant?._id || typeof tenant._id !== "string") {
-      setError("Tenant details are missing.");
-      return;
-    }
-
+  const handleOpenWebsiteBilling = async () => {
     setError(null);
-    setSuccess("");
-    setLoadingPlan(planKey);
 
     try {
-      const res = await api.post("/stripe/create-checkout-session", {
-        tenantId: tenant._id,
-        planKey,
-      });
-
-      const url =
-        typeof res?.data?.url === "string" && res.data.url.length > 0
-          ? res.data.url
-          : "";
-
-      if (!url) {
-        setError("Missing checkout URL from server");
-        return;
-      }
-
-      const canOpen = await Linking.canOpenURL(url);
+      const canOpen = await Linking.canOpenURL(WEBSITE_BILLING_URL);
       if (!canOpen) {
-        setError("Unable to open checkout URL on this device.");
+        setError("Unable to open website billing on this device.");
         return;
       }
 
-      await Linking.openURL(url);
-    } catch (requestError: unknown) {
-      const message =
-        typeof requestError === "object" &&
-        requestError !== null &&
-        "response" in requestError &&
-        typeof (requestError as { response?: { data?: { message?: string } } })
-          .response?.data?.message === "string"
-          ? (requestError as { response?: { data?: { message?: string } } })
-              .response?.data?.message || "Request failed"
-          : "Request failed";
-
-      setError(message);
-    } finally {
-      setLoadingPlan(null);
-    }
-  };
-
-  const requestCancelSubscription = () => {
-    Alert.alert(
-      "Cancel subscription",
-      "Cancel at period end? Users will keep access until the billing period ends.",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          style: "destructive",
-          onPress: () => {
-            void handleCancelSubscription({ atPeriodEnd: true });
-          },
-        },
-      ],
-    );
-  };
-
-  const handleCancelSubscription = async (opts: { atPeriodEnd: boolean }) => {
-    if (!tenant?._id || typeof tenant._id !== "string") {
-      setError("Tenant details are missing.");
-      return;
-    }
-
-    setError(null);
-    setSuccess("");
-
-    try {
-      setLoadingPlan("cancel");
-      await api.post("/stripe/cancel-subscription", {
-        tenantId: tenant._id,
-        atPeriodEnd: Boolean(opts.atPeriodEnd),
-      });
-      await refreshTenant();
-      setSuccess(
-        "Subscription cancellation requested. Changes may take a moment to appear.",
-      );
-    } catch (requestError: unknown) {
-      const message =
-        typeof requestError === "object" &&
-        requestError !== null &&
-        "response" in requestError &&
-        typeof (requestError as { response?: { data?: { message?: string } } })
-          .response?.data?.message === "string"
-          ? (requestError as { response?: { data?: { message?: string } } })
-              .response?.data?.message || "Failed to cancel subscription"
-          : "Failed to cancel subscription";
-
-      setError(message);
-    } finally {
-      setLoadingPlan(null);
-    }
-  };
-
-  const handleGetQuote = async () => {
-    const calendlyUrl = "https://calendly.com/wisershifts-info/30min";
-
-    try {
-      const canOpen = await Linking.canOpenURL(calendlyUrl);
-      if (!canOpen) {
-        setError("Unable to open scheduling link on this device.");
-        return;
-      }
-
-      await Linking.openURL(calendlyUrl);
+      await Linking.openURL(WEBSITE_BILLING_URL);
     } catch {
-      setError("Unable to open scheduling link on this device.");
+      setError("Unable to open website billing on this device.");
     }
   };
 
@@ -314,7 +209,15 @@ export default function ManageSubscriptionPage() {
         <View style={styles.header}>
           <Text style={styles.title}>Manage Subscription</Text>
           <Text style={styles.subtitle}>
-            View your current plan, billing details, and upgrade options.
+            View your current plan and pricing. Subscription setup and changes
+            are managed in the web portal.
+          </Text>
+        </View>
+
+        <View style={styles.webOnlyNotice}>
+          <Text style={styles.webOnlyNoticeText}>
+            Mobile billing is view-only. A facility admin can manage
+            subscription details from the WiserShifts web portal.
           </Text>
         </View>
 
@@ -380,19 +283,14 @@ export default function ManageSubscriptionPage() {
           <View style={styles.currentActions}>
             <Pressable
               style={styles.cancelBtn}
-              disabled={loadingPlan === "cancel"}
-              onPress={requestCancelSubscription}
+              onPress={handleOpenWebsiteBilling}
             >
-              <Text style={styles.cancelBtnText}>
-                {loadingPlan === "cancel"
-                  ? "Processing..."
-                  : "Cancel subscription"}
-              </Text>
+              <Text style={styles.cancelBtnText}>Open web portal</Text>
             </Pressable>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Upgrade options</Text>
+        <Text style={styles.sectionTitle}>Plan options</Text>
 
         <View style={styles.planGrid}>
           {plans.map((plan) => (
@@ -443,50 +341,28 @@ export default function ManageSubscriptionPage() {
                   <Text style={styles.currentPlanBtnText}>Current plan</Text>
                 </View>
               ) : (
-                <>
-                  {!plan.isEnterprise ? (
-                    <Text style={styles.trialText}>
-                      Includes a free 1-month trial
-                    </Text>
-                  ) : null}
-                  <Pressable
-                    style={[
-                      styles.planActionBtn,
-                      plan.highlight ? styles.planActionBtnHighlight : null,
-                      loadingPlan === plan.key
-                        ? styles.planActionDisabled
-                        : null,
-                    ]}
-                    onPress={() =>
-                      plan.isEnterprise
-                        ? void handleGetQuote()
-                        : void handleChoosePlan(plan.key)
-                    }
-                    disabled={loadingPlan === plan.key && !plan.isEnterprise}
-                  >
-                    {loadingPlan === plan.key && !plan.isEnterprise ? (
-                      <ActivityIndicator size="small" color="#ffffff" />
-                    ) : (
-                      <>
-                        <Feather
-                          name="arrow-up-right"
-                          size={14}
-                          color="#ffffff"
-                        />
-                        <Text style={styles.planActionText}>
-                          {plan.isEnterprise ? "Get quote" : "Start trial"}
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
-                </>
+                <Text style={styles.trialText}>
+                  {plan.isEnterprise
+                    ? "Contact sales from the website for enterprise onboarding"
+                    : "Trial availability is managed by your admin in the web portal"}
+                </Text>
               )}
+
+              <Pressable
+                style={[
+                  styles.planActionBtn,
+                  plan.highlight ? styles.planActionBtnHighlight : null,
+                ]}
+                onPress={handleOpenWebsiteBilling}
+              >
+                <Feather name="arrow-up-right" size={14} color="#ffffff" />
+                <Text style={styles.planActionText}>Open web portal</Text>
+              </Pressable>
             </View>
           ))}
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {success ? <Text style={styles.success}>{success}</Text> : null}
 
         <Text style={styles.footerText}>
           One price per facility. Each facility is billed independently.
@@ -531,6 +407,21 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 13,
     textAlign: "center",
+  },
+  webOnlyNotice: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  webOnlyNoticeText: {
+    color: "#1e3a8a",
+    fontSize: 12,
+    textAlign: "center",
+    lineHeight: 18,
+    fontWeight: "600",
   },
   periodTabs: {
     alignSelf: "center",
@@ -710,9 +601,6 @@ const styles = StyleSheet.create({
   planActionBtnHighlight: {
     backgroundColor: "#2563eb",
   },
-  planActionDisabled: {
-    opacity: 0.8,
-  },
   planActionText: {
     color: "#ffffff",
     fontSize: 13,
@@ -722,16 +610,6 @@ const styles = StyleSheet.create({
     color: "#b91c1c",
     backgroundColor: "#fee2e2",
     borderColor: "#fecaca",
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 13,
-  },
-  success: {
-    color: "#065f46",
-    backgroundColor: "#d1fae5",
-    borderColor: "#a7f3d0",
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 10,
