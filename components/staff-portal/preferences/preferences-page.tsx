@@ -56,7 +56,7 @@ function sanitizePrefs(value: unknown): PreferencesData {
 
 export default function PreferencesPage() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [prefs, setPrefs] = useState<PreferencesData>({ ...defaultPrefs });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -142,7 +142,13 @@ export default function PreferencesPage() {
       setError("");
       setSuccess("");
 
-      await api.delete("/auth/me");
+      const userId = String(user?._id || user?.id || "").trim();
+      if (!userId) {
+        setError("Unable to delete account because user details are missing.");
+        return;
+      }
+
+      await api.delete(`/auth/${userId}`);
       await logout();
       router.replace("/login");
     } catch (requestError) {
