@@ -259,7 +259,6 @@ export default function SignupTenantScreen() {
   const isFormValid = useMemo(() => {
     const hasRequiredText =
       Boolean(hospitalName.trim()) &&
-      Boolean(address.trim()) &&
       Boolean(adminName.trim()) &&
       Boolean(adminPassword.trim()) &&
       Boolean(adminEmail.trim()) &&
@@ -285,7 +284,6 @@ export default function SignupTenantScreen() {
       termsAccepted
     );
   }, [
-    address,
     adminEmail,
     adminName,
     adminPassword,
@@ -312,11 +310,6 @@ export default function SignupTenantScreen() {
 
     if (!hospitalName.trim()) {
       setHospitalNameError("Facility name is required");
-      return;
-    }
-
-    if (!address.trim()) {
-      setAddressError("Facility address is required");
       return;
     }
 
@@ -445,7 +438,7 @@ export default function SignupTenantScreen() {
             </View>
             <View style={styles.fieldFlex}>
               <TextInput
-                placeholder="Facility Phone"
+                placeholder="Facility Phone (Optional)"
                 value={tenantPhone}
                 onChangeText={(value) => {
                   setTenantPhone(value);
@@ -464,7 +457,7 @@ export default function SignupTenantScreen() {
           ) : null}
 
           <TextInput
-            placeholder="Facility Address"
+            placeholder="Facility Address (Optional)"
             value={address}
             onChangeText={(value) => {
               setAddress(value);

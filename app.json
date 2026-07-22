@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.wisershifts.mobile",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "WiserShifts uses your photo library so you can choose a profile picture for your staff account, for example when updating your profile image."
       }
     },
     "android": {

@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,7 +12,9 @@ import {
   View,
 } from "react-native";
 
+import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
+import { useAuth } from "@/context/auth-context";
 
 type PreferencesData = {
   preferredDaysOfWeek?: number[];
@@ -52,9 +55,13 @@ function sanitizePrefs(value: unknown): PreferencesData {
 }
 
 export default function PreferencesPage() {
+  const router = useRouter();
+  const { logout } = useAuth();
   const [prefs, setPrefs] = useState<PreferencesData>({ ...defaultPrefs });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -125,6 +132,24 @@ export default function PreferencesPage() {
       setError("Failed to save preferences");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    try {
+      setDeletingAccount(true);
+      setDeleteDialogOpen(false);
+      setError("");
+      setSuccess("");
+
+      await api.delete("/auth/me");
+      await logout();
+      router.replace("/login");
+    } catch (requestError) {
+      console.warn("Failed to delete account", requestError);
+      setError("Failed to delete account");
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -217,6 +242,32 @@ export default function PreferencesPage() {
           />
         </SectionCard>
 
+        <SectionCard
+          title="Account Deletion"
+          description="Permanently remove your personal account from this facility."
+        >
+          <View style={styles.deleteCard}>
+            <Text style={styles.deleteText}>
+              Deleting your account removes your personal access, preferences,
+              messages, schedules, and time-off records associated with this
+              facility.
+            </Text>
+            <Pressable
+              style={[
+                styles.deleteButton,
+                deletingAccount ? styles.saveBtnDisabled : null,
+              ]}
+              onPress={() => setDeleteDialogOpen(true)}
+              disabled={deletingAccount}
+            >
+              <Feather name="trash-2" size={16} color="#ffffff" />
+              <Text style={styles.deleteButtonText}>
+                {deletingAccount ? "Deleting..." : "Delete My Account"}
+              </Text>
+            </Pressable>
+          </View>
+        </SectionCard>
+
         <Pressable
           style={[styles.saveBtn, saving ? styles.saveBtnDisabled : null]}
           onPress={handleSave}
@@ -228,6 +279,14 @@ export default function PreferencesPage() {
           </Text>
         </Pressable>
       </ScrollView>
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete Your Account?"
+        message="This permanently deletes your account and your personal data for this facility. This action cannot be undone."
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteAccount}
+      />
     </SafeAreaView>
   );
 }
@@ -417,6 +476,33 @@ const styles = StyleSheet.create({
   switchDescription: {
     color: "#6b7280",
     fontSize: 12,
+  },
+  deleteCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    backgroundColor: "#fef2f2",
+    padding: 12,
+    gap: 12,
+  },
+  deleteText: {
+    color: "#7f1d1d",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  deleteButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: "#dc2626",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
   },
   saveBtn: {
     minHeight: 44,

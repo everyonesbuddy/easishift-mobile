@@ -12,7 +12,6 @@ type PublicNavItem = {
 
 const PUBLIC_NAV_ITEMS: PublicNavItem[] = [
   { id: "login", label: "Login", to: "/login" },
-  { id: "signup", label: "Sign Up", to: "/signup-tenant" },
   { id: "roi", label: "ROI", to: "/turnover-roi-calculator" },
 ];
 

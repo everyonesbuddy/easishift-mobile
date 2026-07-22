@@ -1,5 +1,5 @@
-import SignupTenantScreen from "@/components/auth/signup-tenant-screen";
+import { Redirect } from "expo-router";
 
 export default function SignupTenantRoute() {
-  return <SignupTenantScreen />;
+  return <Redirect href="/login" />;
 }

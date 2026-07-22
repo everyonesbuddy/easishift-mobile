@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,6 +16,7 @@ import {
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
+import { useAuth } from "@/context/auth-context";
 
 type ShiftSlot = {
   tag: string;
@@ -201,12 +203,15 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
 }
 
 export default function FacilityPreferencesPage() {
+  const router = useRouter();
+  const { tenant, logout } = useAuth();
   const [prefs, setPrefs] = useState<FacilityPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [patternPickerOpen, setPatternPickerOpen] = useState(false);
 
   const [arrayInputs, setArrayInputs] = useState({
@@ -468,6 +473,32 @@ export default function FacilityPreferencesPage() {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    const tenantId = String(tenant?._id || "").trim();
+
+    if (!tenantId) {
+      setDeleteDialogOpen(false);
+      setError("Unable to delete account because tenant details are missing.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await api.delete(`/tenants/${tenantId}`);
+      setDeleteDialogOpen(false);
+      await logout();
+      router.replace("/login");
+    } catch (requestError) {
+      console.warn("Failed to delete tenant account", requestError);
+      setError("Failed to delete account. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.page}>
@@ -700,6 +731,26 @@ export default function FacilityPreferencesPage() {
           </Text>
         </Section>
 
+        <Section title="Account Deletion">
+          <View style={styles.dangerCard}>
+            <Text style={styles.dangerText}>
+              Permanently delete this facility account and all related tenant
+              data, including staff, schedules, coverage, messages, and
+              preferences.
+            </Text>
+            <Pressable
+              style={styles.deleteAccountBtn}
+              onPress={() => setDeleteDialogOpen(true)}
+              disabled={saving}
+            >
+              <Feather name="trash-2" size={15} color="#ffffff" />
+              <Text style={styles.deleteAccountBtnText}>
+                {saving ? "Deleting..." : "Delete Facility Account"}
+              </Text>
+            </Pressable>
+          </View>
+        </Section>
+
         <Pressable
           style={[styles.saveBtn, saving ? styles.saveBtnDisabled : null]}
           disabled={saving}
@@ -722,6 +773,14 @@ export default function FacilityPreferencesPage() {
         message="This will remove all custom facility preferences and restore defaults."
         onCancel={() => setResetDialogOpen(false)}
         onConfirm={handleReset}
+      />
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete Facility Account?"
+        message="This permanently deletes the facility account and all related data. This action cannot be undone."
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={handleDeleteAccount}
       />
 
       <Modal
@@ -1151,6 +1210,33 @@ const styles = StyleSheet.create({
   hintText: {
     color: "#6b7280",
     fontSize: 12,
+  },
+  dangerCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    backgroundColor: "#fef2f2",
+    padding: 12,
+    gap: 12,
+  },
+  dangerText: {
+    color: "#7f1d1d",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  deleteAccountBtn: {
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: "#dc2626",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  deleteAccountBtnText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
   },
   saveBtn: {
     marginTop: 6,

@@ -360,13 +360,6 @@ export default function HomeScreen() {
             onPress={() => router.push("/login")}
             fullWidth
           />
-          <ActionButton
-            label="Sign Up"
-            variant="outline"
-            icon="user-plus"
-            onPress={() => router.push("/signup-tenant")}
-            fullWidth
-          />
         </View>
       </View>
     </SafeAreaView>

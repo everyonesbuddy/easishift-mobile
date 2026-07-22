@@ -2,7 +2,6 @@ import { Feather } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -113,8 +112,6 @@ const SHARED_FEATURE_LIST = [
   "Staff directory",
 ];
 
-const WEBSITE_BILLING_URL = "https://www.wisershifts.com";
-
 function getYearlySavingsPercent() {
   const sampleMonthly = MONTHLY_PLANS[0]?.price;
   const sampleYearly = YEARLY_PLANS[0]?.price;
@@ -133,7 +130,6 @@ function getYearlySavingsPercent() {
 
 export default function ManageSubscriptionPage() {
   const { tenant } = useAuth();
-  const [error, setError] = useState<string | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<"yearly" | "monthly">(
     "yearly",
   );
@@ -155,7 +151,7 @@ export default function ManageSubscriptionPage() {
 
   const getPlanPriceHint = (plan: Plan) => {
     if (plan.isEnterprise) {
-      return "Talk to sales for a custom package";
+      return "Custom plan details are provided by WiserShifts support.";
     }
 
     if (billingPeriod === "yearly" && typeof plan.price === "number") {
@@ -163,22 +159,6 @@ export default function ManageSubscriptionPage() {
     }
 
     return "Billed monthly, cancel anytime";
-  };
-
-  const handleOpenWebsiteBilling = async () => {
-    setError(null);
-
-    try {
-      const canOpen = await Linking.canOpenURL(WEBSITE_BILLING_URL);
-      if (!canOpen) {
-        setError("Unable to open website billing on this device.");
-        return;
-      }
-
-      await Linking.openURL(WEBSITE_BILLING_URL);
-    } catch {
-      setError("Unable to open website billing on this device.");
-    }
   };
 
   if (!tenant) {
@@ -209,15 +189,14 @@ export default function ManageSubscriptionPage() {
         <View style={styles.header}>
           <Text style={styles.title}>Manage Subscription</Text>
           <Text style={styles.subtitle}>
-            View your current plan and pricing. Subscription setup and changes
-            are managed in the web portal.
+            View your current plan, seat count, and plan reference details.
           </Text>
         </View>
 
         <View style={styles.webOnlyNotice}>
           <Text style={styles.webOnlyNoticeText}>
-            Mobile billing is view-only. A facility admin can manage
-            subscription details from the WiserShifts web portal.
+            Subscription information in the mobile app is informational only.
+            Billing setup and billing changes are not performed here.
           </Text>
         </View>
 
@@ -279,18 +258,9 @@ export default function ManageSubscriptionPage() {
           <Text style={styles.currentLine}>
             Billing: <Text style={styles.bold}>{billingEmailLabel}</Text>
           </Text>
-
-          <View style={styles.currentActions}>
-            <Pressable
-              style={styles.cancelBtn}
-              onPress={handleOpenWebsiteBilling}
-            >
-              <Text style={styles.cancelBtnText}>Open web portal</Text>
-            </Pressable>
-          </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Plan options</Text>
+        <Text style={styles.sectionTitle}>Plan reference</Text>
 
         <View style={styles.planGrid}>
           {plans.map((plan) => (
@@ -341,28 +311,15 @@ export default function ManageSubscriptionPage() {
                   <Text style={styles.currentPlanBtnText}>Current plan</Text>
                 </View>
               ) : (
-                <Text style={styles.trialText}>
+                <Text style={styles.referenceText}>
                   {plan.isEnterprise
-                    ? "Contact sales from the website for enterprise onboarding"
-                    : "Trial availability is managed by your admin in the web portal"}
+                    ? "Enterprise pricing is available through direct WiserShifts support."
+                    : "Displayed for plan comparison and internal subscription reference."}
                 </Text>
               )}
-
-              <Pressable
-                style={[
-                  styles.planActionBtn,
-                  plan.highlight ? styles.planActionBtnHighlight : null,
-                ]}
-                onPress={handleOpenWebsiteBilling}
-              >
-                <Feather name="arrow-up-right" size={14} color="#ffffff" />
-                <Text style={styles.planActionText}>Open web portal</Text>
-              </Pressable>
             </View>
           ))}
         </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Text style={styles.footerText}>
           One price per facility. Each facility is billed independently.
@@ -483,24 +440,6 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontWeight: "800",
   },
-  currentActions: {
-    marginTop: 8,
-    gap: 8,
-    flexDirection: "row",
-  },
-  cancelBtn: {
-    minHeight: 40,
-    borderRadius: 8,
-    backgroundColor: "#2563eb",
-    paddingHorizontal: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelBtnText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "800",
-  },
   sectionTitle: {
     color: "#111827",
     fontSize: 18,
@@ -574,7 +513,7 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 13,
   },
-  trialText: {
+  referenceText: {
     color: "#6b7280",
     fontSize: 11,
   },
@@ -588,33 +527,6 @@ const styles = StyleSheet.create({
   currentPlanBtnText: {
     color: "#ffffff",
     fontWeight: "800",
-  },
-  planActionBtn: {
-    minHeight: 40,
-    borderRadius: 8,
-    backgroundColor: "#334155",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  planActionBtnHighlight: {
-    backgroundColor: "#2563eb",
-  },
-  planActionText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  error: {
-    color: "#b91c1c",
-    backgroundColor: "#fee2e2",
-    borderColor: "#fecaca",
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 13,
   },
   footerText: {
     color: "#6b7280",
