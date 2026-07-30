@@ -54,6 +54,12 @@ const adminMenuItems: MenuItem[] = [
     label: "Messages",
     to: "/messages",
   },
+  {
+    id: "time-tracking",
+    icon: "clock",
+    label: "Time Tracking",
+    to: "/time-tracking",
+  },
 ];
 
 const staffMenuItems: MenuItem[] = [
@@ -77,6 +83,12 @@ const staffMenuItems: MenuItem[] = [
     icon: "message-square",
     label: "Messages",
     to: "/messages",
+  },
+  {
+    id: "time-tracking",
+    icon: "clock",
+    label: "Time Tracking",
+    to: "/time-tracking",
   },
 ];
 

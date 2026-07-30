@@ -62,6 +62,12 @@ const STAFF_MAIN_ITEMS: NavItem[] = [
 const ADMIN_MORE_ITEMS: NavItem[] = [
   { id: "staff", label: "Staff Management", icon: "users", to: "/staffs" },
   {
+    id: "time-tracking",
+    label: "Time Tracking",
+    icon: "clock",
+    to: "/time-tracking",
+  },
+  {
     id: "how-to-use",
     label: "How To Use",
     icon: "book-open",
@@ -100,6 +106,12 @@ const ADMIN_MORE_ITEMS: NavItem[] = [
 ];
 
 const STAFF_MORE_ITEMS: NavItem[] = [
+  {
+    id: "time-tracking",
+    label: "Time Tracking",
+    icon: "clock",
+    to: "/time-tracking",
+  },
   {
     id: "how-to-use",
     label: "How To Use",

@@ -32,6 +32,16 @@ type ShiftTypeDefinition = {
   timeSlots?: ShiftSlot[];
 };
 
+type TimeTrackingPrefs = {
+  enabled?: boolean;
+  mode?: "open" | "qr";
+  requireScheduleMatch?: boolean;
+  clockInGraceMinutes?: number;
+  clockOutGraceMinutes?: number;
+  roundingMinutes?: 0 | 5 | 6 | 10 | 15;
+  autoCloseOpenBreakOnClockOut?: boolean;
+};
+
 type FacilityPreferences = {
   schedulingPattern?: string;
   roleFamilies?: string[];
@@ -43,6 +53,7 @@ type FacilityPreferences = {
   fairnessLookbackDays?: number;
   notifyStaffOnCoveragePost?: boolean;
   shiftReminderLeadHours?: number;
+  timeTracking?: TimeTrackingPrefs;
 };
 
 type SlotInput = {
@@ -68,6 +79,16 @@ const TAXONOMY_FIELDS = [
   "certificationTags",
 ] as const;
 
+const TIME_TRACKING_DEFAULTS: Required<TimeTrackingPrefs> = {
+  enabled: false,
+  mode: "open",
+  requireScheduleMatch: true,
+  clockInGraceMinutes: 15,
+  clockOutGraceMinutes: 30,
+  roundingMinutes: 0,
+  autoCloseOpenBreakOnClockOut: true,
+};
+
 const DEFAULT_PREFS: FacilityPreferences = {
   schedulingPattern: "balance",
   roleFamilies: [],
@@ -79,6 +100,7 @@ const DEFAULT_PREFS: FacilityPreferences = {
   fairnessLookbackDays: 28,
   notifyStaffOnCoveragePost: false,
   shiftReminderLeadHours: 24,
+  timeTracking: TIME_TRACKING_DEFAULTS,
 };
 
 function toSnakeCase(value: unknown) {
@@ -132,6 +154,48 @@ function normalizeArrayValues(values: unknown) {
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeTimeTrackingPrefs(input: unknown): Required<TimeTrackingPrefs> {
+  const safe = input && typeof input === "object" ? input : {};
+  const normalizedMode = ["open", "qr"].includes(String((safe as TimeTrackingPrefs).mode || ""))
+    ? (String((safe as TimeTrackingPrefs).mode || "open") as "open" | "qr")
+    : String((safe as TimeTrackingPrefs).mode || "") === "geofence"
+      ? "qr"
+      : String((safe as TimeTrackingPrefs).mode || "") === "manual"
+        ? "open"
+        : TIME_TRACKING_DEFAULTS.mode;
+
+  const roundedValue = Number((safe as TimeTrackingPrefs).roundingMinutes);
+  const normalizedRounding = [0, 5, 6, 10, 15].includes(roundedValue)
+    ? (roundedValue as 0 | 5 | 6 | 10 | 15)
+    : TIME_TRACKING_DEFAULTS.roundingMinutes;
+
+  return {
+    enabled: Boolean((safe as TimeTrackingPrefs).enabled),
+    mode: normalizedMode,
+    requireScheduleMatch:
+      typeof (safe as TimeTrackingPrefs).requireScheduleMatch === "boolean"
+        ? Boolean((safe as TimeTrackingPrefs).requireScheduleMatch)
+        : TIME_TRACKING_DEFAULTS.requireScheduleMatch,
+    clockInGraceMinutes: Math.max(
+      0,
+      Number.isFinite(Number((safe as TimeTrackingPrefs).clockInGraceMinutes))
+        ? Number((safe as TimeTrackingPrefs).clockInGraceMinutes)
+        : TIME_TRACKING_DEFAULTS.clockInGraceMinutes,
+    ),
+    clockOutGraceMinutes: Math.max(
+      0,
+      Number.isFinite(Number((safe as TimeTrackingPrefs).clockOutGraceMinutes))
+        ? Number((safe as TimeTrackingPrefs).clockOutGraceMinutes)
+        : TIME_TRACKING_DEFAULTS.clockOutGraceMinutes,
+    ),
+    roundingMinutes: normalizedRounding,
+    autoCloseOpenBreakOnClockOut:
+      typeof (safe as TimeTrackingPrefs).autoCloseOpenBreakOnClockOut === "boolean"
+        ? Boolean((safe as TimeTrackingPrefs).autoCloseOpenBreakOnClockOut)
+        : TIME_TRACKING_DEFAULTS.autoCloseOpenBreakOnClockOut,
+  };
 }
 
 function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
@@ -199,6 +263,8 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
     new Set([...(next.shiftTypes || []), ...definitionKeys]),
   );
 
+  next.timeTracking = normalizeTimeTrackingPrefs(safePrefs.timeTracking);
+
   return next;
 }
 
@@ -251,6 +317,24 @@ export default function FacilityPreferencesPage() {
     value: FacilityPreferences[K],
   ) => {
     setPrefs((prev) => ({ ...(prev || safePrefs), [field]: value }));
+  };
+
+  const handleTimeTrackingChange = <K extends keyof Required<TimeTrackingPrefs>>(
+    field: K,
+    value: Required<TimeTrackingPrefs>[K],
+  ) => {
+    setPrefs((prev) => {
+      const source = prev || safePrefs;
+      const current = normalizeTimeTrackingPrefs(source.timeTracking);
+
+      return {
+        ...source,
+        timeTracking: {
+          ...current,
+          [field]: value,
+        },
+      };
+    });
   };
 
   const handleArrayInputChange = (
@@ -711,6 +795,132 @@ export default function FacilityPreferencesPage() {
           />
         </Section>
 
+        <Section title="Time Tracking">
+          <SwitchRow
+            title="Enable Time Tracking"
+            description="When disabled, clock-in/out requests are rejected."
+            value={Boolean(safePrefs.timeTracking?.enabled)}
+            onValueChange={(value) =>
+              handleTimeTrackingChange("enabled", value)
+            }
+          />
+
+          {!safePrefs.timeTracking?.enabled ? (
+            <Text style={styles.hintText}>
+              Time tracking is off. Turn it on to configure attendance
+              behavior.
+            </Text>
+          ) : null}
+
+          <View style={styles.fieldWrap}>
+            <Text style={styles.fieldLabel}>Tracking Mode</Text>
+            <View style={styles.segmentRow}>
+              {(["open", "qr"] as const).map((mode) => {
+                const selected = (safePrefs.timeTracking?.mode || "open") === mode;
+                return (
+                  <Pressable
+                    key={mode}
+                    style={[
+                      styles.segmentBtn,
+                      selected ? styles.segmentBtnActive : null,
+                    ]}
+                    onPress={() => handleTimeTrackingChange("mode", mode)}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentBtnText,
+                        selected ? styles.segmentBtnTextActive : null,
+                      ]}
+                    >
+                      {mode === "open" ? "Open" : "QR"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.fieldWrap}>
+            <Text style={styles.fieldLabel}>Rounding</Text>
+            <View style={styles.segmentRow}>
+              {([0, 5, 6, 10, 15] as const).map((minutes) => {
+                const selected =
+                  Number(safePrefs.timeTracking?.roundingMinutes ?? 0) ===
+                  minutes;
+
+                return (
+                  <Pressable
+                    key={String(minutes)}
+                    style={[
+                      styles.segmentBtn,
+                      selected ? styles.segmentBtnActive : null,
+                    ]}
+                    onPress={() =>
+                      handleTimeTrackingChange("roundingMinutes", minutes)
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.segmentBtnText,
+                        selected ? styles.segmentBtnTextActive : null,
+                      ]}
+                    >
+                      {minutes === 0 ? "No rounding" : `${minutes} min`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <Field
+            label="Clock In Grace (minutes)"
+            value={String(safePrefs.timeTracking?.clockInGraceMinutes ?? 15)}
+            onChangeText={(value) =>
+              handleTimeTrackingChange(
+                "clockInGraceMinutes",
+                Math.max(0, parseInt(value, 10) || 0),
+              )
+            }
+          />
+
+          <Field
+            label="Clock Out Grace (minutes)"
+            value={String(safePrefs.timeTracking?.clockOutGraceMinutes ?? 30)}
+            onChangeText={(value) =>
+              handleTimeTrackingChange(
+                "clockOutGraceMinutes",
+                Math.max(0, parseInt(value, 10) || 0),
+              )
+            }
+          />
+
+          {(safePrefs.timeTracking?.mode || "open") === "qr" ? (
+            <Text style={styles.hintText}>
+              QR mode is active. Staff must scan a valid facility QR token to
+              clock in and clock out.
+            </Text>
+          ) : null}
+
+          <SwitchRow
+            title="Require Schedule Match"
+            description="Staff can clock in/out only when a matching shift exists within grace windows."
+            value={Boolean(safePrefs.timeTracking?.requireScheduleMatch)}
+            onValueChange={(value) =>
+              handleTimeTrackingChange("requireScheduleMatch", value)
+            }
+          />
+
+          <SwitchRow
+            title="Auto Close Open Break on Clock Out"
+            description="If a break is still open at clock-out, close it automatically."
+            value={Boolean(safePrefs.timeTracking?.autoCloseOpenBreakOnClockOut)}
+            onValueChange={(value) =>
+              handleTimeTrackingChange("autoCloseOpenBreakOnClockOut", value)
+            }
+          />
+        </Section>
+
         <Section title="Notifications">
           <SwitchRow
             title="Notify Staff on Coverage Post"
@@ -880,16 +1090,21 @@ function Field({
 
 function SwitchRow({
   title,
+  description,
   value,
   onValueChange,
 }: {
   title: string;
+  description?: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
 }) {
   return (
     <View style={styles.switchRow}>
-      <Text style={styles.switchTitle}>{title}</Text>
+      <View style={styles.switchTextWrap}>
+        <Text style={styles.switchTitle}>{title}</Text>
+        {description ? <Text style={styles.switchDescription}>{description}</Text> : null}
+      </View>
       <Switch value={value} onValueChange={onValueChange} />
     </View>
   );
@@ -1189,6 +1404,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  segmentRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  segmentBtn: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  segmentBtnActive: {
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
+  },
+  segmentBtnText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  segmentBtnTextActive: {
+    color: "#1d4ed8",
+  },
   switchRow: {
     borderRadius: 8,
     borderWidth: 1,
@@ -1200,12 +1440,20 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  switchTextWrap: {
+    flex: 1,
+    paddingRight: 10,
+    gap: 2,
+  },
   switchTitle: {
     color: "#111827",
     fontSize: 13,
     fontWeight: "600",
-    flex: 1,
-    paddingRight: 10,
+  },
+  switchDescription: {
+    color: "#6b7280",
+    fontSize: 11,
+    lineHeight: 15,
   },
   hintText: {
     color: "#6b7280",

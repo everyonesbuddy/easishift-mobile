@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -38,7 +39,15 @@ import {
 } from "./schedule-types";
 import ShiftSwapRequestModal from "./shift-swap-request-modal";
 
-const STATUS_FILTERS = ["", "scheduled", "completed", "call_out"] as const;
+const STATUS_FILTERS = [
+  "",
+  "scheduled",
+  "in_progress",
+  "completed",
+  "left_early",
+  "no_show",
+  "call_out",
+] as const;
 
 function toDayKey(date: Date) {
   const year = date.getFullYear();
@@ -183,7 +192,8 @@ function parseLocalDateKey(dateKey: string) {
 }
 
 export default function ScheduleListPage() {
-  const { user, isAdmin, tenant } = useAuth();
+  const router = useRouter();
+  const { user, isAdmin, tenant, facilityPreferences } = useAuth();
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
@@ -217,14 +227,15 @@ export default function ScheduleListPage() {
     null,
   );
 
-  const [facilityPreferences, setFacilityPreferences] = useState<{
-    roleFamilies?: unknown[];
-  } | null>(null);
-
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const timeTrackingEnabled = Boolean(
+    (facilityPreferences as { timeTracking?: { enabled?: boolean } } | null)
+      ?.timeTracking?.enabled,
+  );
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true);
@@ -265,35 +276,6 @@ export default function ScheduleListPage() {
     fetchSchedules();
     fetchStaff();
   }, [fetchSchedules, fetchStaff]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadFacilityPreferences() {
-      try {
-        const res = await api.get("/facility-preferences");
-        if (!mounted) {
-          return;
-        }
-
-        setFacilityPreferences(
-          (res.data || null) as { roleFamilies?: unknown[] } | null,
-        );
-      } catch {
-        if (!mounted) {
-          return;
-        }
-
-        setFacilityPreferences(null);
-      }
-    }
-
-    loadFacilityPreferences();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const openEdit = (schedule: ScheduleItem) => {
     setEditingSchedule(schedule);
@@ -723,6 +705,20 @@ export default function ScheduleListPage() {
                 <Text style={styles.actionText}>
                   Delete Selected ({selectedScheduleIds.length})
                 </Text>
+              </Pressable>
+            ) : null}
+
+            {!isAdmin && timeTrackingEnabled ? (
+              <Pressable
+                style={[styles.actionBtn, styles.clockBtn]}
+                onPress={() =>
+                  router.push(
+                    "/time-tracking" as Parameters<typeof router.push>[0],
+                  )
+                }
+              >
+                <Feather name="clock" size={14} color="#0f172a" />
+                <Text style={styles.clockText}>Clock In/Out</Text>
               </Pressable>
             ) : null}
 
@@ -1659,6 +1655,16 @@ const styles = StyleSheet.create({
   },
   pickupBtn: {
     backgroundColor: "#111827",
+  },
+  clockBtn: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+  },
+  clockText: {
+    color: "#0f172a",
+    fontSize: 12,
+    fontWeight: "700",
   },
   filterCard: {
     borderWidth: 1,

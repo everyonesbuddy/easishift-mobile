@@ -45,6 +45,12 @@
           }
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow WiserShifts to use your camera for attendance QR scanning."
+        }
+      ],
       "expo-font",
       "@react-native-community/datetimepicker"
     ],

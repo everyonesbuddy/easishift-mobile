@@ -8,7 +8,13 @@ export type StaffUser = {
   certificationTags?: unknown[];
 };
 
-export type ScheduleStatus = "scheduled" | "completed" | "call_out";
+export type ScheduleStatus =
+  | "scheduled"
+  | "in_progress"
+  | "completed"
+  | "left_early"
+  | "no_show"
+  | "call_out";
 
 export type ScheduleItem = {
   _id?: string;
@@ -102,7 +108,10 @@ const ROLE_LABELS: Record<string, string> = {
 
 export const STATUS_COLORS: Record<string, string> = {
   scheduled: "#f59e0b",
+  in_progress: "#2563eb",
   completed: "#16a34a",
+  left_early: "#7c3aed",
+  no_show: "#dc2626",
   call_out: "#ef4444",
 };
 

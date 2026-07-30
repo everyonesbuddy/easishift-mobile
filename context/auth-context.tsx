@@ -27,6 +27,8 @@ type Tenant = {
   [key: string]: unknown;
 };
 
+type FacilityPreferencesState = Record<string, unknown>;
+
 type LoginData = {
   user?: AuthUser;
   patient?: AuthUser;
@@ -41,6 +43,8 @@ type AuthContextValue = {
   user: AuthUser | null;
   role: string;
   tenant: Tenant | null;
+  facilityPreferences: FacilityPreferencesState | null;
+  fetchFacilityPreferences: () => Promise<FacilityPreferencesState>;
   loading: boolean;
   isPatient: boolean;
   isStaff: boolean;
@@ -96,11 +100,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [role, setRole] = useState("");
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [facilityPreferences, setFacilityPreferences] =
+    useState<FacilityPreferencesState | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchFacilityPreferences = useCallback(async () => {
+    try {
+      const res = await api.get("/facility-preferences");
+      const nextPrefs =
+        (res.data || {}) as FacilityPreferencesState;
+      setFacilityPreferences(nextPrefs);
+      return nextPrefs;
+    } catch (error) {
+      console.warn("Failed to fetch facility preferences", error);
+      setFacilityPreferences({});
+      return {};
+    }
+  }, []);
 
   const fetchTenantByUser = async (candidate: AuthUser | null) => {
     if (!candidate?.tenantId) {
       setTenant(null);
+      setFacilityPreferences(null);
       return null;
     }
 
@@ -110,10 +131,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         res.data ||
         null) as Tenant | null;
       setTenant(nextTenant);
+      await fetchFacilityPreferences();
       return nextTenant;
     } catch (error) {
       console.warn("Failed to fetch tenant in AuthProvider", error);
       setTenant(null);
+      setFacilityPreferences({});
       return null;
     }
   };
@@ -225,6 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setRole("");
     setTenant(null);
+    setFacilityPreferences(null);
     delete api.defaults.headers.common.Authorization;
 
     await AsyncStorage.multiRemove([USER_KEY, ROLE_KEY, TOKEN_KEY]);
@@ -264,6 +288,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       role,
       tenant,
+      facilityPreferences,
+      fetchFacilityPreferences,
       refreshTenant,
       isPatient,
       isStaff,
@@ -280,6 +306,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       role,
       tenant,
+      facilityPreferences,
+      fetchFacilityPreferences,
       updateCurrentUser,
       user,
     ],
