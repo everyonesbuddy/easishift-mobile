@@ -26,20 +26,37 @@ type TimeEntry = {
   staff?: { name?: string };
   staffName?: string;
   status?: "in_progress" | "completed" | "adjusted" | string;
+  attendanceOutcome?: "in_progress" | "completed" | "left_early" | string;
   clockInAt?: string;
   clockOutAt?: string;
-  workedMinutes?: number;
-  totals?: {
-    workedMinutes?: number;
-  };
   breaks?: TimeBreak[];
-  scheduleId?: string | null;
+  scheduleId?:
+    | {
+        _id?: string;
+        role?: string;
+        startTime?: string;
+        endTime?: string;
+        status?: string;
+      }
+    | string
+    | null;
   createdAt?: string;
+};
+
+type ScheduleSummary = {
+  _id?: string;
+  role?: string;
+  startTime?: string;
+  endTime?: string;
+  status?: string;
 };
 
 type TimeTrackingPrefs = {
   enabled?: boolean;
   mode?: string;
+  requireScheduleMatch?: boolean;
+  clockInGraceMinutes?: number;
+  clockOutGraceMinutes?: number;
 };
 
 const STATUS_COLORS: Record<
@@ -93,37 +110,13 @@ function formatDateTime(value: unknown) {
   return parsed.toLocaleString();
 }
 
-function formatMinutes(value: unknown) {
-  const safe = Number(value || 0);
-  if (!Number.isFinite(safe)) {
-    return "0m";
+function getAttendanceStatus(entry: TimeEntry) {
+  const outcome = String(entry.attendanceOutcome || "").trim();
+  if (outcome) {
+    return outcome;
   }
 
-  const rounded = Math.max(0, Math.round(safe));
-  const hours = Math.floor(rounded / 60);
-  const minutes = rounded % 60;
-
-  if (!hours) {
-    return `${minutes}m`;
-  }
-
-  return `${hours}h ${minutes}m`;
-}
-
-function getWorkedMinutes(entry: TimeEntry | null) {
-  if (!entry) {
-    return 0;
-  }
-
-  if (Number.isFinite(Number(entry.workedMinutes))) {
-    return Number(entry.workedMinutes);
-  }
-
-  if (Number.isFinite(Number(entry.totals?.workedMinutes))) {
-    return Number(entry.totals?.workedMinutes);
-  }
-
-  return 0;
+  return String(entry.status || "unknown");
 }
 
 function normalizeEntriesFromResponse(data: unknown): TimeEntry[] {
@@ -229,8 +222,35 @@ function getStatusStyle(status: string) {
   );
 }
 
+function isScheduleClockInEligible(
+  schedule: ScheduleSummary | null,
+  clockInGraceMinutes: number,
+  clockOutGraceMinutes: number,
+) {
+  if (!schedule?.startTime || !schedule?.endTime) {
+    return false;
+  }
+
+  const start = new Date(schedule.startTime);
+  const end = new Date(schedule.endTime);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return false;
+  }
+
+  const now = new Date();
+  const earlyBoundary = new Date(
+    start.getTime() - clockOutGraceMinutes * 60 * 1000,
+  );
+  const lateBoundary = new Date(
+    end.getTime() + clockInGraceMinutes * 60 * 1000,
+  );
+
+  return now >= earlyBoundary && now <= lateBoundary;
+}
+
 export default function TimeTrackingPage() {
-  const { isAdmin, facilityPreferences, fetchFacilityPreferences } = useAuth();
+  const { user, isAdmin, facilityPreferences, fetchFacilityPreferences } =
+    useAuth();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -240,6 +260,9 @@ export default function TimeTrackingPage() {
 
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [activeEntry, setActiveEntry] = useState<TimeEntry | null>(null);
+  const [nextSchedule, setNextSchedule] = useState<ScheduleSummary | null>(
+    null,
+  );
   const [adminEntries, setAdminEntries] = useState<TimeEntry[]>([]);
   const [qrScanAction, setQrScanAction] = useState<
     "clock-in" | "clock-out" | null
@@ -252,6 +275,17 @@ export default function TimeTrackingPage() {
   const trackingEnabled = Boolean(trackingConfig.enabled);
   const trackingMode = normalizeTrackingMode(trackingConfig.mode);
   const requiresQrToken = trackingMode === "qr";
+  const requireScheduleMatch = Boolean(trackingConfig.requireScheduleMatch);
+  const clockInGraceMinutes = Number.isFinite(
+    Number(trackingConfig.clockInGraceMinutes),
+  )
+    ? Number(trackingConfig.clockInGraceMinutes)
+    : 15;
+  const clockOutGraceMinutes = Number.isFinite(
+    Number(trackingConfig.clockOutGraceMinutes),
+  )
+    ? Number(trackingConfig.clockOutGraceMinutes)
+    : 30;
 
   const openBreak = useMemo(() => getOpenBreak(activeEntry), [activeEntry]);
 
@@ -275,6 +309,60 @@ export default function TimeTrackingPage() {
     );
     setAdminEntries(normalizedEntries);
   }, [isAdmin]);
+
+  const loadNextSchedule = useCallback(async () => {
+    if (isAdmin || !user?._id) {
+      setNextSchedule(null);
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const res = await api.get("/schedules", {
+        params: {
+          staffId: user._id,
+          from: windowStart.toISOString(),
+        },
+      });
+
+      const schedules = Array.isArray(res.data)
+        ? (res.data as ScheduleSummary[])
+        : [];
+
+      const next = schedules
+        .filter((item) => {
+          const status = String(item?.status || "scheduled").toLowerCase();
+          return ["scheduled", "in_progress"].includes(status);
+        })
+        .filter((item) => {
+          if (!item?.startTime || !item?.endTime) {
+            return false;
+          }
+
+          const start = new Date(item.startTime).getTime();
+          const end = new Date(item.endTime).getTime();
+          return (
+            Number.isFinite(start) &&
+            Number.isFinite(end) &&
+            end >= windowStart.getTime()
+          );
+        })
+        .sort(
+          (a, b) =>
+            new Date(a.startTime || "").getTime() -
+            new Date(b.startTime || "").getTime(),
+        )
+        .find((item) => {
+          const end = new Date(item.endTime || "").getTime();
+          return end >= now.getTime();
+        });
+
+      setNextSchedule(next || null);
+    } catch {
+      setNextSchedule(null);
+    }
+  }, [isAdmin, user?._id]);
 
   const applyNextQrToken = useCallback((payload: unknown) => {
     const source =
@@ -342,6 +430,7 @@ export default function TimeTrackingPage() {
       const latestPrefs = await fetchFacilityPreferences();
       await loadStaffEntries();
       await loadAdminEntries();
+      await loadNextSchedule();
 
       const latestMode = normalizeTrackingMode(
         (latestPrefs?.timeTracking as TimeTrackingPrefs | undefined)?.mode,
@@ -364,6 +453,7 @@ export default function TimeTrackingPage() {
     fetchFacilityPreferences,
     isAdmin,
     loadAdminEntries,
+    loadNextSchedule,
     loadStaffEntries,
     syncCurrentQrStationToken,
   ]);
@@ -380,6 +470,7 @@ export default function TimeTrackingPage() {
 
         await loadStaffEntries();
         await loadAdminEntries();
+        await loadNextSchedule();
 
         if (isAdmin && latestMode === "qr") {
           await syncCurrentQrStationToken({ silent: true });
@@ -409,6 +500,7 @@ export default function TimeTrackingPage() {
     fetchFacilityPreferences,
     isAdmin,
     loadAdminEntries,
+    loadNextSchedule,
     loadStaffEntries,
     syncCurrentQrStationToken,
   ]);
@@ -544,10 +636,23 @@ export default function TimeTrackingPage() {
     }
   };
 
-  const canClockIn = !activeEntry;
+  const scheduleEligibleForClockIn = isScheduleClockInEligible(
+    nextSchedule,
+    clockInGraceMinutes,
+    clockOutGraceMinutes,
+  );
+  const canClockIn =
+    !activeEntry && (!requireScheduleMatch || scheduleEligibleForClockIn);
   const canStartBreak = Boolean(activeEntry) && !openBreak;
   const canEndBreak = Boolean(activeEntry) && Boolean(openBreak);
   const canClockOut = Boolean(activeEntry) && !openBreak;
+  const showClockInDisabledHint =
+    !activeEntry && requireScheduleMatch && !canClockIn;
+  const showQrClockInHint = requiresQrToken && !showClockInDisabledHint;
+  const linkedSchedule =
+    activeEntry?.scheduleId && typeof activeEntry.scheduleId === "object"
+      ? activeEntry.scheduleId
+      : null;
 
   if (loading) {
     return (
@@ -659,24 +764,85 @@ export default function TimeTrackingPage() {
               <Text style={styles.cardTitle}>My Active Session</Text>
             </View>
 
-            <Text style={styles.metaText}>
-              Clock In: {formatDateTime(activeEntry?.clockInAt)}
-            </Text>
-            <Text style={styles.metaText}>
-              Open Break:{" "}
-              {openBreak
-                ? `Started ${formatDateTime(openBreak.startAt)}`
-                : "No"}
-            </Text>
-            <Text style={styles.metaText}>
-              Linked Schedule: {activeEntry?.scheduleId ? "Yes" : "No"}
-            </Text>
+            {activeEntry ? (
+              <>
+                <Text style={styles.metaText}>Session Status: In Progress</Text>
+                <Text style={styles.metaText}>
+                  Clock In: {formatDateTime(activeEntry.clockInAt)}
+                </Text>
+                <Text style={styles.metaText}>
+                  Open Break:{" "}
+                  {openBreak
+                    ? `Started ${formatDateTime(openBreak.startAt)}`
+                    : "No"}
+                </Text>
 
-            {requiresQrToken ? (
+                {linkedSchedule ? (
+                  <View style={styles.sessionDetailBox}>
+                    <Text style={styles.sessionDetailTitle}>Linked Shift</Text>
+                    <Text style={styles.metaText}>
+                      Role: {linkedSchedule.role || "-"}
+                    </Text>
+                    <Text style={styles.metaText}>
+                      Start: {formatDateTime(linkedSchedule.startTime)}
+                    </Text>
+                    <Text style={styles.metaText}>
+                      End: {formatDateTime(linkedSchedule.endTime)}
+                    </Text>
+                    <Text style={styles.metaText}>
+                      Shift Status: {String(linkedSchedule.status || "-")}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.metaText}>
+                    Linked Shift: None (open clock session)
+                  </Text>
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={styles.metaText}>
+                  No active session right now.
+                </Text>
+
+                {nextSchedule ? (
+                  <View style={styles.sessionDetailBox}>
+                    <Text style={styles.sessionDetailTitle}>Next Shift</Text>
+                    <Text style={styles.metaText}>
+                      Role: {nextSchedule.role || "-"}
+                    </Text>
+                    <Text style={styles.metaText}>
+                      Start: {formatDateTime(nextSchedule.startTime)}
+                    </Text>
+                    <Text style={styles.metaText}>
+                      End: {formatDateTime(nextSchedule.endTime)}
+                    </Text>
+                    <Text style={styles.metaText}>
+                      Status: {String(nextSchedule.status || "scheduled")}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.metaText}>
+                    No upcoming scheduled shift found.
+                  </Text>
+                )}
+              </>
+            )}
+
+            {showQrClockInHint ? (
               <View style={styles.infoBannerAlt}>
                 <Text style={styles.infoBannerTextAlt}>
                   QR mode: tap Clock In or Clock Out to open your camera and
-                  scan.
+                  scan when you are in your allowed shift window.
+                </Text>
+              </View>
+            ) : null}
+
+            {showClockInDisabledHint ? (
+              <View style={styles.infoBannerAlt}>
+                <Text style={styles.infoBannerTextAlt}>
+                  Clock in is disabled until you are within your allowed shift
+                  window.
                 </Text>
               </View>
             ) : null}
@@ -753,9 +919,8 @@ export default function TimeTrackingPage() {
                   const breakCount = Array.isArray(entry?.breaks)
                     ? entry.breaks.length
                     : 0;
-                  const statusStyle = getStatusStyle(
-                    String(entry.status || ""),
-                  );
+                  const displayStatus = getAttendanceStatus(entry);
+                  const statusStyle = getStatusStyle(displayStatus);
 
                   return (
                     <View
@@ -769,8 +934,7 @@ export default function TimeTrackingPage() {
                             {formatDateTime(entry.clockOutAt)}
                           </Text>
                           <Text style={styles.entryMetaText}>
-                            Breaks: {breakCount} | Worked:{" "}
-                            {formatMinutes(getWorkedMinutes(entry))}
+                            Breaks: {breakCount}
                           </Text>
                         </View>
                         <View
@@ -788,10 +952,7 @@ export default function TimeTrackingPage() {
                               { color: statusStyle.text },
                             ]}
                           >
-                            {String(entry.status || "unknown").replace(
-                              "_",
-                              " ",
-                            )}
+                            {displayStatus.replace("_", " ")}
                           </Text>
                         </View>
                       </View>
@@ -860,9 +1021,8 @@ export default function TimeTrackingPage() {
             ) : (
               <View style={styles.entryList}>
                 {adminEntries.slice(0, 20).map((entry, index) => {
-                  const statusStyle = getStatusStyle(
-                    String(entry.status || ""),
-                  );
+                  const displayStatus = getAttendanceStatus(entry);
+                  const statusStyle = getStatusStyle(displayStatus);
                   const staffName =
                     (typeof entry.staffId === "object" &&
                       entry.staffId?.name) ||
@@ -884,9 +1044,6 @@ export default function TimeTrackingPage() {
                           <Text style={styles.entryMetaText}>
                             Out: {formatDateTime(entry.clockOutAt)}
                           </Text>
-                          <Text style={styles.entryMetaText}>
-                            Worked: {formatMinutes(getWorkedMinutes(entry))}
-                          </Text>
                         </View>
                         <View
                           style={[
@@ -903,10 +1060,7 @@ export default function TimeTrackingPage() {
                               { color: statusStyle.text },
                             ]}
                           >
-                            {String(entry.status || "unknown").replace(
-                              "_",
-                              " ",
-                            )}
+                            {displayStatus.replace("_", " ")}
                           </Text>
                         </View>
                       </View>
@@ -1088,6 +1242,21 @@ const styles = StyleSheet.create({
   metaText: {
     color: "#475569",
     fontSize: 12,
+  },
+  sessionDetailBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 3,
+  },
+  sessionDetailTitle: {
+    color: "#0f172a",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 2,
   },
   actionsWrap: {
     marginTop: 4,
