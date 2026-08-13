@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  LayoutAnimation,
   Modal,
   Pressable,
   SafeAreaView,
@@ -156,9 +157,13 @@ function normalizeArrayValues(values: unknown) {
   );
 }
 
-function normalizeTimeTrackingPrefs(input: unknown): Required<TimeTrackingPrefs> {
+function normalizeTimeTrackingPrefs(
+  input: unknown,
+): Required<TimeTrackingPrefs> {
   const safe = input && typeof input === "object" ? input : {};
-  const normalizedMode = ["open", "qr"].includes(String((safe as TimeTrackingPrefs).mode || ""))
+  const normalizedMode = ["open", "qr"].includes(
+    String((safe as TimeTrackingPrefs).mode || ""),
+  )
     ? (String((safe as TimeTrackingPrefs).mode || "open") as "open" | "qr")
     : String((safe as TimeTrackingPrefs).mode || "") === "geofence"
       ? "qr"
@@ -192,7 +197,8 @@ function normalizeTimeTrackingPrefs(input: unknown): Required<TimeTrackingPrefs>
     ),
     roundingMinutes: normalizedRounding,
     autoCloseOpenBreakOnClockOut:
-      typeof (safe as TimeTrackingPrefs).autoCloseOpenBreakOnClockOut === "boolean"
+      typeof (safe as TimeTrackingPrefs).autoCloseOpenBreakOnClockOut ===
+      "boolean"
         ? Boolean((safe as TimeTrackingPrefs).autoCloseOpenBreakOnClockOut)
         : TIME_TRACKING_DEFAULTS.autoCloseOpenBreakOnClockOut,
   };
@@ -279,6 +285,15 @@ export default function FacilityPreferencesPage() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [patternPickerOpen, setPatternPickerOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    schedulingPattern: false,
+    facilityTaxonomy: false,
+    workloadSignals: false,
+    fairnessDistribution: false,
+    timeTracking: false,
+    notifications: false,
+    dangerZone: false,
+  });
 
   const [arrayInputs, setArrayInputs] = useState({
     roleFamilies: "",
@@ -319,7 +334,9 @@ export default function FacilityPreferencesPage() {
     setPrefs((prev) => ({ ...(prev || safePrefs), [field]: value }));
   };
 
-  const handleTimeTrackingChange = <K extends keyof Required<TimeTrackingPrefs>>(
+  const handleTimeTrackingChange = <
+    K extends keyof Required<TimeTrackingPrefs>,
+  >(
     field: K,
     value: Required<TimeTrackingPrefs>[K],
   ) => {
@@ -583,6 +600,14 @@ export default function FacilityPreferencesPage() {
     }
   };
 
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.page}>
@@ -615,7 +640,12 @@ export default function FacilityPreferencesPage() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {success ? <Text style={styles.success}>{success}</Text> : null}
 
-        <Section title="Scheduling Pattern">
+        <Section
+          title="Scheduling Pattern"
+          subtitle="The rotation pattern your facility uses for shift assignments"
+          expanded={expandedSections.schedulingPattern}
+          onToggle={() => toggleSection("schedulingPattern")}
+        >
           <View style={styles.fieldWrap}>
             <Text style={styles.fieldLabel}>Scheduling Pattern</Text>
             <Pressable
@@ -632,7 +662,12 @@ export default function FacilityPreferencesPage() {
           </View>
         </Section>
 
-        <Section title="Facility Taxonomy">
+        <Section
+          title="Facility Taxonomy"
+          subtitle="Define the roles, areas, shift types, and certifications valid at your facility"
+          expanded={expandedSections.facilityTaxonomy}
+          onToggle={() => toggleSection("facilityTaxonomy")}
+        >
           <ArrayField
             title="Role Families"
             fieldKey="roleFamilies"
@@ -772,7 +807,12 @@ export default function FacilityPreferencesPage() {
           />
         </Section>
 
-        <Section title="Workload Signals">
+        <Section
+          title="Workload Signals"
+          subtitle="Thresholds used as signals during auto-generation ranking"
+          expanded={expandedSections.workloadSignals}
+          onToggle={() => toggleSection("workloadSignals")}
+        >
           <Field
             label="Weekly Overtime Threshold (hours)"
             value={String(safePrefs.weeklyOvertimeThresholdHours ?? 40)}
@@ -785,7 +825,12 @@ export default function FacilityPreferencesPage() {
           />
         </Section>
 
-        <Section title="Fairness & Distribution">
+        <Section
+          title="Fairness & Distribution"
+          subtitle="Controls how auto-generate distributes high-demand shifts"
+          expanded={expandedSections.fairnessDistribution}
+          onToggle={() => toggleSection("fairnessDistribution")}
+        >
           <Field
             label="Fairness Lookback Period (days)"
             value={String(safePrefs.fairnessLookbackDays ?? 28)}
@@ -794,8 +839,12 @@ export default function FacilityPreferencesPage() {
             }
           />
         </Section>
-
-        <Section title="Time Tracking">
+        <Section
+          title="Time Tracking"
+          subtitle="Configure open or QR-based clock in/out behavior for your facility"
+          expanded={expandedSections.timeTracking}
+          onToggle={() => toggleSection("timeTracking")}
+        >
           <SwitchRow
             title="Enable Time Tracking"
             description="When disabled, clock-in/out requests are rejected."
@@ -807,8 +856,7 @@ export default function FacilityPreferencesPage() {
 
           {!safePrefs.timeTracking?.enabled ? (
             <Text style={styles.hintText}>
-              Time tracking is off. Turn it on to configure attendance
-              behavior.
+              Time tracking is off. Turn it on to configure attendance behavior.
             </Text>
           ) : null}
 
@@ -816,7 +864,8 @@ export default function FacilityPreferencesPage() {
             <Text style={styles.fieldLabel}>Tracking Mode</Text>
             <View style={styles.segmentRow}>
               {(["open", "qr"] as const).map((mode) => {
-                const selected = (safePrefs.timeTracking?.mode || "open") === mode;
+                const selected =
+                  (safePrefs.timeTracking?.mode || "open") === mode;
                 return (
                   <Pressable
                     key={mode}
@@ -902,26 +951,18 @@ export default function FacilityPreferencesPage() {
             </Text>
           ) : null}
 
-          <SwitchRow
-            title="Require Schedule Match"
-            description="Staff can clock in/out only when a matching shift exists within grace windows."
-            value={Boolean(safePrefs.timeTracking?.requireScheduleMatch)}
-            onValueChange={(value) =>
-              handleTimeTrackingChange("requireScheduleMatch", value)
-            }
-          />
-
-          <SwitchRow
-            title="Auto Close Open Break on Clock Out"
-            description="If a break is still open at clock-out, close it automatically."
-            value={Boolean(safePrefs.timeTracking?.autoCloseOpenBreakOnClockOut)}
-            onValueChange={(value) =>
-              handleTimeTrackingChange("autoCloseOpenBreakOnClockOut", value)
-            }
-          />
+          <Text style={styles.hintText}>
+            Schedule match and open-break closure are always enforced when time
+            tracking is enabled.
+          </Text>
         </Section>
 
-        <Section title="Notifications">
+        <Section
+          title="Notifications"
+          subtitle="Configure facility-level notification behaviour"
+          expanded={expandedSections.notifications}
+          onToggle={() => toggleSection("notifications")}
+        >
           <SwitchRow
             title="Notify Staff on Coverage Post"
             value={Boolean(safePrefs.notifyStaffOnCoveragePost)}
@@ -941,7 +982,12 @@ export default function FacilityPreferencesPage() {
           </Text>
         </Section>
 
-        <Section title="Account Deletion">
+        <Section
+          title="Danger Zone"
+          subtitle="Delete this facility account and permanently remove all tenant data"
+          expanded={expandedSections.dangerZone}
+          onToggle={() => toggleSection("dangerZone")}
+        >
           <View style={styles.dangerCard}>
             <Text style={styles.dangerText}>
               Permanently delete this facility account and all related tenant
@@ -1053,15 +1099,37 @@ export default function FacilityPreferencesPage() {
 
 function Section({
   title,
+  subtitle,
+  expanded,
+  onToggle,
   children,
 }: {
   title: string;
+  subtitle?: string;
+  expanded: boolean;
+  onToggle: () => void;
   children: React.ReactNode;
 }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionBody}>{children}</View>
+      <Pressable style={styles.sectionHeader} onPress={onToggle}>
+        <View style={styles.sectionHeaderTextWrap}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {subtitle ? (
+            <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+          ) : null}
+        </View>
+        <Feather
+          name="chevron-down"
+          size={18}
+          color="#6b7280"
+          style={[
+            styles.sectionChevron,
+            expanded ? styles.sectionChevronExpanded : null,
+          ]}
+        />
+      </Pressable>
+      {expanded ? <View style={styles.sectionBody}>{children}</View> : null}
     </View>
   );
 }
@@ -1103,7 +1171,9 @@ function SwitchRow({
     <View style={styles.switchRow}>
       <View style={styles.switchTextWrap}>
         <Text style={styles.switchTitle}>{title}</Text>
-        {description ? <Text style={styles.switchDescription}>{description}</Text> : null}
+        {description ? (
+          <Text style={styles.switchDescription}>{description}</Text>
+        ) : null}
       </View>
       <Switch value={value} onValueChange={onValueChange} />
     </View>
@@ -1244,16 +1314,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e5e7eb",
     backgroundColor: "#ffffff",
+    overflow: "hidden",
+  },
+  sectionHeader: {
     padding: 12,
-    gap: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
   },
   sectionTitle: {
     color: "#0f172a",
     fontSize: 16,
     fontWeight: "700",
   },
+  sectionHeaderTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  sectionSubtitle: {
+    color: "#6b7280",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  sectionChevron: {
+    transform: [{ rotate: "0deg" }],
+  },
+  sectionChevronExpanded: {
+    transform: [{ rotate: "180deg" }],
+  },
   sectionBody: {
     gap: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
   chipsWrap: {
     flexDirection: "row",

@@ -64,6 +64,11 @@ export default function PreferencesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [expandedSections, setExpandedSections] = useState({
+    preferredDays: false,
+    notifications: false,
+    dangerZone: false,
+  });
 
   useEffect(() => {
     async function fetchPrefs() {
@@ -159,6 +164,13 @@ export default function PreferencesPage() {
     }
   };
 
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.page}>
@@ -199,6 +211,8 @@ export default function PreferencesPage() {
         <SectionCard
           title="Preferred Days"
           description="Select the days you prefer to work"
+          expanded={expandedSections.preferredDays}
+          onToggle={() => toggleSection("preferredDays")}
         >
           <View style={styles.daysGrid}>
             {DAYS.map((day, index) => {
@@ -228,7 +242,12 @@ export default function PreferencesPage() {
           </View>
         </SectionCard>
 
-        <SectionCard title="Notification Preferences">
+        <SectionCard
+          title="Notification Preferences"
+          description="Choose how you receive important updates"
+          expanded={expandedSections.notifications}
+          onToggle={() => toggleSection("notifications")}
+        >
           <SwitchRow
             title="Email Notifications"
             description="Receive email alerts for important updates"
@@ -249,8 +268,11 @@ export default function PreferencesPage() {
         </SectionCard>
 
         <SectionCard
-          title="Account Deletion"
+          title="Danger Zone"
           description="Permanently remove your personal account from this facility."
+          expanded={expandedSections.dangerZone}
+          onToggle={() => toggleSection("dangerZone")}
+          danger
         >
           <View style={styles.deleteCard}>
             <Text style={styles.deleteText}>
@@ -300,19 +322,40 @@ export default function PreferencesPage() {
 function SectionCard({
   title,
   description,
+  expanded,
+  onToggle,
+  danger,
   children,
 }: {
   title: string;
   description?: string;
+  expanded: boolean;
+  onToggle: () => void;
+  danger?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <View style={styles.sectionCard}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {description ? (
-        <Text style={styles.sectionDescription}>{description}</Text>
-      ) : null}
-      <View style={styles.sectionBody}>{children}</View>
+    <View
+      style={[styles.sectionCard, danger ? styles.sectionCardDanger : null]}
+    >
+      <Pressable style={styles.sectionHeader} onPress={onToggle}>
+        <View style={styles.sectionHeaderTextWrap}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {description ? (
+            <Text style={styles.sectionDescription}>{description}</Text>
+          ) : null}
+        </View>
+        <Feather
+          name="chevron-down"
+          size={18}
+          color="#6b7280"
+          style={[
+            styles.sectionChevron,
+            expanded ? styles.sectionChevronExpanded : null,
+          ]}
+        />
+      </Pressable>
+      {expanded ? <View style={styles.sectionBody}>{children}</View> : null}
     </View>
   );
 }
@@ -413,8 +456,23 @@ const styles = StyleSheet.create({
     borderColor: "#e5e7eb",
     borderRadius: 10,
     backgroundColor: "#ffffff",
+    overflow: "hidden",
+  },
+  sectionCardDanger: {
+    borderColor: "#fecaca",
+    backgroundColor: "#fef2f2",
+  },
+  sectionHeader: {
     padding: 12,
-    gap: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#f9fafb",
+  },
+  sectionHeaderTextWrap: {
+    flex: 1,
+    gap: 2,
   },
   sectionTitle: {
     color: "#111827",
@@ -425,8 +483,17 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 12,
   },
+  sectionChevron: {
+    transform: [{ rotate: "0deg" }],
+  },
+  sectionChevronExpanded: {
+    transform: [{ rotate: "180deg" }],
+  },
   sectionBody: {
     gap: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 10,
   },
   daysGrid: {
     flexDirection: "row",

@@ -1,12 +1,4 @@
-import { useMemo, useState } from "react";
-import {
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 type TenantLike = {
   _id?: string;
@@ -64,72 +56,16 @@ const YEARLY_PLANS: Plan[] = [
   },
 ];
 
-const MONTHLY_PLANS: Plan[] = [
-  {
-    key: "starterMonthly",
-    name: "Starter",
-    priceLabel: "$400/mo",
-    price: 400,
-    seats: 50,
-    supportTier: "standard",
-  },
-  {
-    key: "growthMonthly",
-    name: "Growth",
-    priceLabel: "$700/mo",
-    price: 700,
-    seats: 100,
-    supportTier: "standard",
-    highlight: true,
-  },
-  {
-    key: "premiumMonthly",
-    name: "Premium",
-    priceLabel: "$900/mo",
-    price: 900,
-    seats: 150,
-    supportTier: "priority",
-  },
-  {
-    key: "enterpriseMonthly",
-    name: "Enterprise",
-    priceLabel: "Custom pricing",
-    price: null,
-    seats: "150+",
-    supportTier: "priority",
-    isEnterprise: true,
-  },
+const SHARED_FEATURE_LIST = [
+  "Automated scheduling",
+  "Shift swaps",
+  "Time-off management",
+  "Internal messaging",
+  "Coverage planning",
+  "Staff directory",
 ];
 
-const WEBSITE_BILLING_URL = "https://www.wisershifts.com";
-
 export default function Paywall({ tenant }: Props) {
-  const [billingPeriod, setBillingPeriod] = useState<"yearly" | "monthly">(
-    "yearly",
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  const plans = billingPeriod === "yearly" ? YEARLY_PLANS : MONTHLY_PLANS;
-  const sharedFeatureList = [
-    "Automated scheduling",
-    "Shift swaps",
-    "Time-off management",
-    "Internal messaging",
-    "Coverage planning",
-    "Staff directory",
-  ];
-
-  const yearlySavingsPercent = useMemo(() => {
-    const sampleMonthly = MONTHLY_PLANS[0]?.price;
-    const sampleYearly = YEARLY_PLANS[0]?.price;
-    if (!sampleMonthly || !sampleYearly) {
-      return null;
-    }
-
-    const monthlyTotal = sampleMonthly * 12;
-    return Math.round(((monthlyTotal - sampleYearly) / monthlyTotal) * 100);
-  }, []);
-
   const getCapacityLabel = (plan: Plan) =>
     plan.isEnterprise
       ? `${plan.seats} active employees`
@@ -137,31 +73,6 @@ export default function Paywall({ tenant }: Props) {
 
   const getSupportLabel = (plan: Plan) =>
     plan.supportTier === "priority" ? "Priority support" : "Standard support";
-
-  const handleWebsiteBillingOpen = async () => {
-    try {
-      const canOpen = await Linking.canOpenURL(WEBSITE_BILLING_URL);
-      if (!canOpen) {
-        setError("Unable to open website billing on this device.");
-        return;
-      }
-
-      setError(null);
-      await Linking.openURL(WEBSITE_BILLING_URL);
-    } catch {
-      setError("Unable to open website billing on this device.");
-    }
-  };
-
-  const handleCalendlyOpen = async () => {
-    const calendlyUrl = "https://calendly.com/wisershifts-info/30min";
-
-    try {
-      await Linking.openURL(calendlyUrl);
-    } catch {
-      setError("Unable to open scheduling link.");
-    }
-  };
 
   if (!tenant) {
     return null;
@@ -175,58 +86,13 @@ export default function Paywall({ tenant }: Props) {
     >
       <View style={styles.wrap}>
         <Text style={styles.title}>Activate your facility</Text>
-        <Text style={styles.subtitle}>
-          View your plan options below. Subscription setup and changes are
-          managed in the WiserShifts web portal.
-        </Text>
         <Text style={styles.webOnlyNote}>
           Mobile billing is view-only. A facility admin can manage subscription
-          details from the WiserShifts web portal.
-        </Text>
-
-        <View style={styles.switchRow}>
-          <TouchableOpacity
-            onPress={() => setBillingPeriod("yearly")}
-            style={[
-              styles.switchBtn,
-              billingPeriod === "yearly" ? styles.switchBtnActive : null,
-            ]}
-          >
-            <Text
-              style={[
-                styles.switchText,
-                billingPeriod === "yearly" ? styles.switchTextActive : null,
-              ]}
-            >
-              Yearly
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBillingPeriod("monthly")}
-            style={[
-              styles.switchBtn,
-              billingPeriod === "monthly" ? styles.switchBtnActive : null,
-            ]}
-          >
-            <Text
-              style={[
-                styles.switchText,
-                billingPeriod === "monthly" ? styles.switchTextActive : null,
-              ]}
-            >
-              Monthly
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.badgeText}>
-          {billingPeriod === "yearly" && yearlySavingsPercent
-            ? `Yearly saves ${yearlySavingsPercent}% compared to monthly`
-            : "Monthly offers flexibility with no long-term commitment"}
+          details in the WiserShifts web portal.
         </Text>
 
         <View style={styles.planColumn}>
-          {plans.map((plan) => (
+          {YEARLY_PLANS.map((plan) => (
             <View
               key={plan.key}
               style={[
@@ -238,8 +104,7 @@ export default function Paywall({ tenant }: Props) {
                 <View>
                   <Text style={styles.planName}>{plan.name}</Text>
                   <Text style={styles.planPeriodLabel}>
-                    Per facility /{" "}
-                    {billingPeriod === "yearly" ? "year" : "month"}
+                    Per facility / year
                   </Text>
                 </View>
                 {plan.highlight ? (
@@ -251,48 +116,29 @@ export default function Paywall({ tenant }: Props) {
               <Text style={styles.planSub}>
                 {plan.isEnterprise
                   ? "Talk to sales for a custom package"
-                  : billingPeriod === "yearly" && typeof plan.price === "number"
-                    ? `Equivalent to $${Math.round(plan.price / 12)}/mo billed yearly`
-                    : "Billed monthly, cancel anytime"}
+                  : `Equivalent to $${Math.round((plan.price ?? 0) / 12)}/mo billed yearly`}
               </Text>
               <Text style={styles.planSeats}>{getCapacityLabel(plan)}</Text>
 
               <View style={styles.planDivider} />
 
-              {[getSupportLabel(plan), ...sharedFeatureList].map((feature) => (
-                <View key={`${plan.key}-${feature}`} style={styles.featureRow}>
-                  <Text style={styles.featureBullet}>•</Text>
-                  <Text style={styles.featureText}>{feature}</Text>
-                </View>
-              ))}
+              {[getSupportLabel(plan), ...SHARED_FEATURE_LIST].map(
+                (feature) => (
+                  <View
+                    key={`${plan.key}-${feature}`}
+                    style={styles.featureRow}
+                  >
+                    <Text style={styles.featureBullet}>•</Text>
+                    <Text style={styles.featureText}>{feature}</Text>
+                  </View>
+                ),
+              )}
 
               {!plan.isEnterprise ? (
                 <Text style={styles.trialNote}>
-                  Free trial availability is managed by your admin on the web
-                  portal.
+                  Free trial availability is managed in the web portal.
                 </Text>
               ) : null}
-
-              <TouchableOpacity
-                style={[
-                  styles.ctaBtn,
-                  plan.highlight ? styles.ctaBtnPrimary : null,
-                ]}
-                onPress={() =>
-                  plan.isEnterprise
-                    ? handleCalendlyOpen()
-                    : handleWebsiteBillingOpen()
-                }
-              >
-                <Text
-                  style={[
-                    styles.ctaText,
-                    plan.highlight ? styles.ctaTextPrimary : null,
-                  ]}
-                >
-                  {plan.isEnterprise ? "Get quote" : "Open web portal"}
-                </Text>
-              </TouchableOpacity>
             </View>
           ))}
         </View>
@@ -335,12 +181,6 @@ export default function Paywall({ tenant }: Props) {
                 teams choose to get started on their own and add implementation
                 later if needed.
               </Text>
-              <TouchableOpacity
-                style={[styles.ctaBtn, styles.contactBtn]}
-                onPress={handleCalendlyOpen}
-              >
-                <Text style={styles.contactBtnText}>Contact us</Text>
-              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -348,8 +188,6 @@ export default function Paywall({ tenant }: Props) {
         <Text style={styles.footerNote}>
           One price per facility. Each facility is billed independently.
         </Text>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
     </ScrollView>
   );
@@ -393,29 +231,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
     lineHeight: 17,
-  },
-  switchRow: {
-    flexDirection: "row",
-    backgroundColor: "rgba(15, 23, 42, 0.06)",
-    borderRadius: 999,
-    padding: 4,
-    alignSelf: "center",
-  },
-  switchBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  switchBtnActive: {
-    backgroundColor: "#ffffff",
-  },
-  switchText: {
-    color: "#6b7280",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  switchTextActive: {
-    color: "#111827",
   },
   badgeText: {
     color: "#1d4ed8",
@@ -503,25 +318,6 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 11,
     marginTop: 4,
-  },
-  ctaBtn: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#2563eb",
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-  },
-  ctaBtnPrimary: {
-    backgroundColor: "#2563eb",
-  },
-  ctaText: {
-    color: "#1d4ed8",
-    fontWeight: "700",
-  },
-  ctaTextPrimary: {
-    color: "#ffffff",
   },
   implementationWrap: {
     marginTop: 14,
@@ -616,25 +412,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
-  contactBtn: {
-    backgroundColor: "#2563eb",
-    borderColor: "#2563eb",
-    marginTop: 0,
-  },
-  contactBtnText: {
-    color: "#ffffff",
-    fontWeight: "800",
-  },
   footerNote: {
     marginTop: 10,
     color: "#6b7280",
     fontSize: 11,
     textAlign: "center",
     lineHeight: 16,
-  },
-  errorText: {
-    color: "#dc2626",
-    fontSize: 12,
-    marginTop: 6,
   },
 });

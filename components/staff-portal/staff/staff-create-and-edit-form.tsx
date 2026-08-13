@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  LayoutAnimation,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -198,6 +199,11 @@ export default function StaffCreateAndEditForm({
   const [areaPickerOpen, setAreaPickerOpen] = useState(false);
   const [shiftSlotPickerOpen, setShiftSlotPickerOpen] = useState(false);
   const [certPickerOpen, setCertPickerOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    allowedUnitAreas: false,
+    allowedShiftTimeSlots: false,
+    certificationTags: false,
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -621,6 +627,14 @@ export default function StaffCreateAndEditForm({
     }
   };
 
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.card}>
       <View style={styles.header}>
@@ -785,10 +799,21 @@ export default function StaffCreateAndEditForm({
         </Pressable>
       </View>
 
-      {allowedAreaOptions.length > 0 ? (
+      <SectionAccordion
+        title="Allowed Unit Areas"
+        description="Tap chips to select or remove unit areas."
+        expanded={expandedSections.allowedUnitAreas}
+        onToggle={() => toggleSection("allowedUnitAreas")}
+        summaryAccessory={
+          <View style={styles.sectionCountPill}>
+            <Text style={styles.sectionCountText}>
+              {form.allowedAreas.length} selected
+            </Text>
+          </View>
+        }
+      >
         <MultiChipSelector
-          label="Allowed Unit Areas"
-          helperText="Tap chips to select or remove unit areas"
+          helperText="Leave empty to allow any area. Once areas are selected, this staff member is limited to those areas."
           options={allowedAreaOptions}
           values={form.allowedAreas}
           onChange={(values) =>
@@ -798,47 +823,74 @@ export default function StaffCreateAndEditForm({
           getOptionLabel={(option) =>
             areaLabelLookup.get(option) || toDisplayLabel(option)
           }
-          onOpenPicker={() => setAreaPickerOpen(true)}
+          hideLabel
         />
-      ) : null}
+      </SectionAccordion>
 
-      <MultiChipSelector
-        label="Allowed Shift Time Slots"
-        helperText={
-          shiftSlotOptions.length > 0
-            ? "Leave empty to allow any slot. Selecting chips restricts this staff member to exact shift slots."
-            : "No shift definitions configured yet. Define shift time slots in Facility Preferences."
+      <SectionAccordion
+        title="Allowed Shift Time Slots"
+        description="Restrict this staff member to exact shift slots when needed."
+        expanded={expandedSections.allowedShiftTimeSlots}
+        onToggle={() => toggleSection("allowedShiftTimeSlots")}
+        summaryAccessory={
+          <View style={styles.sectionCountPill}>
+            <Text style={styles.sectionCountText}>
+              {form.allowedShiftTags.length} selected
+            </Text>
+          </View>
         }
-        options={shiftSlotOptions}
-        values={form.allowedShiftTags}
-        onChange={(values) =>
-          setForm((prev) => ({ ...prev, allowedShiftTags: values }))
-        }
-        getOptionValue={(option) => option.value}
-        getOptionLabel={(option) =>
-          shiftSlotLabelLookup.get(option.value) || option.label
-        }
-        onOpenPicker={() => setShiftSlotPickerOpen(true)}
-      />
+      >
+        <MultiChipSelector
+          helperText={
+            shiftSlotOptions.length > 0
+              ? "Leave empty to allow any slot. Selecting chips restricts this staff member to exact shift slots."
+              : "No shift definitions configured yet. Define shift time slots in Facility Preferences."
+          }
+          options={shiftSlotOptions}
+          values={form.allowedShiftTags}
+          onChange={(values) =>
+            setForm((prev) => ({ ...prev, allowedShiftTags: values }))
+          }
+          getOptionValue={(option) => option.value}
+          getOptionLabel={(option) =>
+            shiftSlotLabelLookup.get(option.value) || option.label
+          }
+          getOptionGroup={(option) => option.shiftTypeLabel || "Other"}
+          hideLabel
+        />
+      </SectionAccordion>
 
-      <MultiChipSelector
-        label="Certification Tags"
-        helperText={
-          certificationTagOptions.length > 0
-            ? "Leave empty if no certification restriction is needed."
-            : "No certification tags configured yet."
+      <SectionAccordion
+        title="Certification Tags"
+        description="Limit this staff member to roles that match selected certifications."
+        expanded={expandedSections.certificationTags}
+        onToggle={() => toggleSection("certificationTags")}
+        summaryAccessory={
+          <View style={styles.sectionCountPill}>
+            <Text style={styles.sectionCountText}>
+              {form.certificationTags.length} selected
+            </Text>
+          </View>
         }
-        options={certificationTagOptions}
-        values={form.certificationTags}
-        onChange={(values) =>
-          setForm((prev) => ({ ...prev, certificationTags: values }))
-        }
-        getOptionValue={(option) => option}
-        getOptionLabel={(option) =>
-          certificationLabelLookup.get(option) || toDisplayLabel(option)
-        }
-        onOpenPicker={() => setCertPickerOpen(true)}
-      />
+      >
+        <MultiChipSelector
+          helperText={
+            certificationTagOptions.length > 0
+              ? "Leave empty if no certification restriction is needed. Selecting certifications limits staff to coverages requiring those tags."
+              : "No certification tags configured yet."
+          }
+          options={certificationTagOptions}
+          values={form.certificationTags}
+          onChange={(values) =>
+            setForm((prev) => ({ ...prev, certificationTags: values }))
+          }
+          getOptionValue={(option) => option}
+          getOptionLabel={(option) =>
+            certificationLabelLookup.get(option) || toDisplayLabel(option)
+          }
+          hideLabel
+        />
+      </SectionAccordion>
 
       <View style={styles.fieldWrapFull}>
         <Text style={styles.sectionEyebrow}>Staff Preferences</Text>
@@ -1002,6 +1054,50 @@ export default function StaffCreateAndEditForm({
   );
 }
 
+function SectionAccordion({
+  eyebrow,
+  title,
+  description,
+  expanded,
+  onToggle,
+  children,
+  summaryAccessory,
+}: {
+  eyebrow?: string;
+  title: string;
+  description: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  summaryAccessory?: ReactNode;
+}) {
+  return (
+    <View style={styles.sectionCard}>
+      <Pressable onPress={onToggle} style={styles.sectionHeader}>
+        <View style={styles.sectionHeaderTextWrap}>
+          {eyebrow ? (
+            <Text style={styles.sectionEyebrow}>{eyebrow}</Text>
+          ) : null}
+          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.sectionDescription}>{description}</Text>
+        </View>
+        <View style={styles.sectionHeaderAccessory}>
+          {summaryAccessory ?? null}
+          <Feather
+            name="chevron-down"
+            size={18}
+            color="#6b7280"
+            style={{
+              transform: [{ rotate: expanded ? "180deg" : "0deg" }],
+            }}
+          />
+        </View>
+      </Pressable>
+      {expanded ? <View style={styles.sectionBody}>{children}</View> : null}
+    </View>
+  );
+}
+
 function MultiChipSelector<
   T extends string | { value: string; label: string },
 >({
@@ -1012,18 +1108,38 @@ function MultiChipSelector<
   onChange,
   getOptionValue,
   getOptionLabel,
+  getOptionGroup,
+  hideLabel = false,
   onOpenPicker,
 }: {
-  label: string;
+  label?: string;
   helperText: string;
   options: T[];
   values: string[];
   onChange: (values: string[]) => void;
   getOptionValue: (option: T) => string;
   getOptionLabel: (option: T) => string;
-  onOpenPicker: () => void;
+  getOptionGroup?: (option: T) => string;
+  hideLabel?: boolean;
+  onOpenPicker?: () => void;
 }) {
   const selectedValues = normalizeStringArray(values);
+
+  const groupedVisibleOptions = useMemo(() => {
+    const groupMap = new Map<string, T[]>();
+
+    options.forEach((option) => {
+      const group = (getOptionGroup ? getOptionGroup(option) : "") || "Other";
+
+      if (!groupMap.has(group)) {
+        groupMap.set(group, []);
+      }
+
+      groupMap.get(group)?.push(option);
+    });
+
+    return Array.from(groupMap.entries());
+  }, [options, getOptionGroup]);
 
   const toggleValue = (option: T) => {
     const value = getOptionValue(option);
@@ -1042,38 +1158,50 @@ function MultiChipSelector<
 
   return (
     <View style={styles.fieldWrap}>
-      <Text style={styles.label}>{label}</Text>
+      {hideLabel || !label ? null : <Text style={styles.label}>{label}</Text>}
       <Text style={styles.helperText}>{helperText}</Text>
 
       {options.length === 0 ? (
         <Text style={styles.emptyMeta}>No options configured yet</Text>
       ) : (
-        <View style={styles.chipWrap}>
-          {options.map((option) => {
-            const value = getOptionValue(option);
-            const selected = selectedValues.includes(value);
+        <View style={styles.chipGroupWrap}>
+          {groupedVisibleOptions.map(([groupLabel, groupOptions]) => (
+            <View key={groupLabel} style={styles.chipGroupSection}>
+              {getOptionGroup ? (
+                <Text style={styles.chipGroupLabel}>{groupLabel}</Text>
+              ) : null}
+              <View style={styles.chipWrap}>
+                {groupOptions.map((option) => {
+                  const value = getOptionValue(option);
+                  const selected = selectedValues.includes(value);
 
-            return (
-              <Pressable
-                key={value}
-                style={[styles.chip, selected ? styles.chipSelected : null]}
-                onPress={() => toggleValue(option)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    selected ? styles.chipTextSelected : null,
-                  ]}
-                >
-                  {getOptionLabel(option)}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  return (
+                    <Pressable
+                      key={value}
+                      style={[
+                        styles.chip,
+                        selected ? styles.chipSelected : null,
+                      ]}
+                      onPress={() => toggleValue(option)}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          selected ? styles.chipTextSelected : null,
+                        ]}
+                      >
+                        {getOptionLabel(option)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </View>
       )}
 
-      {options.length > 0 ? (
+      {options.length > 0 && onOpenPicker ? (
         <Pressable style={styles.secondaryActionBtn} onPress={onOpenPicker}>
           <Text style={styles.secondaryActionText}>Open full selector</Text>
         </Pressable>
@@ -1321,6 +1449,19 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "wrap",
   },
+  chipGroupWrap: {
+    gap: 12,
+  },
+  chipGroupSection: {
+    gap: 8,
+  },
+  chipGroupLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
   chip: {
     borderWidth: 1,
     borderColor: "#d1d5db",
@@ -1384,6 +1525,52 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 12,
     lineHeight: 17,
+  },
+  sectionCard: {
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    overflow: "hidden",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#f8fbff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5eefc",
+  },
+  sectionHeaderTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  sectionHeaderAccessory: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sectionBody: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 14,
+  },
+  sectionCountPill: {
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    borderRadius: 999,
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  sectionCountText: {
+    color: "#1d4ed8",
+    fontSize: 11,
+    fontWeight: "700",
   },
   tagSummaryWrap: {
     flexDirection: "row",

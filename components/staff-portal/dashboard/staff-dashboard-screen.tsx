@@ -13,7 +13,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import ScheduleAndCoverageCharts from "@/components/staff-portal/dashboard/schedule-and-coverage-charts";
-import StatCard from "@/components/staff-portal/dashboard/stat-card";
 import type { StaffMember } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
@@ -405,7 +404,7 @@ export default function StaffDashboardScreen() {
           </View>
         </View>
 
-        <View style={styles.cardsWrap}>
+        {/* <View style={styles.cardsWrap}>
           {(isAdmin ? adminCards : staffCards).map((card) => (
             <View key={card.title} style={styles.cardCell}>
               <StatCard
@@ -419,7 +418,7 @@ export default function StaffDashboardScreen() {
               />
             </View>
           ))}
-        </View>
+        </View> */}
 
         <ScheduleAndCoverageCharts isAdmin={isAdmin} userId={userId} />
       </ScrollView>
