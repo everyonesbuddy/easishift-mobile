@@ -19,8 +19,10 @@ import {
   getShiftTagDisplayName,
   getShiftTypeDisplayName,
   getUnitAreaDisplayName,
+  getUserRoles,
   isRoleCompatible,
 } from "@/constants/industry-roles";
+import { useAuth } from "@/context/auth-context";
 
 import { CoverageItem, ScheduleItem, StaffUser } from "./schedule-types";
 
@@ -619,6 +621,8 @@ export default function AutoGenerateScheduleForm({
   onClose,
   schedules = [],
 }: Props) {
+  const { can } = useAuth();
+  const canManageSchedules = can("schedule.manage");
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
   const [drafts, setDrafts] = useState<DraftSchedule[]>([]);
   const [activeDraftId, setActiveDraftId] = useState("");
@@ -981,7 +985,13 @@ export default function AutoGenerateScheduleForm({
       const fillStatus =
         openCount <= 0 ? "full" : proposedCount > 0 ? "partial" : "unfilled";
       const matchingStaffCount = staffList.filter((staff) => {
-        if (!isRoleCompatible(staff?.role, coverage?.role)) return false;
+        if (
+          !getUserRoles(staff).some((role) =>
+            isRoleCompatible(role, coverage?.role),
+          )
+        ) {
+          return false;
+        }
         return doesCoverageMatchStaffTags(staff, coverage);
       }).length;
 
@@ -1304,19 +1314,22 @@ export default function AutoGenerateScheduleForm({
   };
 
   useEffect(() => {
+    if (!canManageSchedules) return;
     loadCoverages();
     loadStaff();
     loadDrafts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canManageSchedules]);
 
   useEffect(() => {
+    if (!canManageSchedules) return;
     void loadDraftDetail(activeDraftId);
-  }, [activeDraftId]);
+  }, [activeDraftId, canManageSchedules]);
 
   useEffect(() => {
+    if (!canManageSchedules) return;
     void loadSelectedDraftDetails(selectedDraftIds);
-  }, [selectedDraftIds]);
+  }, [selectedDraftIds, canManageSchedules]);
 
   useEffect(() => {
     if (!errorMsg && !successMsg) {
@@ -1782,6 +1795,16 @@ export default function AutoGenerateScheduleForm({
 
   const toastMessage = errorMsg || successMsg;
   const toastIsError = Boolean(errorMsg);
+
+  if (!canManageSchedules) {
+    return (
+      <View style={{ padding: 16 }}>
+        <Text style={{ color: "#b91c1c", fontWeight: "700" }}>
+          You do not have permission to manage schedule drafts.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>

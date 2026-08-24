@@ -6,7 +6,7 @@ import ProtectedTopBar from "@/components/shared/protected-top-bar";
 import { useAuth } from "@/context/auth-context";
 
 export default function ProtectedLayout() {
-  const { user, tenant, isAdmin, loading } = useAuth();
+  const { user, tenant, can, loading } = useAuth();
   const segments = useSegments();
 
   const seatLimit =
@@ -17,7 +17,7 @@ export default function ProtectedLayout() {
     !!tenant &&
     ["active", "trialing"].includes(tenant.subscriptionStatus ?? "");
   const showPaywall =
-    isAdmin &&
+    can("billing.manage") &&
     !!tenant &&
     (!hasPaywallExemptStatus || (Number.isFinite(seatLimit) && seatLimit <= 1));
   const inPaywallFlow = segments.some(

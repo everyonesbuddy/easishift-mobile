@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   SafeAreaView,
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
+import GuideVideoDialog from "@/components/shared/guide-video-dialog";
 import api from "@/config/api";
 import {
   getCertificationTagDisplayName,
@@ -32,12 +34,23 @@ import {
   getInitials,
   getPhoneText,
   getStaffId,
+  getUserRoles,
 } from "./staff-shared";
 
 const ROWS_PER_PAGE = 10;
 
+const STAFF_MANAGEMENT_GUIDE_VIDEOS = [
+  {
+    id: "staff-management",
+    label: "Staff management",
+    title: "Staff Management Guide",
+    description: "Learn how to add, edit, filter, and import staff profiles.",
+    embedUrl: "https://www.youtube.com/embed/GEzs9F-LysY",
+  },
+];
+
 export default function StaffListPage() {
-  const { role, tenant } = useAuth();
+  const { can, tenant } = useAuth();
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [open, setOpen] = useState(false);
@@ -50,7 +63,9 @@ export default function StaffListPage() {
   const [filterRole, setFilterRole] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [resetSendingId, setResetSendingId] = useState<string | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [facilityPreferences, setFacilityPreferences] = useState<{
     roleFamilies?: unknown[];
   } | null>(null);
@@ -133,6 +148,61 @@ export default function StaffListPage() {
     }
   };
 
+  const handleAskPasswordReset = (staffUser: StaffMember) => {
+    const id = getStaffId(staffUser);
+    const assignedRoles = getUserRoles(staffUser);
+
+    if (
+      !id ||
+      !staffUser.email ||
+      assignedRoles.includes("admin") ||
+      assignedRoles.includes("owner")
+    ) {
+      return;
+    }
+
+    Alert.alert(
+      "Resend password reset link?",
+      `A new password reset link will be sent to ${staffUser.email}. Any previous link will no longer be usable.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send",
+          onPress: () => void handleSendPasswordReset(staffUser),
+        },
+      ],
+    );
+  };
+
+  const handleSendPasswordReset = async (staffUser: StaffMember) => {
+    const id = getStaffId(staffUser);
+    if (!id || !staffUser.email) return;
+
+    try {
+      setResetSendingId(id);
+      await api.post(`/auth/users/${id}/send-password-reset`);
+      Alert.alert(
+        "Reset link sent",
+        `A password reset link was sent to ${staffUser.email}.`,
+      );
+    } catch (requestError) {
+      const apiMessage =
+        requestError &&
+        typeof requestError === "object" &&
+        "response" in requestError
+          ? (requestError as { response?: { data?: { message?: unknown } } })
+              .response?.data?.message
+          : undefined;
+      const message = typeof apiMessage === "string" ? apiMessage : undefined;
+      Alert.alert(
+        "Unable to send reset link",
+        message || "Failed to send password reset link.",
+      );
+    } finally {
+      setResetSendingId(null);
+    }
+  };
+
   const handleModalClose = (refresh = false) => {
     setOpen(false);
     setEditingStaff(null);
@@ -150,7 +220,8 @@ export default function StaffListPage() {
         member.name?.toLowerCase().includes(term) ||
         member.email?.toLowerCase().includes(term);
 
-      const matchesRole = filterRole === "all" || member.role === filterRole;
+      const matchesRole =
+        filterRole === "all" || getUserRoles(member).includes(filterRole);
 
       return Boolean(matchesSearch && matchesRole);
     });
@@ -167,9 +238,7 @@ export default function StaffListPage() {
       : getRolesForIndustry(tenant?.industry, {
           includeAdmin: true,
         });
-    const existingRoles = staff
-      .map((member) => member.role)
-      .filter((roleValue): roleValue is string => Boolean(roleValue));
+    const existingRoles = staff.flatMap((member) => getUserRoles(member));
 
     const normalizedRoles = Array.from(
       new Set([...industryRoles, ...existingRoles]),
@@ -218,8 +287,15 @@ export default function StaffListPage() {
             <Text style={styles.subtitle}>Manage your healthcare team</Text>
           </View>
 
-          {role === "admin" ? (
+          {can("staff.manage") ? (
             <View style={styles.headerActions}>
+              <Pressable
+                style={styles.guideBtn}
+                onPress={() => setGuideOpen(true)}
+              >
+                <Feather name="play-circle" size={14} color="#1d4ed8" />
+                <Text style={styles.guideBtnText}>Watch guide</Text>
+              </Pressable>
               <Pressable
                 style={styles.bulkBtn}
                 onPress={() => setBulkOpen(true)}
@@ -284,7 +360,8 @@ export default function StaffListPage() {
           <View style={styles.listWrap}>
             {paginated.map((member) => {
               const id = getStaffId(member);
-              const disabledDelete = member.role === "admin";
+              const assignedRoles = getUserRoles(member);
+              const disabledDelete = assignedRoles.includes("owner");
 
               return (
                 <View key={id} style={styles.staffCard}>
@@ -294,7 +371,7 @@ export default function StaffListPage() {
                         styles.avatar,
                         {
                           backgroundColor:
-                            getRoleColor(member.role) || "#6b7280",
+                            getRoleColor(assignedRoles[0]) || "#6b7280",
                         },
                       ]}
                     >
@@ -322,12 +399,15 @@ export default function StaffListPage() {
                             styles.roleDot,
                             {
                               backgroundColor:
-                                getRoleColor(member.role) || "#6b7280",
+                                getRoleColor(getUserRoles(member)[0]) ||
+                                "#6b7280",
                             },
                           ]}
                         />
                         <Text style={styles.staffRole}>
-                          {getRoleDisplayName(member.role)}
+                          {getUserRoles(member)
+                            .map((role) => getRoleDisplayName(role))
+                            .join(", ") || "Unknown"}
                         </Text>
                       </View>
                       <Text style={styles.staffMeta}>
@@ -353,26 +433,47 @@ export default function StaffListPage() {
                     </View>
                   </View>
 
-                  {role === "admin" ? (
+                  {can("staff.manage") || can("staff.reset_password") ? (
                     <View style={styles.cardActions}>
-                      <Pressable
-                        style={styles.editBtn}
-                        onPress={() => handleOpenEdit(member)}
-                      >
-                        <Feather name="edit-2" size={13} color="#0c4a6e" />
-                        <Text style={styles.editBtnText}>Edit</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.deleteBtn,
-                          disabledDelete ? styles.deleteBtnDisabled : null,
-                        ]}
-                        disabled={disabledDelete}
-                        onPress={() => handleAskDelete(id)}
-                      >
-                        <Feather name="trash-2" size={13} color="#ffffff" />
-                        <Text style={styles.deleteBtnText}>Delete</Text>
-                      </Pressable>
+                      {can("staff.reset_password") &&
+                      member.email &&
+                      !getUserRoles(member).includes("admin") &&
+                      !getUserRoles(member).includes("owner") ? (
+                        <Pressable
+                          style={styles.resetBtn}
+                          disabled={resetSendingId === id}
+                          onPress={() => handleAskPasswordReset(member)}
+                        >
+                          <Feather name="key" size={13} color="#334155" />
+                          <Text style={styles.resetBtnText}>
+                            {resetSendingId === id
+                              ? "Sending..."
+                              : "Reset Link"}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {can("staff.manage") ? (
+                        <>
+                          <Pressable
+                            style={styles.editBtn}
+                            onPress={() => handleOpenEdit(member)}
+                          >
+                            <Feather name="edit-2" size={13} color="#0c4a6e" />
+                            <Text style={styles.editBtnText}>Edit</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[
+                              styles.deleteBtn,
+                              disabledDelete ? styles.deleteBtnDisabled : null,
+                            ]}
+                            disabled={disabledDelete}
+                            onPress={() => handleAskDelete(id)}
+                          >
+                            <Feather name="trash-2" size={13} color="#ffffff" />
+                            <Text style={styles.deleteBtnText}>Delete</Text>
+                          </Pressable>
+                        </>
+                      ) : null}
                     </View>
                   ) : null}
                 </View>
@@ -433,6 +534,13 @@ export default function StaffListPage() {
         staffList={staff}
         onClose={() => setBulkOpen(false)}
         onSuccess={fetchStaff}
+      />
+
+      <GuideVideoDialog
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        title="Staff Management Guide"
+        videos={STAFF_MANAGEMENT_GUIDE_VIDEOS}
       />
 
       <PickerModal
@@ -546,6 +654,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  guideBtn: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    minHeight: 34,
+    paddingHorizontal: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  guideBtnText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
   },
   bulkBtn: {
     minHeight: 38,
@@ -726,6 +851,23 @@ const styles = StyleSheet.create({
   },
   editBtnText: {
     color: "#0c4a6e",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  resetBtn: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  resetBtnText: {
+    color: "#334155",
     fontSize: 12,
     fontWeight: "700",
   },

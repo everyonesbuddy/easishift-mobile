@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  LayoutAnimation,
   Modal,
   Pressable,
   SafeAreaView,
@@ -16,6 +15,7 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
+import GuideVideoDialog from "@/components/shared/guide-video-dialog";
 import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
 
@@ -72,6 +72,17 @@ const SCHEDULING_PATTERNS = [
   { value: "rotating_3", label: "Rotating 3 shifts/week" },
   { value: "custom", label: "Custom (coverage-driven)" },
 ] as const;
+
+const FACILITY_PREFERENCES_GUIDE_VIDEOS = [
+  {
+    id: "facility-preferences",
+    label: "Facility preferences",
+    title: "Facility Preferences Guide",
+    description:
+      "Configure roles, areas, shift types, certifications, and scheduling rules.",
+    embedUrl: "https://www.youtube.com/embed/fI3JscDuFkk",
+  },
+];
 
 const TAXONOMY_FIELDS = [
   "roleFamilies",
@@ -276,7 +287,11 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
 
 export default function FacilityPreferencesPage() {
   const router = useRouter();
-  const { tenant, logout } = useAuth();
+  const { tenant, logout, can } = useAuth();
+  const canManageFacilityPreferences = can("facility_preferences.manage");
+  const canViewOnlyFacilityPreferences =
+    can("facility_preferences.view") && !canManageFacilityPreferences;
+  const canDeleteTenant = can("tenant.delete");
   const [prefs, setPrefs] = useState<FacilityPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -285,15 +300,7 @@ export default function FacilityPreferencesPage() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [patternPickerOpen, setPatternPickerOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState({
-    schedulingPattern: false,
-    facilityTaxonomy: false,
-    workloadSignals: false,
-    fairnessDistribution: false,
-    timeTracking: false,
-    notifications: false,
-    dangerZone: false,
-  });
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const [arrayInputs, setArrayInputs] = useState({
     roleFamilies: "",
@@ -600,14 +607,6 @@ export default function FacilityPreferencesPage() {
     }
   };
 
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.page}>
@@ -628,29 +627,45 @@ export default function FacilityPreferencesPage() {
               Configure facility-level scheduling policy and rules
             </Text>
           </View>
-          <Pressable
-            style={styles.resetBtn}
-            onPress={() => setResetDialogOpen(true)}
-          >
-            <Feather name="rotate-ccw" size={14} color="#b91c1c" />
-            <Text style={styles.resetBtnText}>Reset</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={styles.guideBtn}
+              onPress={() => setGuideOpen(true)}
+            >
+              <Feather name="play-circle" size={14} color="#1d4ed8" />
+              <Text style={styles.guideBtnText}>Watch guide</Text>
+            </Pressable>
+            {canManageFacilityPreferences ? (
+              <Pressable
+                style={styles.resetBtn}
+                onPress={() => setResetDialogOpen(true)}
+              >
+                <Feather name="rotate-ccw" size={14} color="#b91c1c" />
+                <Text style={styles.resetBtnText}>Reset</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {success ? <Text style={styles.success}>{success}</Text> : null}
+        {canViewOnlyFacilityPreferences ? (
+          <View style={styles.viewOnlyNotice}>
+            <Feather name="eye" size={16} color="#1d4ed8" />
+            <Text style={styles.viewOnlyNoticeText}>
+              You have view-only access to Facility Preferences. Contact an
+              administrator to make changes.
+            </Text>
+          </View>
+        ) : null}
 
-        <Section
-          title="Scheduling Pattern"
-          subtitle="The rotation pattern your facility uses for shift assignments"
-          expanded={expandedSections.schedulingPattern}
-          onToggle={() => toggleSection("schedulingPattern")}
-        >
+        <Section title="Scheduling Pattern">
           <View style={styles.fieldWrap}>
             <Text style={styles.fieldLabel}>Scheduling Pattern</Text>
             <Pressable
               style={styles.selectField}
               onPress={() => setPatternPickerOpen(true)}
+              disabled={!canManageFacilityPreferences}
             >
               <Text style={styles.selectFieldText} numberOfLines={1}>
                 {SCHEDULING_PATTERNS.find(
@@ -662,12 +677,7 @@ export default function FacilityPreferencesPage() {
           </View>
         </Section>
 
-        <Section
-          title="Facility Taxonomy"
-          subtitle="Define the roles, areas, shift types, and certifications valid at your facility"
-          expanded={expandedSections.facilityTaxonomy}
-          onToggle={() => toggleSection("facilityTaxonomy")}
-        >
+        <Section title="Facility Taxonomy">
           <ArrayField
             title="Role Families"
             fieldKey="roleFamilies"
@@ -676,6 +686,7 @@ export default function FacilityPreferencesPage() {
             onInputChange={handleArrayInputChange}
             onAdd={handleArrayAdd}
             onRemove={handleArrayRemove}
+            editable={canManageFacilityPreferences}
             placeholder="e.g. receptionist, nurse, doctor"
           />
 
@@ -687,6 +698,7 @@ export default function FacilityPreferencesPage() {
             onInputChange={handleArrayInputChange}
             onAdd={handleArrayAdd}
             onRemove={handleArrayRemove}
+            editable={canManageFacilityPreferences}
             placeholder="e.g. AL, IL, MC"
           />
 
@@ -698,6 +710,7 @@ export default function FacilityPreferencesPage() {
             onInputChange={handleArrayInputChange}
             onAdd={handleArrayAdd}
             onRemove={handleArrayRemove}
+            editable={canManageFacilityPreferences}
             placeholder="e.g. day, evening, night"
           />
 
@@ -737,6 +750,7 @@ export default function FacilityPreferencesPage() {
                               {slot.spansOvernight ? " - Overnight" : ""}
                             </Text>
                             <Pressable
+                              disabled={!canManageFacilityPreferences}
                               onPress={() =>
                                 handleRemoveShiftSlot(shiftTypeKey, idx)
                               }
@@ -756,6 +770,7 @@ export default function FacilityPreferencesPage() {
                         }
                         placeholder="slot tag"
                         style={[styles.input, styles.slotInput]}
+                        editable={canManageFacilityPreferences}
                       />
                       <TextInput
                         value={slotInput.startLocalTime}
@@ -768,6 +783,7 @@ export default function FacilityPreferencesPage() {
                         }
                         placeholder="start HH:MM"
                         style={[styles.input, styles.slotInput]}
+                        editable={canManageFacilityPreferences}
                       />
                       <TextInput
                         value={slotInput.endLocalTime}
@@ -780,10 +796,12 @@ export default function FacilityPreferencesPage() {
                         }
                         placeholder="end HH:MM"
                         style={[styles.input, styles.slotInput]}
+                        editable={canManageFacilityPreferences}
                       />
                       <Pressable
                         style={styles.smallBtn}
                         onPress={() => handleAddShiftSlot(shiftTypeKey)}
+                        disabled={!canManageFacilityPreferences}
                       >
                         <Feather name="plus" size={13} color="#ffffff" />
                         <Text style={styles.smallBtnText}>Add</Text>
@@ -803,19 +821,16 @@ export default function FacilityPreferencesPage() {
             onInputChange={handleArrayInputChange}
             onAdd={handleArrayAdd}
             onRemove={handleArrayRemove}
+            editable={canManageFacilityPreferences}
             placeholder="e.g. med-pass, bilingual"
           />
         </Section>
 
-        <Section
-          title="Workload Signals"
-          subtitle="Thresholds used as signals during auto-generation ranking"
-          expanded={expandedSections.workloadSignals}
-          onToggle={() => toggleSection("workloadSignals")}
-        >
+        <Section title="Workload Signals">
           <Field
             label="Weekly Overtime Threshold (hours)"
             value={String(safePrefs.weeklyOvertimeThresholdHours ?? 40)}
+            disabled={!canManageFacilityPreferences}
             onChangeText={(value) =>
               handleChange(
                 "weeklyOvertimeThresholdHours",
@@ -825,30 +840,23 @@ export default function FacilityPreferencesPage() {
           />
         </Section>
 
-        <Section
-          title="Fairness & Distribution"
-          subtitle="Controls how auto-generate distributes high-demand shifts"
-          expanded={expandedSections.fairnessDistribution}
-          onToggle={() => toggleSection("fairnessDistribution")}
-        >
+        <Section title="Fairness & Distribution">
           <Field
             label="Fairness Lookback Period (days)"
             value={String(safePrefs.fairnessLookbackDays ?? 28)}
+            disabled={!canManageFacilityPreferences}
             onChangeText={(value) =>
               handleChange("fairnessLookbackDays", parseInt(value, 10) || 7)
             }
           />
         </Section>
-        <Section
-          title="Time Tracking"
-          subtitle="Configure open or QR-based clock in/out behavior for your facility"
-          expanded={expandedSections.timeTracking}
-          onToggle={() => toggleSection("timeTracking")}
-        >
+
+        <Section title="Time Tracking">
           <SwitchRow
             title="Enable Time Tracking"
             description="When disabled, clock-in/out requests are rejected."
             value={Boolean(safePrefs.timeTracking?.enabled)}
+            disabled={!canManageFacilityPreferences}
             onValueChange={(value) =>
               handleTimeTrackingChange("enabled", value)
             }
@@ -874,6 +882,7 @@ export default function FacilityPreferencesPage() {
                       selected ? styles.segmentBtnActive : null,
                     ]}
                     onPress={() => handleTimeTrackingChange("mode", mode)}
+                    disabled={!canManageFacilityPreferences}
                   >
                     <Text
                       style={[
@@ -907,6 +916,7 @@ export default function FacilityPreferencesPage() {
                     onPress={() =>
                       handleTimeTrackingChange("roundingMinutes", minutes)
                     }
+                    disabled={!canManageFacilityPreferences}
                   >
                     <Text
                       style={[
@@ -925,6 +935,7 @@ export default function FacilityPreferencesPage() {
           <Field
             label="Clock In Grace (minutes)"
             value={String(safePrefs.timeTracking?.clockInGraceMinutes ?? 15)}
+            disabled={!canManageFacilityPreferences}
             onChangeText={(value) =>
               handleTimeTrackingChange(
                 "clockInGraceMinutes",
@@ -936,6 +947,7 @@ export default function FacilityPreferencesPage() {
           <Field
             label="Clock Out Grace (minutes)"
             value={String(safePrefs.timeTracking?.clockOutGraceMinutes ?? 30)}
+            disabled={!canManageFacilityPreferences}
             onChangeText={(value) =>
               handleTimeTrackingChange(
                 "clockOutGraceMinutes",
@@ -951,21 +963,34 @@ export default function FacilityPreferencesPage() {
             </Text>
           ) : null}
 
-          <Text style={styles.hintText}>
-            Schedule match and open-break closure are always enforced when time
-            tracking is enabled.
-          </Text>
+          <SwitchRow
+            title="Require Schedule Match"
+            description="Staff can clock in/out only when a matching shift exists within grace windows."
+            value={Boolean(safePrefs.timeTracking?.requireScheduleMatch)}
+            disabled={!canManageFacilityPreferences}
+            onValueChange={(value) =>
+              handleTimeTrackingChange("requireScheduleMatch", value)
+            }
+          />
+
+          <SwitchRow
+            title="Auto Close Open Break on Clock Out"
+            description="If a break is still open at clock-out, close it automatically."
+            value={Boolean(
+              safePrefs.timeTracking?.autoCloseOpenBreakOnClockOut,
+            )}
+            disabled={!canManageFacilityPreferences}
+            onValueChange={(value) =>
+              handleTimeTrackingChange("autoCloseOpenBreakOnClockOut", value)
+            }
+          />
         </Section>
 
-        <Section
-          title="Notifications"
-          subtitle="Configure facility-level notification behaviour"
-          expanded={expandedSections.notifications}
-          onToggle={() => toggleSection("notifications")}
-        >
+        <Section title="Notifications">
           <SwitchRow
             title="Notify Staff on Coverage Post"
             value={Boolean(safePrefs.notifyStaffOnCoveragePost)}
+            disabled={!canManageFacilityPreferences}
             onValueChange={(value) =>
               handleChange("notifyStaffOnCoveragePost", value)
             }
@@ -973,6 +998,7 @@ export default function FacilityPreferencesPage() {
           <Field
             label="Shift Reminder Lead Time (hours)"
             value={String(safePrefs.shiftReminderLeadHours ?? 24)}
+            disabled={!canManageFacilityPreferences}
             onChangeText={(value) =>
               handleChange("shiftReminderLeadHours", parseInt(value, 10) || 1)
             }
@@ -982,57 +1008,63 @@ export default function FacilityPreferencesPage() {
           </Text>
         </Section>
 
-        <Section
-          title="Danger Zone"
-          subtitle="Delete this facility account and permanently remove all tenant data"
-          expanded={expandedSections.dangerZone}
-          onToggle={() => toggleSection("dangerZone")}
-        >
-          <View style={styles.dangerCard}>
-            <Text style={styles.dangerText}>
-              Permanently delete this facility account and all related tenant
-              data, including staff, schedules, coverage, messages, and
-              preferences.
-            </Text>
-            <Pressable
-              style={styles.deleteAccountBtn}
-              onPress={() => setDeleteDialogOpen(true)}
-              disabled={saving}
-            >
-              <Feather name="trash-2" size={15} color="#ffffff" />
-              <Text style={styles.deleteAccountBtnText}>
-                {saving ? "Deleting..." : "Delete Facility Account"}
+        {canDeleteTenant ? (
+          <Section title="Account Deletion">
+            <View style={styles.dangerCard}>
+              <Text style={styles.dangerText}>
+                Permanently delete this facility account and all related tenant
+                data, including staff, schedules, coverage, messages, and
+                preferences.
               </Text>
-            </Pressable>
-          </View>
-        </Section>
+              <Pressable
+                style={styles.deleteAccountBtn}
+                onPress={() => setDeleteDialogOpen(true)}
+                disabled={saving}
+              >
+                <Feather name="trash-2" size={15} color="#ffffff" />
+                <Text style={styles.deleteAccountBtnText}>
+                  {saving ? "Deleting..." : "Delete Facility Account"}
+                </Text>
+              </Pressable>
+            </View>
+          </Section>
+        ) : null}
 
-        <Pressable
-          style={[styles.saveBtn, saving ? styles.saveBtnDisabled : null]}
-          disabled={saving}
-          onPress={handleSave}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <>
-              <Feather name="save" size={15} color="#ffffff" />
-              <Text style={styles.saveBtnText}>Save Preferences</Text>
-            </>
-          )}
-        </Pressable>
+        {canManageFacilityPreferences ? (
+          <Pressable
+            style={[styles.saveBtn, saving ? styles.saveBtnDisabled : null]}
+            disabled={saving}
+            onPress={handleSave}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Feather name="save" size={15} color="#ffffff" />
+                <Text style={styles.saveBtnText}>Save Preferences</Text>
+              </>
+            )}
+          </Pressable>
+        ) : null}
       </ScrollView>
 
       <ConfirmDialog
-        open={resetDialogOpen}
+        open={canManageFacilityPreferences && resetDialogOpen}
         title="Reset to Defaults?"
         message="This will remove all custom facility preferences and restore defaults."
         onCancel={() => setResetDialogOpen(false)}
         onConfirm={handleReset}
       />
 
+      <GuideVideoDialog
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        title="Facility Preferences Guide"
+        videos={FACILITY_PREFERENCES_GUIDE_VIDEOS}
+      />
+
       <ConfirmDialog
-        open={deleteDialogOpen}
+        open={canDeleteTenant && deleteDialogOpen}
         title="Delete Facility Account?"
         message="This permanently deletes the facility account and all related data. This action cannot be undone."
         onCancel={() => setDeleteDialogOpen(false)}
@@ -1099,34 +1131,24 @@ export default function FacilityPreferencesPage() {
 
 function Section({
   title,
-  subtitle,
-  expanded,
-  onToggle,
   children,
 }: {
   title: string;
-  subtitle?: string;
-  expanded: boolean;
-  onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <View style={styles.section}>
-      <Pressable style={styles.sectionHeader} onPress={onToggle}>
-        <View style={styles.sectionHeaderTextWrap}>
-          <Text style={styles.sectionTitle}>{title}</Text>
-          {subtitle ? (
-            <Text style={styles.sectionSubtitle}>{subtitle}</Text>
-          ) : null}
-        </View>
+      <Pressable
+        style={styles.sectionHeader}
+        onPress={() => setExpanded((value) => !value)}
+      >
+        <Text style={styles.sectionTitle}>{title}</Text>
         <Feather
-          name="chevron-down"
+          name={expanded ? "chevron-up" : "chevron-down"}
           size={18}
-          color="#6b7280"
-          style={[
-            styles.sectionChevron,
-            expanded ? styles.sectionChevronExpanded : null,
-          ]}
+          color="#64748b"
         />
       </Pressable>
       {expanded ? <View style={styles.sectionBody}>{children}</View> : null}
@@ -1138,10 +1160,12 @@ function Field({
   label,
   value,
   onChangeText,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <View style={styles.fieldWrap}>
@@ -1150,6 +1174,7 @@ function Field({
         style={styles.input}
         value={value}
         onChangeText={onChangeText}
+        editable={!disabled}
         keyboardType="number-pad"
       />
     </View>
@@ -1161,11 +1186,13 @@ function SwitchRow({
   description,
   value,
   onValueChange,
+  disabled = false,
 }: {
   title: string;
   description?: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <View style={styles.switchRow}>
@@ -1175,7 +1202,7 @@ function SwitchRow({
           <Text style={styles.switchDescription}>{description}</Text>
         ) : null}
       </View>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch value={value} onValueChange={onValueChange} disabled={disabled} />
     </View>
   );
 }
@@ -1189,6 +1216,7 @@ function ArrayField({
   onAdd,
   onRemove,
   placeholder,
+  editable = true,
 }: {
   title: string;
   fieldKey: "roleFamilies" | "unitAreas" | "shiftTypes" | "certificationTags";
@@ -1206,6 +1234,7 @@ function ArrayField({
     index: number,
   ) => void;
   placeholder: string;
+  editable?: boolean;
 }) {
   return (
     <View style={styles.subSection}>
@@ -1215,7 +1244,10 @@ function ArrayField({
         {values.map((value, idx) => (
           <View key={`${fieldKey}-${value}-${idx}`} style={styles.arrayItem}>
             <Text style={styles.arrayText}>{toDisplayLabel(value)}</Text>
-            <Pressable onPress={() => onRemove(fieldKey, idx)}>
+            <Pressable
+              onPress={() => onRemove(fieldKey, idx)}
+              disabled={!editable}
+            >
               <Feather name="x" size={15} color="#b91c1c" />
             </Pressable>
           </View>
@@ -1228,8 +1260,13 @@ function ArrayField({
           onChangeText={(value) => onInputChange(fieldKey, value)}
           style={[styles.input, styles.inputFlex]}
           placeholder={placeholder}
+          editable={editable}
         />
-        <Pressable style={styles.smallBtn} onPress={() => onAdd(fieldKey)}>
+        <Pressable
+          style={[styles.smallBtn, !editable ? styles.disabledControl : null]}
+          onPress={() => onAdd(fieldKey)}
+          disabled={!editable}
+        >
           <Feather name="plus" size={13} color="#ffffff" />
           <Text style={styles.smallBtnText}>Add</Text>
         </Pressable>
@@ -1264,6 +1301,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 1,
+  },
   title: {
     color: "#111827",
     fontSize: 20,
@@ -1291,6 +1334,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  guideBtn: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    minHeight: 34,
+    paddingHorizontal: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  guideBtnText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   error: {
     color: "#b91c1c",
     backgroundColor: "#fee2e2",
@@ -1309,44 +1369,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
+  viewOnlyNotice: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  viewOnlyNoticeText: {
+    flex: 1,
+    color: "#1e40af",
+    fontSize: 12,
+    lineHeight: 17,
+  },
   section: {
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e5e7eb",
     backgroundColor: "#ffffff",
-    overflow: "hidden",
-  },
-  sectionHeader: {
     padding: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
+    gap: 8,
   },
   sectionTitle: {
     color: "#0f172a",
     fontSize: 16,
     fontWeight: "700",
   },
-  sectionHeaderTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
-  sectionSubtitle: {
-    color: "#6b7280",
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  sectionChevron: {
-    transform: [{ rotate: "0deg" }],
-  },
-  sectionChevronExpanded: {
-    transform: [{ rotate: "180deg" }],
+  sectionHeader: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
   },
   sectionBody: {
     gap: 10,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
   },
   chipsWrap: {
     flexDirection: "row",
@@ -1448,6 +1509,9 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "700",
     fontSize: 12,
+  },
+  disabledControl: {
+    opacity: 0.5,
   },
   slotCard: {
     borderRadius: 8,

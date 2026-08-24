@@ -15,6 +15,7 @@ import api from "@/config/api";
 import {
   getRoleDisplayName,
   getRoleOptionsFromFacilityPreferences,
+  SYSTEM_ROLE_OPTIONS,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -40,6 +41,7 @@ type FormState = {
   emailNotificationsEnabled: boolean;
   smsNotificationsEnabled: boolean;
   role: string;
+  roles: string[];
 };
 
 type ShiftSlot = {
@@ -170,8 +172,8 @@ export default function StaffCreateAndEditForm({
   onClose,
   staffList = [],
 }: Props) {
-  const { user, role: loggedInRole, tenant } = useAuth();
-  const canAssignAdminRole = loggedInRole === "admin";
+  const { user, can, tenant } = useAuth();
+  const canAssignAdminRole = can("roles.manage");
 
   const [facilityPreferences, setFacilityPreferences] =
     useState<FacilityPreferences | null>(null);
@@ -188,6 +190,7 @@ export default function StaffCreateAndEditForm({
     emailNotificationsEnabled: true,
     smsNotificationsEnabled: true,
     role: "",
+    roles: [],
   });
   const [emailError, setEmailError] = useState("");
   const [phoneError, setPhoneError] = useState("");
@@ -241,27 +244,53 @@ export default function StaffCreateAndEditForm({
 
   const roleOptions = useMemo(() => facilityRoleOptions, [facilityRoleOptions]);
 
+  const hasSelectedFacilityRole = useMemo(() => {
+    const facilityRoleKeys = new Set(
+      facilityRoleOptions.map((option) => option.value),
+    );
+
+    return form.roles.some((role) => facilityRoleKeys.has(role));
+  }, [facilityRoleOptions, form.roles]);
+
   const selectableRoleOptions = useMemo(() => {
-    const options = canAssignAdminRole
-      ? [...roleOptions, { value: "admin", label: getRoleDisplayName("admin") }]
-      : roleOptions;
+    const systemOptions = SYSTEM_ROLE_OPTIONS.filter(
+      (systemRole) => systemRole !== "owner" || canAssignAdminRole,
+    ).map((systemRole) => ({
+      value: systemRole,
+      label: getRoleDisplayName(systemRole),
+    }));
+    const options = [...roleOptions, ...systemOptions];
+    const assignedRoles = Array.isArray(staff?.roles)
+      ? staff.roles
+      : staff?.role
+        ? [staff.role]
+        : [];
 
     const dedupedOptions = Array.from(
       new Map(options.map((item) => [item.value, item])).values(),
     );
 
     if (
-      !staff?.role ||
-      dedupedOptions.some((item) => item.value === staff.role)
+      assignedRoles.every((assignedRole) =>
+        dedupedOptions.some((item) => item.value === assignedRole),
+      )
     ) {
       return dedupedOptions;
     }
 
     return [
       ...dedupedOptions,
-      { value: staff.role, label: getRoleDisplayName(staff.role) },
+      ...assignedRoles
+        .filter(
+          (assignedRole) =>
+            !dedupedOptions.some((item) => item.value === assignedRole),
+        )
+        .map((assignedRole) => ({
+          value: assignedRole,
+          label: getRoleDisplayName(assignedRole),
+        })),
     ];
-  }, [canAssignAdminRole, roleOptions, staff?.role]);
+  }, [canAssignAdminRole, roleOptions, staff?.role, staff?.roles]);
 
   const allowedAreaOptions = useMemo(
     () =>
@@ -388,7 +417,7 @@ export default function StaffCreateAndEditForm({
   }, [shiftSlotOptions]);
 
   const isEditingSelf = Boolean(staff && staff._id === user?._id);
-  const disableRoleChange = isEditingSelf && loggedInRole === "admin";
+  const disableRoleChange = isEditingSelf;
   const hasTagRestrictions =
     form.allowedAreas.length > 0 ||
     form.allowedShiftTags.length > 0 ||
@@ -464,7 +493,12 @@ export default function StaffCreateAndEditForm({
       preferredDaysOfWeek: [],
       emailNotificationsEnabled: true,
       smsNotificationsEnabled: true,
-      role: staff.role || "staff",
+      role: staff.roles?.[0] || staff.role || "staff",
+      roles: Array.isArray(staff.roles)
+        ? staff.roles
+        : staff.role
+          ? [staff.role]
+          : [],
     });
 
     fetchStaffPreferences(staff._id || staff.id);
@@ -481,14 +515,18 @@ export default function StaffCreateAndEditForm({
           return prev;
         }
 
-        return { ...prev, role: "staff" };
+        return { ...prev, role: "staff", roles: ["staff"] };
       }
 
       if (prev.role && roleOptions.some((item) => item.value === prev.role)) {
         return prev;
       }
 
-      return { ...prev, role: roleOptions[0].value };
+      return {
+        ...prev,
+        role: roleOptions[0].value,
+        roles: [roleOptions[0].value],
+      };
     });
   }, [roleOptions, staff]);
 
@@ -540,6 +578,15 @@ export default function StaffCreateAndEditForm({
       const normalizedPreferredDays = normalizeNumberArray(
         form.preferredDaysOfWeek,
       );
+      const normalizedAssignedRoles = normalizeStringArray(
+        form.roles.length > 0 ? form.roles : [form.role],
+      );
+
+      if (!normalizedAssignedRoles.length) {
+        setError("Select at least one system or facility role.");
+        setLoading(false);
+        return;
+      }
 
       const preferencesPayload = {
         preferredDaysOfWeek: normalizedPreferredDays,
@@ -553,7 +600,12 @@ export default function StaffCreateAndEditForm({
         const payload: Record<string, unknown> = {
           name: form.name,
           email: form.email,
-          role: disableRoleChange ? staff.role || form.role : form.role,
+          roles: disableRoleChange
+            ? staff.roles || [staff.role || form.role]
+            : normalizedAssignedRoles,
+          role: disableRoleChange
+            ? staff.role || form.role
+            : normalizedAssignedRoles[0],
           allowedAreas: normalizeStringArray(form.allowedAreas),
           allowedShiftTags: normalizedShiftTags,
           allowedShiftTypes: normalizedShiftTypes,
@@ -587,7 +639,8 @@ export default function StaffCreateAndEditForm({
         const res = await api.post("/auth/signup/staff", {
           name: form.name,
           email: form.email,
-          role: form.role,
+          roles: normalizedAssignedRoles,
+          role: normalizedAssignedRoles[0],
           allowedAreas: normalizeStringArray(form.allowedAreas),
           allowedShiftTags: normalizedShiftTags,
           allowedShiftTypes: normalizedShiftTypes,
@@ -782,7 +835,7 @@ export default function StaffCreateAndEditForm({
       </View>
 
       <View style={styles.fieldWrap}>
-        <Text style={styles.label}>Role</Text>
+        <Text style={styles.label}>Roles</Text>
         <Pressable
           style={[
             styles.selectBtn,
@@ -794,7 +847,11 @@ export default function StaffCreateAndEditForm({
             }
           }}
         >
-          <Text style={styles.selectText}>{getRoleDisplayName(form.role)}</Text>
+          <Text style={styles.selectText} numberOfLines={2}>
+            {form.roles.length
+              ? form.roles.map(getRoleDisplayName).join(", ")
+              : "Select roles"}
+          </Text>
           <Feather name="chevron-down" size={16} color="#6b7280" />
         </Pressable>
       </View>
@@ -892,76 +949,85 @@ export default function StaffCreateAndEditForm({
         />
       </SectionAccordion>
 
-      <View style={styles.fieldWrapFull}>
-        <Text style={styles.sectionEyebrow}>Staff Preferences</Text>
-        <Text style={styles.sectionTitle}>Availability and Notifications</Text>
-        <Text style={styles.sectionDescription}>
-          These preferences help guide scheduling and how this staff member
-          receives updates.
-        </Text>
+      {hasSelectedFacilityRole ? (
+        <View style={styles.fieldWrapFull}>
+          <Text style={styles.sectionEyebrow}>Staff Preferences</Text>
+          <Text style={styles.sectionTitle}>
+            Availability and Notifications
+          </Text>
+          <Text style={styles.sectionDescription}>
+            These preferences help guide scheduling and how this staff member
+            receives updates.
+          </Text>
 
-        <Text style={styles.label}>Preferred Work Days</Text>
-        <Text style={styles.helperText}>
-          Select days this staff member prefers to work.
-        </Text>
-        <View style={styles.dayGrid}>
-          {DAYS.map((day, index) => {
-            const selected = form.preferredDaysOfWeek.includes(index);
-            return (
-              <Pressable
-                key={day}
-                onPress={() => {
-                  const nextValues = selected
-                    ? form.preferredDaysOfWeek.filter((item) => item !== index)
-                    : [...form.preferredDaysOfWeek, index];
+          <Text style={styles.label}>Preferred Work Days</Text>
+          <Text style={styles.helperText}>
+            Select days this staff member prefers to work.
+          </Text>
+          <View style={styles.dayGrid}>
+            {DAYS.map((day, index) => {
+              const selected = form.preferredDaysOfWeek.includes(index);
+              return (
+                <Pressable
+                  key={day}
+                  onPress={() => {
+                    const nextValues = selected
+                      ? form.preferredDaysOfWeek.filter(
+                          (item) => item !== index,
+                        )
+                      : [...form.preferredDaysOfWeek, index];
 
-                  setForm((prev) => ({
-                    ...prev,
-                    preferredDaysOfWeek: normalizeNumberArray(nextValues),
-                  }));
-                }}
-                style={[
-                  styles.dayChip,
-                  selected ? styles.dayChipSelected : null,
-                ]}
-              >
-                <Text
+                    setForm((prev) => ({
+                      ...prev,
+                      preferredDaysOfWeek: normalizeNumberArray(nextValues),
+                    }));
+                  }}
                   style={[
-                    styles.dayChipText,
-                    selected ? styles.dayChipTextSelected : null,
+                    styles.dayChip,
+                    selected ? styles.dayChipSelected : null,
                   ]}
                 >
-                  {day}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+                  <Text
+                    style={[
+                      styles.dayChipText,
+                      selected ? styles.dayChipTextSelected : null,
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        <Text style={styles.label}>Notification Preferences</Text>
-        <Text style={styles.helperText}>
-          Configure email and SMS alerts for this staff member.
-        </Text>
+          <Text style={styles.label}>Notification Preferences</Text>
+          <Text style={styles.helperText}>
+            Configure email and SMS alerts for this staff member.
+          </Text>
 
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Email Notifications</Text>
-          <Switch
-            value={!!form.emailNotificationsEnabled}
-            onValueChange={(value) =>
-              setForm((prev) => ({ ...prev, emailNotificationsEnabled: value }))
-            }
-          />
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Email Notifications</Text>
+            <Switch
+              value={!!form.emailNotificationsEnabled}
+              onValueChange={(value) =>
+                setForm((prev) => ({
+                  ...prev,
+                  emailNotificationsEnabled: value,
+                }))
+              }
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>SMS Notifications</Text>
+            <Switch
+              value={!!form.smsNotificationsEnabled}
+              onValueChange={(value) =>
+                setForm((prev) => ({ ...prev, smsNotificationsEnabled: value }))
+              }
+            />
+          </View>
         </View>
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>SMS Notifications</Text>
-          <Switch
-            value={!!form.smsNotificationsEnabled}
-            onValueChange={(value) =>
-              setForm((prev) => ({ ...prev, smsNotificationsEnabled: value }))
-            }
-          />
-        </View>
-      </View>
+      ) : null}
 
       <View style={styles.actions}>
         <Pressable
@@ -985,12 +1051,18 @@ export default function StaffCreateAndEditForm({
         </Pressable>
       </View>
 
-      <PickerModal
+      <MultiSelectPickerModal
         open={rolePickerOpen}
-        title="Select Role"
-        value={form.role}
+        title="Select Roles"
+        values={form.roles}
         onClose={() => setRolePickerOpen(false)}
-        onSelect={(value) => setForm((prev) => ({ ...prev, role: value }))}
+        onChange={(values) =>
+          setForm((prev) => ({
+            ...prev,
+            roles: values,
+            role: values[0] || "",
+          }))
+        }
         options={selectableRoleOptions}
       />
 

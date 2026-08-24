@@ -14,10 +14,12 @@ import {
 
 import api from "@/config/api";
 import {
+  getFacilityRolesFromUser,
   getRoleDisplayName,
   getShiftTagDisplayName,
   getShiftTypeDisplayName,
   getUnitAreaDisplayName,
+  getUserRoles,
   isRoleCompatible,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
@@ -32,6 +34,7 @@ type Props = {
   initialStaffId?: string;
   initialCoverage?: CoverageItem | null;
   disableStaffSelect?: boolean;
+  mode?: "manual" | "pickup";
 };
 
 type FormData = {
@@ -45,7 +48,13 @@ type FormData = {
   startTime: string;
   endTime: string;
   notes: string;
-  status: "scheduled" | "completed" | "call_out";
+  status:
+    | "scheduled"
+    | "in_progress"
+    | "completed"
+    | "left_early"
+    | "no_show"
+    | "call_out";
   timezone: string;
 };
 
@@ -306,9 +315,15 @@ export default function ScheduleForm({
   initialStaffId = "",
   initialCoverage = null,
   disableStaffSelect = false,
+  mode = "manual",
 }: Props) {
   const isEditing = Boolean(schedule);
-  const { isAdmin } = useAuth();
+  const { user, can, facilityPreferences } = useAuth();
+  const isPickup = mode === "pickup";
+  const canManageSchedules = can("schedule.manage");
+  const canPickUpShift =
+    can("schedule.pick_up") &&
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
 
   const [formData, setFormData] = useState<FormData>({
     staffId: "",
@@ -354,13 +369,17 @@ export default function ScheduleForm({
         return true;
       }
 
-      if (!isRoleCompatible(member?.role, activeCoverageContext?.role)) {
+      const compatibleFacilityRole = getFacilityRolesFromUser(
+        member,
+        facilityPreferences,
+      ).some((role) => isRoleCompatible(role, activeCoverageContext?.role));
+      if (!compatibleFacilityRole) {
         return false;
       }
 
       return doesCoverageMatchStaffTags(member, activeCoverageContext);
     });
-  }, [activeCoverageContext, staffList]);
+  }, [activeCoverageContext, facilityPreferences, staffList]);
 
   useEffect(() => {
     if (!schedule) {
@@ -399,7 +418,7 @@ export default function ScheduleForm({
     setFormData((prev) => ({
       ...prev,
       staffId: initialStaffId,
-      role: selected?.role || prev.role,
+      role: getUserRoles(selected)[0] || prev.role,
     }));
   }, [initialStaffId, schedule, staffList]);
 
@@ -428,7 +447,7 @@ export default function ScheduleForm({
   }, [initialCoverage, isEditing]);
 
   useEffect(() => {
-    if (isEditing) {
+    if (isEditing || isPickup) {
       setHasLoadedDraftCoverageRefs(true);
       setDraftCoverageFetchFailed(false);
       return;
@@ -540,14 +559,38 @@ export default function ScheduleForm({
     return () => {
       isMounted = false;
     };
-  }, [isEditing]);
+  }, [isEditing, isPickup]);
 
   const loadCoverage = useCallback(async () => {
     if (!formData.staffId || isEditing) {
       return;
     }
 
-    const excludeDraftCoverages = !isAdmin || !includeDraftCoverages;
+    if (isPickup) {
+      if (!canPickUpShift) {
+        setMessage("You are not eligible to pick up shifts.");
+        setSubmitting(false);
+        return;
+      }
+
+      try {
+        const res = await api.get("/schedules/open-for-me");
+        setCoverageOptions(
+          (Array.isArray(res.data) ? res.data : [])
+            .map((item) => ({
+              ...item,
+              spotsRemaining: Number(item.remaining) || 0,
+            }))
+            .filter((item) => item.spotsRemaining > 0),
+        );
+      } catch (error) {
+        console.warn("Failed to load open shifts", error);
+        setCoverageOptions([]);
+      }
+      return;
+    }
+
+    const excludeDraftCoverages = !canManageSchedules || !includeDraftCoverages;
     if (excludeDraftCoverages && !hasLoadedDraftCoverageRefs) {
       setCoverageOptions([]);
       return;
@@ -561,7 +604,7 @@ export default function ScheduleForm({
     const selectedStaff = staffList.find(
       (staff) => staff._id === formData.staffId,
     );
-    if (!selectedStaff?.role) {
+    if (!selectedStaff || getUserRoles(selectedStaff).length === 0) {
       setCoverageOptions([]);
       return;
     }
@@ -631,7 +674,12 @@ export default function ScheduleForm({
           return (
             !Number.isNaN(start.getTime()) &&
             start > now &&
-            isRoleCompatible(selectedStaff.role, item.role) &&
+            (getUserRoles(selectedStaff).some((role) =>
+              isRoleCompatible(role, item.role),
+            ) ||
+              getFacilityRolesFromUser(selectedStaff, facilityPreferences).some(
+                (role) => isRoleCompatible(role, item.role),
+              )) &&
             doesCoverageMatchStaffTags(selectedStaff, item)
           );
         })
@@ -664,8 +712,11 @@ export default function ScheduleForm({
     formData.staffId,
     hasLoadedDraftCoverageRefs,
     includeDraftCoverages,
-    isAdmin,
+    canManageSchedules,
+    canPickUpShift,
+    facilityPreferences,
     isEditing,
+    isPickup,
     staffList,
   ]);
 
@@ -683,7 +734,9 @@ export default function ScheduleForm({
       return "Select staff";
     }
 
-    return `${selected.name || "Unknown"} (${getRoleDisplayName(selected.role)})`;
+    return `${selected.name || "Unknown"} (${
+      getUserRoles(selected).map(getRoleDisplayName).join(", ") || "Unknown"
+    })`;
   }, [formData.staffId, staffList]);
 
   const selectedShiftLabel = useMemo(() => {
@@ -701,7 +754,7 @@ export default function ScheduleForm({
     return `${getRoleDisplayName(selected.role)} | ${formatShiftLabel(selected)}${selected.unitArea ? ` | ${getUnitAreaDisplayName(selected.unitArea)}` : ""}${selected.shiftType ? ` | ${getShiftTypeDisplayName(selected.shiftType)}` : ""}${selected.shiftTag ? ` | ${getShiftTagDisplayName(selected.shiftTag)}` : ""}`;
   }, [coverageOptions, formData.coverageId]);
 
-  const statusButtons: FormData["status"][] = isAdmin
+  const statusButtons: FormData["status"][] = canManageSchedules
     ? ["scheduled", "completed", "call_out"]
     : ["scheduled", "call_out"];
 
@@ -709,13 +762,46 @@ export default function ScheduleForm({
     setMessage("");
     setSubmitting(true);
 
+    if (isPickup) {
+      if (!formData.coverageId) {
+        setMessage("Select an available shift first.");
+        setSubmitting(false);
+        return;
+      }
+
+      try {
+        await api.post("/schedules/pick-up", {
+          coverageId: formData.coverageId,
+        });
+        onSuccess();
+      } catch (error: unknown) {
+        const msg =
+          typeof error === "object" && error !== null && "response" in error
+            ? String(
+                (
+                  error as {
+                    response?: { data?: { message?: string } };
+                  }
+                ).response?.data?.message ||
+                  "This shift is no longer available for pickup.",
+              )
+            : "This shift is no longer available for pickup.";
+        setMessage(msg);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (!isEditing && activeCoverageContext) {
       const selectedStaff = staffList.find(
         (staff) => staff._id === formData.staffId,
       );
       const isCompatible =
         Boolean(selectedStaff) &&
-        isRoleCompatible(selectedStaff?.role, activeCoverageContext?.role) &&
+        getFacilityRolesFromUser(selectedStaff, facilityPreferences).some(
+          (role) => isRoleCompatible(role, activeCoverageContext?.role),
+        ) &&
         doesCoverageMatchStaffTags(
           selectedStaff as StaffUser,
           activeCoverageContext,
@@ -744,7 +830,7 @@ export default function ScheduleForm({
       timezone: formData.timezone,
     };
 
-    if (!isAdmin && isEditing) {
+    if (!canManageSchedules && isEditing) {
       Object.keys(payload).forEach((key) => {
         if (key !== "status") {
           delete payload[key];
@@ -797,7 +883,11 @@ export default function ScheduleForm({
       <View style={styles.header}>
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>
-            {isEditing ? "Edit Schedule" : "Create New Schedule"}
+            {isEditing
+              ? "Edit Schedule"
+              : isPickup
+                ? "Pick Up an Open Shift"
+                : "Create New Schedule"}
           </Text>
           <Text style={styles.subtitle}>
             Assign shifts and update schedule status.
@@ -810,17 +900,19 @@ export default function ScheduleForm({
 
       {message ? <Text style={styles.error}>{message}</Text> : null}
 
-      <View style={styles.fieldWrap}>
-        <Text style={styles.label}>Staff</Text>
-        <Pressable
-          style={styles.selectBtn}
-          disabled={isEditing || disableStaffSelect}
-          onPress={() => setStaffSelectOpen(true)}
-        >
-          <Text style={styles.selectText}>{selectedStaffLabel}</Text>
-          <Feather name="chevron-down" size={16} color="#6b7280" />
-        </Pressable>
-      </View>
+      {!isPickup ? (
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Staff</Text>
+          <Pressable
+            style={styles.selectBtn}
+            disabled={isEditing || disableStaffSelect}
+            onPress={() => setStaffSelectOpen(true)}
+          >
+            <Text style={styles.selectText}>{selectedStaffLabel}</Text>
+            <Feather name="chevron-down" size={16} color="#6b7280" />
+          </Pressable>
+        </View>
+      ) : null}
 
       {!isEditing && initialCoverage ? (
         <View style={styles.infoBox}>
@@ -842,7 +934,7 @@ export default function ScheduleForm({
 
       {!isEditing && !initialCoverage ? (
         <>
-          {isAdmin ? (
+          {canManageSchedules ? (
             <View style={styles.switchRow}>
               <Text style={styles.label}>Include draft-flow coverages</Text>
               <Switch
@@ -938,7 +1030,7 @@ export default function ScheduleForm({
         />
       </View>
 
-      {isAdmin ? (
+      {canManageSchedules && !isPickup ? (
         <View style={styles.fieldWrap}>
           <Text style={styles.label}>Notes</Text>
           <TextInput
@@ -999,7 +1091,11 @@ export default function ScheduleForm({
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
             <Text style={styles.submitText}>
-              {isEditing ? "Update Schedule" : "Create Schedule"}
+              {isEditing
+                ? "Update Schedule"
+                : isPickup
+                  ? "Pick Up Shift"
+                  : "Create Schedule"}
             </Text>
           )}
         </Pressable>
@@ -1016,12 +1112,12 @@ export default function ScheduleForm({
             ...prev,
             staffId: value,
             ...(initialCoverage && !isEditing
-              ? { role: selected?.role || prev.role }
+              ? { role: getUserRoles(selected)[0] || prev.role }
               : {
                   coverageId: "",
                   startTime: "",
                   endTime: "",
-                  role: selected?.role || "",
+                  role: getUserRoles(selected)[0] || "",
                   unitArea: "",
                   shiftType: "",
                   shiftTag: "",
@@ -1031,7 +1127,9 @@ export default function ScheduleForm({
         }}
         options={compatibleStaffOptions.map((staff) => ({
           value: staff._id || "",
-          label: `${staff.name || "Unknown"} (${getRoleDisplayName(staff.role)})`,
+          label: `${staff.name || "Unknown"} (${
+            getUserRoles(staff).map(getRoleDisplayName).join(", ") || "Unknown"
+          })`,
         }))}
       />
 

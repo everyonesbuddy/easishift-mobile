@@ -15,9 +15,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ScheduleAndCoverageCharts from "@/components/staff-portal/dashboard/schedule-and-coverage-charts";
 import type { StaffMember } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
+import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
-type Summary = {
+type SummaryMetrics = {
   activeStaffCount?: number;
   fullyStaffedCount?: number;
   understaffedCount?: number;
@@ -26,6 +27,11 @@ type Summary = {
   hoursThisWeek?: number;
   unreadMessages?: number;
   approvedUpcomingTimeOffCount?: number;
+};
+
+type Summary = {
+  operational?: SummaryMetrics | null;
+  personal?: SummaryMetrics | null;
 };
 
 type TenantPayload = {
@@ -57,7 +63,11 @@ function normalizeTenant(input: TenantPayload | null) {
 }
 
 export default function StaffDashboardScreen() {
-  const { user, isAdmin, updateCurrentUser } = useAuth();
+  const { user, roles, can, facilityPreferences, updateCurrentUser } =
+    useAuth();
+  const canViewOperations = can("schedule.view");
+  const canUsePersonalSchedule =
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
 
   const [summary, setSummary] = useState<Summary | null>(null);
   const [tenant, setTenant] =
@@ -76,20 +86,35 @@ export default function StaffDashboardScreen() {
         throw new Error("Missing user id or tenant id");
       }
 
-      const endpoint = isAdmin
-        ? `/summary/admin/${userId}`
-        : `/summary/staff/${userId}`;
+      const [operationalResult, personalResult, tenantRes, staffRes] =
+        await Promise.allSettled([
+          can("staff.view")
+            ? api.get(`/summary/admin/${userId}`)
+            : Promise.resolve(null),
+          canUsePersonalSchedule
+            ? api.get(`/summary/staff/${userId}`)
+            : Promise.resolve(null),
+          api.get(`/tenants/${tenantId}`),
+          api.get("/auth/users"),
+        ]);
 
-      const [summaryRes, tenantRes, staffRes] = await Promise.all([
-        api.get(endpoint),
-        api.get(`/tenants/${tenantId}`),
-        api.get("/auth/users"),
-      ]);
-
-      setSummary(summaryRes.data || null);
-      setTenant(normalizeTenant(tenantRes.data || null));
+      setSummary({
+        ...(operationalResult.status === "fulfilled" && operationalResult.value
+          ? { operational: operationalResult.value.data }
+          : {}),
+        ...(personalResult.status === "fulfilled" && personalResult.value
+          ? { personal: personalResult.value.data }
+          : {}),
+      });
+      setTenant(
+        tenantRes.status === "fulfilled"
+          ? normalizeTenant(tenantRes.value.data || null)
+          : null,
+      );
       setStaffList(
-        Array.isArray(staffRes.data) ? (staffRes.data as StaffMember[]) : [],
+        staffRes.status === "fulfilled" && Array.isArray(staffRes.value.data)
+          ? (staffRes.value.data as StaffMember[])
+          : [],
       );
     } catch (error) {
       console.warn("Failed to load dashboard", error);
@@ -102,7 +127,7 @@ export default function StaffDashboardScreen() {
   useEffect(() => {
     loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, tenantId, isAdmin]);
+  }, [userId, tenantId, can, canUsePersonalSchedule]);
 
   const firstName = useMemo(() => {
     if (typeof user?.name === "string" && user.name.length > 0) {
@@ -132,7 +157,7 @@ export default function StaffDashboardScreen() {
   const adminCards = [
     {
       title: "Active Staff",
-      value: summary?.activeStaffCount ?? 0,
+      value: summary?.operational?.activeStaffCount ?? 0,
       subtitle: "Active Staff",
       icon: "users" as const,
       bgColor: "#e3f2fd",
@@ -140,7 +165,7 @@ export default function StaffDashboardScreen() {
     },
     {
       title: "Fully Staffed Today",
-      value: summary?.fullyStaffedCount ?? 0,
+      value: summary?.operational?.fullyStaffedCount ?? 0,
       subtitle: "Fully Staffed Today",
       icon: "check-circle" as const,
       bgColor: "#e8f5e9",
@@ -148,28 +173,29 @@ export default function StaffDashboardScreen() {
     },
     {
       title: "Understaffed Today",
-      value: summary?.understaffedCount ?? 0,
+      value: summary?.operational?.understaffedCount ?? 0,
       subtitle: "Understaffed Shifts Today",
       icon: "alert-triangle" as const,
       bgColor: "#ffebee",
       layout: "center" as const,
-      badge: (summary?.understaffedCount ?? 0) > 0 ? "Alert" : null,
+      badge:
+        (summary?.operational?.understaffedCount ?? 0) > 0 ? "Alert" : null,
     },
     {
       title: "Pending Requests",
-      value: summary?.pendingTimeOffCount ?? 0,
+      value: summary?.operational?.pendingTimeOffCount ?? 0,
       subtitle: "Pending Requests",
       icon: "clock" as const,
       bgColor: "#fff8e1",
       layout: "center" as const,
-      badge: summary?.pendingTimeOffCount ?? 0,
+      badge: summary?.operational?.pendingTimeOffCount ?? 0,
     },
   ];
 
   const staffCards = [
     {
       title: "Upcoming Shifts",
-      value: summary?.shiftsThisWeekCount ?? 0,
+      value: summary?.personal?.shiftsThisWeekCount ?? 0,
       subtitle: "Upcoming Shifts",
       icon: "calendar" as const,
       bgColor: "#e3f2fd",
@@ -177,7 +203,7 @@ export default function StaffDashboardScreen() {
     },
     {
       title: "Hours This Week",
-      value: summary?.hoursThisWeek ?? 0,
+      value: summary?.personal?.hoursThisWeek ?? 0,
       subtitle: "Hours This Week",
       icon: "clock" as const,
       bgColor: "#e8f5e9",
@@ -185,7 +211,7 @@ export default function StaffDashboardScreen() {
     },
     {
       title: "Unread Messages",
-      value: summary?.unreadMessages ?? 0,
+      value: summary?.personal?.unreadMessages ?? 0,
       subtitle: "Unread Messages",
       icon: "mail" as const,
       bgColor: "#f3e5f5",
@@ -193,7 +219,7 @@ export default function StaffDashboardScreen() {
     },
     {
       title: "Approved Time Off",
-      value: summary?.approvedUpcomingTimeOffCount ?? 0,
+      value: summary?.personal?.approvedUpcomingTimeOffCount ?? 0,
       subtitle: "Approved Time Off",
       icon: "check-circle" as const,
       bgColor: "#fff8e1",
@@ -359,10 +385,7 @@ export default function StaffDashboardScreen() {
           <View style={styles.bannerLeft}>
             <Text style={styles.bannerTitle}>Welcome back, {firstName}!</Text>
             <Text style={styles.bannerSub}>
-              {(typeof user?.role === "string" ? user.role : "staff")
-                .charAt(0)
-                .toUpperCase()}
-              {(typeof user?.role === "string" ? user.role : "staff").slice(1)}
+              {roles.length ? roles.join(" / ") : "Staff"}
               {tenant?.name ? ` • ${tenant.name}` : ""}
             </Text>
             <View style={styles.emailPill}>
@@ -420,7 +443,11 @@ export default function StaffDashboardScreen() {
           ))}
         </View> */}
 
-        <ScheduleAndCoverageCharts isAdmin={isAdmin} userId={userId} />
+        <ScheduleAndCoverageCharts
+          canViewOperations={canViewOperations}
+          canUsePersonalSchedule={canUsePersonalSchedule}
+          userId={userId}
+        />
       </ScrollView>
     </SafeAreaView>
   );

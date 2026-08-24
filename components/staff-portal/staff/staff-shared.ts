@@ -4,6 +4,8 @@ export type StaffMember = {
   name?: string;
   email?: string;
   role?: string;
+  roles?: string[];
+  permissions?: string[];
   profilePicture?: string;
   userPhone?: string;
   userPhoneCountryCode?: string;
@@ -30,11 +32,14 @@ export const ROLE_COLORS: Record<string, string> = {
   receptionist: "#2563eb",
   billing: "#f59e0b",
   staff: "#6b7280",
+  scheduler: "#0f766e",
+  owner: "#5b21b6",
   general: "#6b7280",
 };
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
+  scheduler: "Scheduler",
   doctor: "Doctor",
   nurse: "Nurse",
   rn: "RN",
@@ -48,6 +53,7 @@ const ROLE_LABELS: Record<string, string> = {
   receptionist: "Receptionist",
   billing: "Billing",
   staff: "Staff",
+  owner: "Owner",
   general: "General",
 };
 
@@ -110,6 +116,14 @@ export function getRoleDisplayName(role?: string) {
   }
 
   return ROLE_LABELS[role] || role;
+}
+
+export function getUserRoles(staff: StaffMember) {
+  if (Array.isArray(staff.roles) && staff.roles.length) {
+    return Array.from(new Set(staff.roles.filter(Boolean)));
+  }
+
+  return staff.role ? [staff.role] : [];
 }
 
 export function getStaffId(staff: StaffMember) {

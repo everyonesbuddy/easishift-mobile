@@ -1,12 +1,13 @@
+import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
-import FacilityPreferencesPage from "../../components/staff-portal/preferences/facility-preferences-page";
+import { Redirect } from "expo-router";
 import PreferencesPage from "../../components/staff-portal/preferences/preferences-page";
 
 export default function PreferencesScreen() {
-  const { isAdmin } = useAuth();
+  const { user, facilityPreferences } = useAuth();
 
-  if (isAdmin) {
-    return <FacilityPreferencesPage />;
+  if (!getFacilityRolesFromUser(user, facilityPreferences).length) {
+    return <Redirect href="/dashboard" />;
   }
 
   return <PreferencesPage />;

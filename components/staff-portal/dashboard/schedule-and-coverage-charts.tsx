@@ -17,11 +17,13 @@ import {
   getRoleColor,
   getRoleDisplayName,
   getUnitAreaDisplayName,
+  getUserRoles,
   isRoleCompatible,
 } from "@/constants/industry-roles";
 
 type Props = {
-  isAdmin: boolean;
+  canViewOperations: boolean;
+  canUsePersonalSchedule: boolean;
   userId?: string;
 };
 
@@ -37,6 +39,7 @@ type Shift = {
     | {
         _id?: string;
         role?: string;
+        roles?: string[];
         name?: string;
         firstName?: string;
         lastName?: string;
@@ -283,7 +286,11 @@ function parseDayKeyOrToday(value: string) {
   return today;
 }
 
-export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
+export default function ScheduleAndCoverageCharts({
+  canViewOperations,
+  canUsePersonalSchedule,
+  userId,
+}: Props) {
   const [schedules, setSchedules] = useState<Shift[]>([]);
   const [coverage, setCoverage] = useState<Coverage[]>([]);
   const [selectedCoverageRole, setSelectedCoverageRole] = useState("all");
@@ -326,7 +333,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
     async function load() {
       setLoading(true);
       try {
-        const scheduleURL = isAdmin
+        const scheduleURL = canViewOperations
           ? "/schedules"
           : `/schedules?staffId=${userId ?? ""}`;
         const [scheduleRes, coverageRes] = await Promise.all([
@@ -368,7 +375,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
     }
 
     load();
-  }, [isAdmin, userId]);
+  }, [canViewOperations, userId]);
 
   const coverageNormalized = useMemo(() => {
     return coverage.flatMap((c) => {
@@ -413,10 +420,22 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         status: s.status,
         staffId: s.staffId,
         notes: s.notes,
-        staffRole: typeof s.staffId === "object" ? s.staffId?.role : s.role,
+        staffRole:
+          typeof s.staffId === "object"
+            ? getUserRoles(s.staffId)[0] || s.role
+            : s.role,
       }));
     });
   }, [schedules]);
+
+  const personalSchedulesNormalized = useMemo(() => {
+    return schedulesNormalized.filter((schedule) => {
+      const staffRef = schedule.staffId;
+      const scheduleStaffId =
+        typeof staffRef === "string" ? staffRef : staffRef?._id || "";
+      return String(scheduleStaffId) === String(userId || "");
+    });
+  }, [schedulesNormalized, userId]);
 
   const rolesWithCoverage = useMemo(() => {
     const allRoles = Array.from(
@@ -451,7 +470,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   );
 
   const consolidatedCoverageWithStaffing = useMemo(() => {
-    if (!isAdmin) {
+    if (!canViewOperations) {
       return [];
     }
 
@@ -485,7 +504,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
       )
       .map((cov, idx) => {
         const assignedCount = schedulesNormalized.filter((s) => {
-          const scheduleRole = s.staffRole || s.role;
+          const scheduleRole = s.role;
           const coverageEndMs = cov.endTime.getTime();
           const hasCoverageUnitArea = Boolean(cov.unitArea);
           const unitAreaMatches = hasCoverageUnitArea
@@ -525,7 +544,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         };
       });
   }, [
-    isAdmin,
+    canViewOperations,
     selectedCoverageRole,
     coverageStartDate,
     coverageEndDate,
@@ -551,7 +570,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
   }, [consolidatedCoverageWithStaffing]);
 
   const weeklyOvertimeData = useMemo(() => {
-    if (!isAdmin) {
+    if (!canViewOperations) {
       return [];
     }
 
@@ -608,19 +627,19 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
         };
       })
       .sort((a, b) => b.hours - a.hours);
-  }, [isAdmin, schedulesNormalized, weekDayKeys]);
+  }, [canViewOperations, schedulesNormalized, weekDayKeys]);
 
   const filteredWeeklyOvertimeData = useMemo(() => {
-    if (!isAdmin) return [];
+    if (!canViewOperations) return [];
     return weeklyOvertimeData.filter(
       (row) =>
         selectedOvertimeRole === "all" ||
         isRoleCompatible(row.role, selectedOvertimeRole),
     );
-  }, [isAdmin, weeklyOvertimeData, selectedOvertimeRole]);
+  }, [canViewOperations, weeklyOvertimeData, selectedOvertimeRole]);
 
   const overtimeSummary = useMemo(() => {
-    if (!isAdmin || filteredWeeklyOvertimeData.length === 0) {
+    if (!canViewOperations || filteredWeeklyOvertimeData.length === 0) {
       return { nearCount: 0, overtimeCount: 0 };
     }
     return {
@@ -629,26 +648,26 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
       overtimeCount: filteredWeeklyOvertimeData.filter((w) => w.isOvertime)
         .length,
     };
-  }, [isAdmin, filteredWeeklyOvertimeData]);
+  }, [canViewOperations, filteredWeeklyOvertimeData]);
 
   const todayKey = getLocalDayKey(new Date());
 
   const todayShift = useMemo(() => {
-    if (isAdmin) {
+    if (!canUsePersonalSchedule) {
       return null;
     }
 
-    return schedulesNormalized.find(
+    return personalSchedulesNormalized.find(
       (s) => s.dayKey === todayKey && s.status !== "call_out",
     );
-  }, [isAdmin, schedulesNormalized, todayKey]);
+  }, [canUsePersonalSchedule, personalSchedulesNormalized, todayKey]);
 
   const upcomingShifts = useMemo(() => {
-    if (isAdmin) {
+    if (!canUsePersonalSchedule) {
       return [];
     }
 
-    return schedulesNormalized
+    return personalSchedulesNormalized
       .filter((s) => s.dayKey > todayKey && s.status !== "call_out")
       .sort((a, b) =>
         a.dayKey === b.dayKey
@@ -656,7 +675,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
           : a.dayKey.localeCompare(b.dayKey),
       )
       .slice(0, 8);
-  }, [isAdmin, schedulesNormalized, todayKey]);
+  }, [canUsePersonalSchedule, personalSchedulesNormalized, todayKey]);
 
   function getCoverageStatusStyle(
     isUnderstaffed: boolean,
@@ -726,7 +745,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
 
   return (
     <View style={styles.container}>
-      {isAdmin ? (
+      {canViewOperations && (
         <>
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>Coverage Overview</Text>
@@ -996,7 +1015,9 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
             )}
           </View>
         </>
-      ) : (
+      )}
+
+      {canUsePersonalSchedule && (
         <>
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>Today&apos;s Shift</Text>
@@ -1017,7 +1038,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
                       {formatDate(todayShift.dayKey)}
                     </Text>
                     <Text style={styles.infoMuted}>
-                      {getRoleDisplayName(todayShift.staffRole)}
+                      {getRoleDisplayName(todayShift.role)}
                     </Text>
                   </View>
                   <View style={styles.roleTag}>
@@ -1070,7 +1091,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
                       </View>
                       <View style={styles.roleTag}>
                         <Text style={styles.roleTagText}>
-                          {getRoleDisplayName(shift.staffRole)}
+                          {getRoleDisplayName(shift.role)}
                         </Text>
                       </View>
                     </View>
@@ -1085,7 +1106,7 @@ export default function ScheduleAndCoverageCharts({ isAdmin, userId }: Props) {
                       <View
                         style={[
                           styles.roleDot,
-                          { backgroundColor: getRoleColor(shift.staffRole) },
+                          { backgroundColor: getRoleColor(shift.role) },
                         ]}
                       />
                     </View>

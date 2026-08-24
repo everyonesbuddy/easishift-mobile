@@ -12,6 +12,11 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import {
+  getFacilityRolesFromUser,
+  getUserRoles,
+  isRoleCompatible,
+} from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 import {
@@ -107,7 +112,8 @@ export default function ShiftSwapRequestModal({
   enableSchedulePicker = false,
   staffList = [],
 }: Props) {
-  const { user } = useAuth();
+  const { user, can, facilityPreferences } = useAuth();
+  const canUseShiftSwap = can("shift_swap.use");
 
   const [mySchedules, setMySchedules] = useState<ScheduleItem[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState(
@@ -190,11 +196,18 @@ export default function ShiftSwapRequestModal({
         return false;
       }
 
-      return staff.role === activeSchedule.role;
+      return getFacilityRolesFromUser(staff, facilityPreferences).some((role) =>
+        isRoleCompatible(role, activeSchedule.role),
+      );
     });
-  }, [activeSchedule, staffList]);
+  }, [activeSchedule, facilityPreferences, staffList]);
 
   const submitSwapRequest = async () => {
+    if (!canUseShiftSwap) {
+      setError("You do not have permission to request a shift swap.");
+      return;
+    }
+
     if (!activeSchedule?._id) {
       setError("Please select a shift to swap.");
       return;
@@ -309,7 +322,10 @@ export default function ShiftSwapRequestModal({
             disabled={!activeSchedule}
             options={receiverOptions.map((staff) => ({
               value: staff._id || "",
-              label: `${staff.name || "Unknown"} (${getRoleDisplayName(staff.role)})`,
+              label: `${staff.name || "Unknown"} (${
+                getUserRoles(staff).map(getRoleDisplayName).join(", ") ||
+                "Unknown"
+              })`,
             }))}
           />
 

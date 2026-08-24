@@ -9,6 +9,11 @@ import {
 } from "react";
 
 import api from "@/config/api";
+import {
+  getEffectivePermissions,
+  getUserRoles,
+  normalizeRole,
+} from "@/constants/industry-roles";
 
 const USER_KEY = "user";
 const ROLE_KEY = "role";
@@ -16,6 +21,8 @@ const TOKEN_KEY = "token";
 
 type AuthUser = {
   role?: string;
+  roles?: string[];
+  permissions?: string[];
   tenantId?: string;
   firstName?: string;
   [key: string]: unknown;
@@ -42,6 +49,8 @@ type LoginData = {
 type AuthContextValue = {
   user: AuthUser | null;
   role: string;
+  roles: string[];
+  permissions: string[];
   tenant: Tenant | null;
   facilityPreferences: FacilityPreferencesState | null;
   fetchFacilityPreferences: () => Promise<FacilityPreferencesState>;
@@ -49,6 +58,8 @@ type AuthContextValue = {
   isPatient: boolean;
   isStaff: boolean;
   isAdmin: boolean;
+  hasRole: (targetRole: string) => boolean;
+  can: (permission: string) => boolean;
   login: (data: LoginData) => Promise<void>;
   logout: () => Promise<void>;
   refreshTenant: () => Promise<Tenant | null>;
@@ -67,8 +78,15 @@ export function useAuth() {
   return context;
 }
 
-function normalizeRole(value: unknown) {
-  return typeof value === "string" && value.length > 0 ? value : "staff";
+function normalizeUser(user: AuthUser | null): AuthUser | null {
+  if (!user) return null;
+  const roles = getUserRoles(user);
+  return {
+    ...user,
+    roles,
+    permissions: getEffectivePermissions(user),
+    role: normalizeRole(user.role || roles[0] || "staff"),
+  };
 }
 
 function parseMaybeUser(value: string | null): AuthUser | null {
@@ -107,8 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchFacilityPreferences = useCallback(async () => {
     try {
       const res = await api.get("/facility-preferences");
-      const nextPrefs =
-        (res.data || {}) as FacilityPreferencesState;
+      const nextPrefs = (res.data || {}) as FacilityPreferencesState;
       setFacilityPreferences(nextPrefs);
       return nextPrefs;
     } catch (error) {
@@ -152,8 +169,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           TOKEN_KEY,
         ]);
         const map = new Map(entries);
-        const savedUser = parseMaybeUser(map.get(USER_KEY) ?? null);
-        const savedRole = normalizeRole(map.get(ROLE_KEY) ?? savedUser?.role);
+        const savedUser = normalizeUser(
+          parseMaybeUser(map.get(USER_KEY) ?? null),
+        );
+        const savedRole = normalizeRole(
+          map.get(ROLE_KEY) ?? savedUser?.role ?? "staff",
+        );
         const savedToken = map.get(TOKEN_KEY);
 
         if (savedToken) {
@@ -205,6 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const token = extractToken(data);
+    userData = normalizeUser(userData) || userData;
 
     setUser(userData);
     setRole(detectedRole);
@@ -260,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setUser((prev) => {
-      const nextUser = { ...(prev || {}), ...patch } as AuthUser;
+      const nextUser = normalizeUser({ ...(prev || {}), ...patch }) as AuthUser;
 
       AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser)).catch(() => {
         // Ignore persistence errors here; state is still updated.
@@ -278,15 +300,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const normalizedRole = String(role || "").toLowerCase();
+  const roles = getUserRoles(user);
+  const permissions = getEffectivePermissions(user);
+  const normalizedRole = normalizeRole(role);
   const isPatient = normalizedRole === "patient";
-  const isAdmin = normalizedRole === "admin" || normalizedRole === "superadmin";
+  const hasRole = (targetRole: string) =>
+    roles.includes(normalizeRole(targetRole));
+  const can = (permission: string) => permissions.includes(permission);
+  const isAdmin = hasRole("admin") || hasRole("owner");
   const isStaff = Boolean(user) && !isPatient;
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       role,
+      roles,
+      permissions,
       tenant,
       facilityPreferences,
       fetchFacilityPreferences,
@@ -294,6 +323,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isPatient,
       isStaff,
       isAdmin,
+      hasRole,
+      can,
       login,
       logout,
       loading,
@@ -305,6 +336,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isStaff,
       loading,
       role,
+      roles,
+      permissions,
       tenant,
       facilityPreferences,
       fetchFacilityPreferences,

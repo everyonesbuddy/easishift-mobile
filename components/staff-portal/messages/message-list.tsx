@@ -12,11 +12,9 @@ import {
   View,
 } from "react-native";
 
-import {
-  ROLE_COLORS,
-  getInitials,
-} from "@/components/staff-portal/staff/staff-shared";
+import { getInitials } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
+import { getRoleColor } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 import MessageComposer from "./message-composer";
@@ -25,6 +23,7 @@ type MessagePerson = {
   _id?: string;
   name?: string;
   role?: string;
+  roles?: string[];
 };
 
 type MessageItem = {
@@ -39,8 +38,12 @@ type MessageItem = {
   receiverId?: MessagePerson;
 };
 
-function getRoleColor(role?: string) {
-  return ROLE_COLORS[role || ""] || "#6b7280";
+function getPersonRoles(person?: MessagePerson) {
+  return person?.roles?.length
+    ? person.roles
+    : person?.role
+      ? [person.role]
+      : [];
 }
 
 function formatMessageDate(message: MessageItem) {
@@ -317,7 +320,11 @@ export default function MessageListPage() {
                       <View
                         style={[
                           styles.avatar,
-                          { backgroundColor: getRoleColor(person?.role) },
+                          {
+                            backgroundColor: getRoleColor(
+                              getPersonRoles(person)[0],
+                            ),
+                          },
                         ]}
                       >
                         <Text style={styles.avatarText}>
@@ -355,10 +362,11 @@ export default function MessageListPage() {
                       styles.detailAvatar,
                       {
                         backgroundColor: getRoleColor(
-                          (mainTab === "inbox"
-                            ? selectedMessage.senderId
-                            : selectedMessage.receiverId
-                          )?.role,
+                          getPersonRoles(
+                            mainTab === "inbox"
+                              ? selectedMessage.senderId
+                              : selectedMessage.receiverId,
+                          )[0],
                         ),
                       },
                     ]}

@@ -1,4 +1,5 @@
 import ChangePasswordModal from "@/components/auth/change-password-modal";
+import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 import { Feather } from "@expo/vector-icons";
 import { usePathname, useRouter } from "expo-router";
@@ -98,14 +99,64 @@ type Props = {
 };
 
 export default function Sidebar({ visible, onClose }: Props) {
-  const { user } = useAuth();
+  const { user, can, facilityPreferences } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [userMenuVisible, setUserMenuVisible] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
-  const role = user?.role || "staff";
-  const menuItems = role === "admin" ? adminMenuItems : staffMenuItems;
+  const hasFacilityRole =
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
+  const menuItems = [
+    {
+      id: "overview",
+      icon: "grid" as const,
+      label: "Overview",
+      to: "/dashboard",
+    },
+    ...(can("coverage.manage")
+      ? adminMenuItems.filter((item) => item.id === "coverage")
+      : []),
+    ...(can("schedule.manage")
+      ? adminMenuItems.filter((item) => item.id === "schedule")
+      : hasFacilityRole
+        ? staffMenuItems.filter((item) => item.id === "schedule")
+        : []),
+    ...(can("staff.manage")
+      ? adminMenuItems.filter((item) => item.id === "staff")
+      : []),
+    ...(can("facility_preferences.manage")
+      ? [
+          {
+            id: "facility-preferences",
+            icon: "settings" as const,
+            label: "Facility Preferences",
+            to: "/facility-preferences",
+          },
+        ]
+      : []),
+    ...(can("timeoff.review")
+      ? adminMenuItems.filter((item) => item.id === "timeoff")
+      : []),
+    ...staffMenuItems
+      .filter(
+        (item) =>
+          [
+            "preferences",
+            "timeoff",
+            "swap-requests",
+            "messages",
+            "time-tracking",
+          ].includes(item.id) &&
+          (item.id !== "preferences" || can("preferences.manage_own")),
+      )
+      .map((item) =>
+        item.id === "timeoff" ? { ...item, id: "timeoff-requests" } : item,
+      ),
+    ...(can("billing.manage")
+      ? adminMenuItems.filter((item) => item.id === "subscription")
+      : []),
+  ];
 
   const handleNavigate = (to: string) => {
     onClose();

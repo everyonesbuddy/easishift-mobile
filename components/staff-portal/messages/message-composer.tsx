@@ -12,12 +12,14 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getRoleDisplayName } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 type MessageStaff = {
   _id?: string;
   name?: string;
   role?: string;
+  roles?: string[];
 };
 
 type Props = {
@@ -85,7 +87,13 @@ export default function MessageComposer({
 
   const roleOptions = useMemo(() => {
     const uniqueRoles = [
-      ...new Set(staffList.map((staff) => staff.role).filter(Boolean)),
+      ...new Set(
+        staffList
+          .flatMap((staff) =>
+            staff.roles?.length ? staff.roles : [staff.role],
+          )
+          .filter(Boolean),
+      ),
     ] as string[];
 
     return uniqueRoles.sort((a, b) => a.localeCompare(b));
@@ -102,7 +110,7 @@ export default function MessageComposer({
 
     const byRole: PickerOption[] = roleOptions.map((role) => ({
       value: `role:${role}`,
-      label: `Role: ${role}`,
+      label: `Role: ${getRoleDisplayName(role)}`,
       section: "role",
     }));
 
@@ -151,7 +159,9 @@ export default function MessageComposer({
     if (selection.startsWith("role:")) {
       const role = selection.replace("role:", "");
       return staffList
-        .filter((staff) => staff.role === role)
+        .filter((staff) =>
+          (staff.roles?.length ? staff.roles : [staff.role]).includes(role),
+        )
         .map((staff) => staff._id)
         .filter(Boolean) as string[];
     }

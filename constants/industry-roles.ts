@@ -1,10 +1,12 @@
-export const COMMON_STAFF_ROLES = ["staff", "other"] as const;
-export const ADMIN_ROLES = ["admin", "superadmin"] as const;
 export const SYSTEM_ROLE_OPTIONS = [
-  "user",
-  ...COMMON_STAFF_ROLES,
-  ...ADMIN_ROLES,
+  "staff",
+  "scheduler",
+  "admin",
+  "owner",
 ] as const;
+export const COMMON_STAFF_ROLES = ["staff"] as const;
+export const ADMIN_ROLES = ["admin", "owner"] as const;
+export const FACILITY_BASELINE_ROLE = "staff";
 
 const toDisplayLabel = (value: unknown): string =>
   String(value || "")
@@ -87,19 +89,138 @@ export const isRoleCompatible = (staffRole: unknown, coverageRole: unknown) => {
 };
 
 export const ROLE_LABEL_MAP: Record<string, string> = {
-  user: "User",
+  scheduler: "Scheduler",
   admin: "Admin",
-  superadmin: "Super Admin",
   staff: "Staff",
-  other: "Other",
+  owner: "Owner",
 };
 
 const ROLE_COLOR_MAP: Record<string, string> = {
-  user: "#64748b",
-  admin: "#7c3aed",
-  superadmin: "#5b21b6",
   staff: "#6b7280",
-  other: "#64748b",
+  scheduler: "#0f766e",
+  admin: "#7c3aed",
+  owner: "#5b21b6",
+};
+
+const FALLBACK_SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
+  staff: [
+    "schedule.view_own",
+    "schedule.pick_up",
+    "timeoff.request",
+    "shift_swap.use",
+    "messages.use",
+    "preferences.manage_own",
+  ],
+  scheduler: [
+    "schedule.view",
+    "schedule.manage",
+    "coverage.view",
+    "coverage.manage",
+    "staff.view",
+    "facility_preferences.view",
+  ],
+  admin: [
+    "schedule.view",
+    "schedule.manage",
+    "coverage.view",
+    "coverage.manage",
+    "staff.view",
+    "staff.manage",
+    "staff.reset_password",
+    "timeoff.review",
+    "messages.manage",
+    "facility_preferences.manage",
+  ],
+  owner: [
+    "schedule.view",
+    "schedule.manage",
+    "coverage.view",
+    "coverage.manage",
+    "staff.view",
+    "staff.manage",
+    "staff.reset_password",
+    "timeoff.review",
+    "messages.manage",
+    "facility_preferences.manage",
+    "billing.view",
+    "billing.manage",
+    "tenant.settings",
+    "tenant.delete",
+    "roles.manage",
+  ],
+};
+
+export const normalizeRole = (role: unknown): string => {
+  const value = normalizeRoleKey(role);
+  if (value === "user" || value === "other") return "staff";
+  if (value === "superadmin") return "owner";
+  return value;
+};
+
+export const getUserRoles = (
+  user: { roles?: unknown; role?: unknown } | null | undefined,
+) => {
+  if (Array.isArray(user?.roles) && user.roles.length) {
+    return Array.from(new Set(user.roles.map(normalizeRole).filter(Boolean)));
+  }
+
+  const legacyRole = normalizeRole(user?.role);
+  return legacyRole ? [legacyRole] : [];
+};
+
+export const isSystemRole = (role: unknown) =>
+  SYSTEM_ROLE_OPTIONS.includes(
+    normalizeRole(role) as (typeof SYSTEM_ROLE_OPTIONS)[number],
+  );
+
+export const getSystemRolesFromUser = (
+  user: { roles?: unknown; role?: unknown } | null | undefined,
+) => getUserRoles(user).filter(isSystemRole);
+
+export const getFacilityRolesFromUser = (
+  user: { roles?: unknown; role?: unknown } | null | undefined,
+  facilityPreferences: { roleFamilies?: unknown[] } | null | undefined,
+) => {
+  const userRoles = getUserRoles(user);
+  const configuredRoles = new Set(
+    (facilityPreferences?.roleFamilies || [])
+      .map(normalizeRoleKey)
+      .filter(Boolean),
+  );
+
+  return configuredRoles.size
+    ? userRoles.filter((role) => configuredRoles.has(role))
+    : userRoles.filter((role) => !isSystemRole(role));
+};
+
+export const getEffectivePermissions = (
+  user:
+    | {
+        roles?: unknown;
+        role?: unknown;
+        permissions?: unknown;
+      }
+    | null
+    | undefined,
+) => {
+  const backendPermissions = Array.isArray(user?.permissions)
+    ? user.permissions
+        .map((permission) => String(permission || "").trim())
+        .filter(Boolean)
+    : [];
+  const systemRoles = getSystemRolesFromUser(user);
+  const impliedRoles = systemRoles.length
+    ? systemRoles
+    : [FACILITY_BASELINE_ROLE];
+
+  return Array.from(
+    new Set([
+      ...backendPermissions,
+      ...impliedRoles.flatMap(
+        (role) => FALLBACK_SYSTEM_ROLE_PERMISSIONS[role] || [],
+      ),
+    ]),
+  );
 };
 
 export const ALL_NON_ADMIN_ROLES = [...COMMON_STAFF_ROLES];
@@ -135,7 +256,7 @@ export const getRoleOptionsFromFacilityPreferences = (
   const roles = [...facilityRoles];
 
   if (includeSystem) {
-    roles.push("user", ...COMMON_STAFF_ROLES);
+    roles.push(...COMMON_STAFF_ROLES);
   }
 
   if (includeAdmin) {
@@ -244,7 +365,7 @@ export const getRolesForIndustry = (
   const roles = [...industryRoles];
 
   if (includeSystem) {
-    roles.push("user", ...COMMON_STAFF_ROLES);
+    roles.push(...COMMON_STAFF_ROLES);
   }
 
   if (includeAdmin) {

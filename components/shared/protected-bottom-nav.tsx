@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 type NavItem = {
@@ -60,6 +61,12 @@ const STAFF_MAIN_ITEMS: NavItem[] = [
 ];
 
 const ADMIN_MORE_ITEMS: NavItem[] = [
+  {
+    id: "facility-preferences",
+    label: "Facility Preferences",
+    icon: "sliders",
+    to: "/facility-preferences",
+  },
   { id: "staff", label: "Staff Management", icon: "users", to: "/staffs" },
   {
     id: "time-tracking",
@@ -145,22 +152,59 @@ function isActive(pathname: string, to?: string) {
 }
 
 export default function ProtectedBottomNav() {
-  const { isAdmin } = useAuth();
+  const { can, facilityPreferences, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const [moreOpen, setMoreOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
-  const mainItems = useMemo(
-    () => (isAdmin ? ADMIN_MAIN_ITEMS : STAFF_MAIN_ITEMS),
-    [isAdmin],
+  const hasFacilityRole =
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
+  const hasOperations = can("schedule.view");
+  const trackingEnabled = Boolean(
+    (facilityPreferences as { timeTracking?: { enabled?: boolean } } | null)
+      ?.timeTracking?.enabled,
   );
+  const mainItems = useMemo(() => {
+    const baseItems = hasOperations ? ADMIN_MAIN_ITEMS : STAFF_MAIN_ITEMS;
 
-  const moreItems = useMemo(
-    () => (isAdmin ? ADMIN_MORE_ITEMS : STAFF_MORE_ITEMS),
-    [isAdmin],
-  );
+    return baseItems.filter((item) => {
+      if (item.id === "coverage") return can("coverage.manage");
+      if (item.id === "schedule") {
+        return hasOperations || (hasFacilityRole && can("schedule.view_own"));
+      }
+      if (item.id === "preferences") {
+        return hasFacilityRole && can("preferences.manage_own");
+      }
+      if (item.id === "messages") return can("messages.use");
+      return true;
+    });
+  }, [can, hasFacilityRole, hasOperations]);
+
+  const moreItems = useMemo(() => {
+    const items = (hasOperations ? ADMIN_MORE_ITEMS : STAFF_MORE_ITEMS).map(
+      (item) =>
+        item.id === "time-tracking" && can("staff.view")
+          ? { ...item, label: "Attendance" }
+          : item,
+    );
+    return items.filter((item) => {
+      if (item.id === "staff") return can("staff.manage");
+      if (item.id === "facility-preferences") {
+        return (
+          can("facility_preferences.view") || can("facility_preferences.manage")
+        );
+      }
+      if (item.id === "timeoff-decisions") return can("timeoff.review");
+      if (item.id === "timeoff-requests") return can("timeoff.request");
+      if (item.id === "swaps") return can("shift_swap.use");
+      if (item.id === "messages") return can("messages.use");
+      if (item.id === "billing") return can("billing.manage");
+      if (item.id === "time-tracking") return trackingEnabled;
+      return true;
+    });
+  }, [can, hasOperations, trackingEnabled]);
 
   const navigateTo = (to?: string) => {
     if (!to) {

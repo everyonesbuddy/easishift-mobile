@@ -44,7 +44,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function SwapShiftRequestsPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, can } = useAuth();
+  const isAdmin = can("schedule.manage");
+  const canUseShiftSwap = can("shift_swap.use");
+  const canViewSwapRequests = isAdmin || canUseShiftSwap;
 
   const [activeTab, setActiveTab] = useState<"inbox" | "sent">("inbox");
   const [loading, setLoading] = useState(false);
@@ -74,11 +77,35 @@ export default function SwapShiftRequestsPage() {
   };
 
   const loadSwapRequests = useCallback(async () => {
+    if (!canViewSwapRequests) {
+      setInboxRequests([]);
+      setSentRequests([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
 
-      if (isAdmin) {
+      if (isAdmin && canUseShiftSwap) {
+        const [adminRes, inboxRes, outboxRes] = await Promise.all([
+          api.get("/schedules/swap-requests"),
+          api.get("/schedules/swap-requests?view=inbox"),
+          api.get("/schedules/swap-requests?view=outbox"),
+        ]);
+
+        setInboxRequests(
+          Array.isArray(adminRes.data)
+            ? (adminRes.data as SwapRequestItem[])
+            : [],
+        );
+        setSentRequests(
+          Array.isArray(outboxRes.data)
+            ? (outboxRes.data as SwapRequestItem[])
+            : [],
+        );
+      } else if (isAdmin) {
         const res = await api.get("/schedules/swap-requests");
         setInboxRequests(
           Array.isArray(res.data) ? (res.data as SwapRequestItem[]) : [],
@@ -107,7 +134,7 @@ export default function SwapShiftRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin]);
+  }, [canUseShiftSwap, canViewSwapRequests, isAdmin]);
 
   useEffect(() => {
     loadSwapRequests();
@@ -173,16 +200,29 @@ export default function SwapShiftRequestsPage() {
   };
 
   const isPendingForReceiver = (requestItem: SwapRequestItem) => {
-    if (requestItem.status !== "pending_receiver") {
+    if (!canUseShiftSwap) {
       return false;
     }
 
-    if (isAdmin) {
+    if (requestItem.status !== "pending_receiver") {
       return false;
     }
 
     return String(requestItem.receiverStaffId?._id) === String(user?._id);
   };
+
+  if (!canViewSwapRequests) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Swap access unavailable</Text>
+          <Text style={styles.emptyText}>
+            You do not have permission to view shift swaps.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.page}>
@@ -201,7 +241,7 @@ export default function SwapShiftRequestsPage() {
               <Text style={styles.refreshText}>Refresh</Text>
             </Pressable>
 
-            {!isAdmin ? (
+            {canUseShiftSwap ? (
               <Pressable
                 style={styles.newBtn}
                 onPress={() => setRequestModalOpen(true)}
@@ -231,7 +271,7 @@ export default function SwapShiftRequestsPage() {
             </Text>
           </Pressable>
 
-          {!isAdmin ? (
+          {canUseShiftSwap ? (
             <Pressable
               style={[
                 styles.tabBtn,
@@ -544,6 +584,17 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#6b7280",
     fontSize: 13,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   listWrap: {
     gap: 10,

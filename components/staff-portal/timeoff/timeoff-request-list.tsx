@@ -29,7 +29,7 @@ import {
 } from "./timeoff-shared";
 
 export default function TimeOffRequestListPage() {
-  const { user, role } = useAuth();
+  const { user, can } = useAuth();
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [openModal, setOpenModal] = useState(false);
@@ -55,10 +55,7 @@ export default function TimeOffRequestListPage() {
     fetchRequests();
   }, [fetchRequests]);
 
-  const isAdmin = useMemo(
-    () => role === "admin" || role === "superadmin",
-    [role],
-  );
+  const isAdmin = can("timeoff.review");
 
   const userId = typeof user?._id === "string" ? user._id : "";
 

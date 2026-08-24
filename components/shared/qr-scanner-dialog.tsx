@@ -2,8 +2,8 @@ import { Feather } from "@expo/vector-icons";
 import {
   CameraType,
   CameraView,
-  type BarcodeScanningResult,
   useCameraPermissions,
+  type BarcodeScanningResult,
 } from "expo-camera";
 import { useEffect, useState } from "react";
 import {
@@ -14,8 +14,6 @@ import {
   Text,
   View,
 } from "react-native";
-
-const SCAN_WARMUP_MS = 1200;
 
 type Props = {
   open: boolean;
@@ -57,7 +55,6 @@ export default function QrScannerDialog({
   const [permission, requestPermission] = useCameraPermissions();
   const [starting, setStarting] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [scanReady, setScanReady] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [facing, setFacing] = useState<CameraType>("back");
@@ -125,28 +122,12 @@ export default function QrScannerDialog({
     }
 
     setErrorMessage("");
-    setScanReady(false);
     setScanLocked(false);
     setScanning(true);
   };
 
-  useEffect(() => {
-    if (!scanning) {
-      setScanReady(false);
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setScanReady(true);
-    }, SCAN_WARMUP_MS);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [scanning]);
-
   const handleScanned = ({ data }: BarcodeScanningResult) => {
-    if (!scanning || !scanReady || scanLocked) {
+    if (!scanning || scanLocked) {
       return;
     }
 
@@ -227,9 +208,7 @@ export default function QrScannerDialog({
           {scanning ? (
             <View style={styles.infoSuccess}>
               <Text style={styles.infoSuccessText}>
-                {scanReady
-                  ? "Camera ready. Hold the QR code steady in view."
-                  : "Stabilizing camera... hold for a second."}
+                Camera ready. Hold the QR code steady in view.
               </Text>
             </View>
           ) : null}

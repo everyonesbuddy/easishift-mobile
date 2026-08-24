@@ -13,10 +13,12 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
+import GuideVideoDialog from "@/components/shared/guide-video-dialog";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
 import {
   getCertificationTagDisplayName,
+  getFacilityRolesFromUser,
   getRoleColor,
   getRoleDisplayName,
   getRoleOptionsFromFacilityPreferences,
@@ -24,6 +26,7 @@ import {
   getShiftTagDisplayName,
   getShiftTypeDisplayName,
   getUnitAreaDisplayName,
+  getUserRoles,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -39,15 +42,18 @@ import {
 } from "./schedule-types";
 import ShiftSwapRequestModal from "./shift-swap-request-modal";
 
-const STATUS_FILTERS = [
-  "",
-  "scheduled",
-  "in_progress",
-  "completed",
-  "left_early",
-  "no_show",
-  "call_out",
-] as const;
+const STATUS_FILTERS = ["", "scheduled", "completed", "call_out"] as const;
+
+const SCHEDULE_GUIDE_VIDEOS = [
+  {
+    id: "ai-generated-schedule",
+    label: "AI-generated schedule",
+    title: "AI-Generated Schedule Guide",
+    description:
+      "Learn how to review AI-generated draft schedules before publishing.",
+    embedUrl: "https://www.youtube.com/embed/r8kQbvdqWpA",
+  },
+];
 
 function toDayKey(date: Date) {
   const year = date.getFullYear();
@@ -193,7 +199,16 @@ function parseLocalDateKey(dateKey: string) {
 
 export default function ScheduleListPage() {
   const router = useRouter();
-  const { user, isAdmin, tenant, facilityPreferences } = useAuth();
+  const { user, can, tenant, facilityPreferences } = useAuth();
+  const isAdmin = can("schedule.manage");
+  const hasFacilityRole =
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
+  const canViewOwnSchedule = can("schedule.view_own") && hasFacilityRole;
+  const canViewSchedule = isAdmin || can("schedule.view") || canViewOwnSchedule;
+  const canUseShiftSwap = can("shift_swap.use");
+  const canPickUpShift =
+    can("schedule.pick_up") &&
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
@@ -214,6 +229,7 @@ export default function ScheduleListPage() {
   const [filterPickerOpen, setFilterPickerOpen] = useState<
     "visibility" | "role" | "status" | "shift" | null
   >(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -238,6 +254,12 @@ export default function ScheduleListPage() {
   );
 
   const fetchSchedules = useCallback(async () => {
+    if (!canViewSchedule) {
+      setSchedules([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await api.get("/schedules");
@@ -260,7 +282,7 @@ export default function ScheduleListPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewSchedule]);
 
   const fetchStaff = useCallback(async () => {
     try {
@@ -401,9 +423,7 @@ export default function ScheduleListPage() {
     const scheduleRoles = schedules
       .map((schedule) => schedule.role)
       .filter((role): role is string => Boolean(role));
-    const staffRoles = staff
-      .map((member) => member.role)
-      .filter((role): role is string => Boolean(role));
+    const staffRoles = staff.flatMap((member) => getUserRoles(member));
 
     return [
       "all",
@@ -468,7 +488,6 @@ export default function ScheduleListPage() {
     () =>
       schedules.filter((schedule) => {
         if (
-          !isAdmin &&
           staffVisibility === "mine" &&
           String(extractStaffId(schedule)) !== String(user?._id || "")
         ) {
@@ -601,6 +620,17 @@ export default function ScheduleListPage() {
     setCalendarDetailsOpen(true);
   };
 
+  if (!canViewSchedule) {
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyTitle}>Schedule access unavailable</Text>
+        <Text style={styles.emptyText}>
+          You do not have permission to view schedules.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -611,6 +641,15 @@ export default function ScheduleListPage() {
           </View>
 
           <View style={styles.headerActions}>
+            {isAdmin ? (
+              <Pressable
+                style={[styles.actionBtn, styles.guideBtn]}
+                onPress={() => setGuideOpen(true)}
+              >
+                <Feather name="play-circle" size={14} color="#1d4ed8" />
+                <Text style={styles.guideText}>Watch Guide</Text>
+              </Pressable>
+            ) : null}
             <View style={styles.toggleWrap}>
               <Pressable
                 style={[
@@ -722,25 +761,27 @@ export default function ScheduleListPage() {
               </Pressable>
             ) : null}
 
-            <Pressable
-              style={[
-                styles.actionBtn,
-                isAdmin ? styles.manualBtn : styles.pickupBtn,
-              ]}
-              onPress={() => {
-                if (isAdmin) {
-                  openCreate();
-                } else {
-                  setEditingSchedule(null);
-                  setOpen(true);
-                }
-              }}
-            >
-              <Feather name="plus" size={14} color="#ffffff" />
-              <Text style={styles.actionText}>
-                {isAdmin ? "Manual Schedule" : "Pick Up Shift"}
-              </Text>
-            </Pressable>
+            {isAdmin || canPickUpShift ? (
+              <Pressable
+                style={[
+                  styles.actionBtn,
+                  isAdmin ? styles.manualBtn : styles.pickupBtn,
+                ]}
+                onPress={() => {
+                  if (isAdmin) {
+                    openCreate();
+                  } else {
+                    setEditingSchedule(null);
+                    setOpen(true);
+                  }
+                }}
+              >
+                <Feather name="plus" size={14} color="#ffffff" />
+                <Text style={styles.actionText}>
+                  {isAdmin ? "Manual Schedule" : "Pick Up Shift"}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
@@ -748,7 +789,7 @@ export default function ScheduleListPage() {
           <Text style={styles.filterLabel}>Filter</Text>
 
           <View style={styles.filterFieldsWrap}>
-            {!isAdmin ? (
+            {hasFacilityRole ? (
               <View style={styles.filterField}>
                 <Text style={styles.filterFieldLabel}>Schedule</Text>
                 <Pressable
@@ -965,8 +1006,9 @@ export default function ScheduleListPage() {
                           </Pressable>
                         ) : null}
 
-                        {!isAdmin &&
-                        canManageSchedule(schedule) &&
+                        {canUseShiftSwap &&
+                        String(extractStaffId(schedule)) ===
+                          String(user?._id || "") &&
                         status === "scheduled" ? (
                           <Pressable
                             style={[styles.cardBtn, styles.swapBtn]}
@@ -1235,6 +1277,13 @@ export default function ScheduleListPage() {
         </Pressable>
       </Modal>
 
+      <GuideVideoDialog
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        title="Schedule Guide"
+        videos={SCHEDULE_GUIDE_VIDEOS}
+      />
+
       <Modal
         visible={detailsOpen}
         animationType="slide"
@@ -1349,8 +1398,9 @@ export default function ScheduleListPage() {
                     </Pressable>
                   ) : null}
 
-                  {!isAdmin &&
-                  canManageSchedule(selectedSchedule) &&
+                  {canUseShiftSwap &&
+                  String(extractStaffId(selectedSchedule)) ===
+                    String(user?._id || "") &&
                   selectedSchedule.status === "scheduled" ? (
                     <Pressable
                       style={[styles.cardBtn, styles.swapBtn]}
@@ -1382,6 +1432,7 @@ export default function ScheduleListPage() {
             onClose={() => closeModal()}
             schedule={editingSchedule}
             staffList={staff}
+            mode={isAdmin ? "manual" : "pickup"}
             initialStaffId={
               !isAdmin && !editingSchedule ? String(user?._id || "") : ""
             }
@@ -1641,6 +1692,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  guideBtn: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+  },
+  guideText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   aiBtn: {
     backgroundColor: "#1d4ed8",
   },
@@ -1826,6 +1887,18 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#6b7280",
     fontSize: 13,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyTitle: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   listWrap: {
     gap: 10,

@@ -2,6 +2,8 @@ export type StaffUser = {
   _id?: string;
   name?: string;
   role?: string;
+  roles?: string[];
+  permissions?: string[];
   allowedAreas?: unknown[];
   allowedShiftTags?: unknown[];
   allowedShiftTypes?: unknown[];

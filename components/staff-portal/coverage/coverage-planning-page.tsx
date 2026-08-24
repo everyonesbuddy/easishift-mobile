@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
+import GuideVideoDialog from "@/components/shared/guide-video-dialog";
 import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-create-form";
 import CoverageEditCountForm from "@/components/staff-portal/coverage/coverage-edit-count-form";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
@@ -33,6 +34,25 @@ const STATUS_COLORS: Record<string, string> = {
   partial: "#f97316",
   filled: "#10b981",
 };
+
+const COVERAGE_GUIDE_VIDEOS = [
+  {
+    id: "requirements",
+    label: "Save requirements only",
+    title: "Create and Save Requirements",
+    description:
+      "Create coverage requirements without generating a draft schedule.",
+    embedUrl: "https://www.youtube.com/embed/-7mv6I-eqG0",
+  },
+  {
+    id: "ai-draft",
+    label: "AI-generate draft",
+    title: "Create and AI-Generate a Draft",
+    description:
+      "Create coverage and immediately generate a draft schedule with AI.",
+    embedUrl: "https://www.youtube.com/embed/qJpZoB-dL7A",
+  },
+];
 
 type CoverageItem = {
   _id?: string;
@@ -220,7 +240,10 @@ function getCoverageStatusColor(item: CoverageItem) {
 }
 
 export default function CoveragePlanningPage() {
-  const { user, isAdmin } = useAuth();
+  const { user, can } = useAuth();
+  const canViewCoverage = can("coverage.view") || can("coverage.manage");
+  const canManageCoverage = can("coverage.manage");
+  const canViewOnlyCoverage = canViewCoverage && !canManageCoverage;
 
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
   const [facilityPreferences, setFacilityPreferences] =
@@ -249,6 +272,7 @@ export default function CoveragePlanningPage() {
   const [rowsPerPage] = useState(10);
   const [error, setError] = useState("");
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const roleOptions = useMemo(() => {
     return getRoleOptionsFromFacilityPreferences(facilityPreferences).map(
@@ -312,7 +336,7 @@ export default function CoveragePlanningPage() {
   };
 
   const askDelete = (id?: string) => {
-    if (!isAdmin || !id) {
+    if (!canManageCoverage || !id) {
       return;
     }
 
@@ -321,7 +345,7 @@ export default function CoveragePlanningPage() {
   };
 
   const openEdit = (coverage: CoverageItem) => {
-    if (!isAdmin || !coverage) {
+    if (!canManageCoverage || !coverage) {
       return;
     }
 
@@ -515,6 +539,13 @@ export default function CoveragePlanningPage() {
           </View>
 
           <View style={styles.headerActions}>
+            <Pressable
+              style={styles.guideBtn}
+              onPress={() => setGuideOpen(true)}
+            >
+              <Feather name="play-circle" size={14} color="#1d4ed8" />
+              <Text style={styles.guideBtnText}>Watch guides</Text>
+            </Pressable>
             <View style={styles.toggleWrap}>
               <Pressable
                 style={[
@@ -560,7 +591,7 @@ export default function CoveragePlanningPage() {
               </Pressable>
             </View>
 
-            {isAdmin ? (
+            {canManageCoverage ? (
               <View style={styles.adminActionRow}>
                 {view === "table" ? (
                   <Pressable
@@ -592,6 +623,15 @@ export default function CoveragePlanningPage() {
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {canViewOnlyCoverage ? (
+          <View style={styles.viewOnlyNotice}>
+            <Feather name="eye" size={16} color="#1d4ed8" />
+            <Text style={styles.viewOnlyNoticeText}>
+              You have view-only access to Coverage Planning. Contact a manager
+              to create or edit coverage requirements.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.filterCard}>
           <Text style={styles.filterLabel}>Filter by role</Text>
@@ -627,7 +667,7 @@ export default function CoveragePlanningPage() {
           </View>
         ) : view === "table" ? (
           <View style={styles.listWrap}>
-            {isAdmin ? (
+            {canManageCoverage ? (
               <Pressable
                 style={styles.selectAllRow}
                 onPress={toggleSelectAllPaginated}
@@ -652,7 +692,7 @@ export default function CoveragePlanningPage() {
                   <View style={styles.rowTop}>
                     <View style={styles.rowLeft}>
                       <View style={styles.rowRoleLine}>
-                        {isAdmin && c._id ? (
+                        {canManageCoverage && c._id ? (
                           <Pressable
                             onPress={() => toggleCoverageSelection(c._id)}
                             style={styles.rowCheckbox}
@@ -710,7 +750,7 @@ export default function CoveragePlanningPage() {
                     {c.note || "-"}
                   </Text>
 
-                  {isAdmin ? (
+                  {canManageCoverage ? (
                     <View style={styles.rowActions}>
                       <Pressable
                         style={styles.viewBtn}
@@ -963,7 +1003,7 @@ export default function CoveragePlanningPage() {
                   <Text style={styles.overnightText}>Overnight shift</Text>
                 ) : null}
 
-                {isAdmin ? (
+                {canManageCoverage ? (
                   <View style={styles.detailActionRow}>
                     <Pressable
                       style={styles.editBtn}
@@ -1035,6 +1075,13 @@ export default function CoveragePlanningPage() {
         message="This action cannot be undone."
         onCancel={() => setConfirmOpen(false)}
         onConfirm={confirmDelete}
+      />
+
+      <GuideVideoDialog
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        title="Coverage Planning Guides"
+        videos={COVERAGE_GUIDE_VIDEOS}
       />
 
       <ConfirmDialog
@@ -1171,6 +1218,23 @@ const styles = StyleSheet.create({
   headerActions: {
     gap: 8,
   },
+  guideBtn: {
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  guideBtnText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   adminActionRow: {
     gap: 8,
   },
@@ -1241,6 +1305,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  viewOnlyNotice: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  viewOnlyNoticeText: {
+    flex: 1,
+    color: "#1e40af",
+    fontSize: 12,
+    lineHeight: 17,
   },
   filterCard: {
     borderRadius: 10,
