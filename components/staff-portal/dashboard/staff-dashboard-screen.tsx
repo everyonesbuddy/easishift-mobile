@@ -12,11 +12,26 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import GuideHelpButton from "@/components/shared/guide-help-button";
 import ScheduleAndCoverageCharts from "@/components/staff-portal/dashboard/schedule-and-coverage-charts";
 import type { StaffMember } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
 import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
+
+const DASHBOARD_TOUR_STEPS = [
+  {
+    target: "guide-dashboard-profile-btn",
+    title: "Add your profile picture",
+    body: "Upload a photo so teammates can recognize you across schedules and roster views.",
+  },
+  {
+    target: "guide-dashboard-charts",
+    title: "Your at-a-glance summary",
+    body: "These summaries track scheduled hours and coverage as schedules change.",
+  },
+];
 
 type SummaryMetrics = {
   activeStaffCount?: number;
@@ -75,6 +90,7 @@ export default function StaffDashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [uploadingProfile, setUploadingProfile] = useState(false);
+  const { startTourIfUnseen } = useGuideTour();
 
   const userId = typeof user?._id === "string" ? user._id : "";
   const tenantId = typeof user?.tenantId === "string" ? user.tenantId : "";
@@ -128,6 +144,12 @@ export default function StaffDashboardScreen() {
     loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, tenantId, can, canUsePersonalSchedule]);
+
+  useEffect(() => {
+    if (!loading) {
+      void startTourIfUnseen("staff-dashboard", DASHBOARD_TOUR_STEPS);
+    }
+  }, [loading, startTourIfUnseen]);
 
   const firstName = useMemo(() => {
     if (typeof user?.name === "string" && user.name.length > 0) {
@@ -381,6 +403,10 @@ export default function StaffDashboardScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.pageContent}
       >
+        <GuideHelpButton
+          tourId="staff-dashboard"
+          tourSteps={DASHBOARD_TOUR_STEPS}
+        />
         <View style={styles.banner}>
           <View style={styles.bannerLeft}>
             <Text style={styles.bannerTitle}>Welcome back, {firstName}!</Text>
@@ -443,11 +469,13 @@ export default function StaffDashboardScreen() {
           ))}
         </View> */}
 
-        <ScheduleAndCoverageCharts
-          canViewOperations={canViewOperations}
-          canUsePersonalSchedule={canUsePersonalSchedule}
-          userId={userId}
-        />
+        <View>
+          <ScheduleAndCoverageCharts
+            canViewOperations={canViewOperations}
+            canUsePersonalSchedule={canUsePersonalSchedule}
+            userId={userId}
+          />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -465,6 +493,7 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 28,
     paddingBottom: 20,
+    gap: 12,
   },
   loadingWrap: {
     flex: 1,

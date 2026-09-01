@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -8,11 +9,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
-import GuideVideoDialog from "@/components/shared/guide-video-dialog";
+import GuideHelpButton from "@/components/shared/guide-help-button";
 import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-create-form";
 import CoverageEditCountForm from "@/components/staff-portal/coverage/coverage-edit-count-form";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
@@ -28,6 +30,25 @@ import {
   isRoleCompatible,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
+
+const COVERAGE_TOUR_STEPS = [
+  {
+    target: "coverage-view-toggle",
+    title: "Switch between list and calendar",
+    body: "Use the list for reviewing and editing coverage; use the calendar to see requirements across the month.",
+  },
+  {
+    target: "coverage-add",
+    title: "Add a coverage requirement",
+    body: "Set the role, required staff count, shift slot, and date pattern. You can save requirements alone or generate a draft schedule.",
+  },
+  {
+    target: "coverage-filters",
+    title: "Filter coverage",
+    body: "Choose a role to focus the list and calendar on the requirements most relevant to you.",
+  },
+];
 
 const STATUS_COLORS: Record<string, string> = {
   open: "#f59e0b",
@@ -35,29 +56,17 @@ const STATUS_COLORS: Record<string, string> = {
   filled: "#10b981",
 };
 
-const COVERAGE_GUIDE_VIDEOS = [
-  {
-    id: "requirements",
-    label: "Save requirements only",
-    title: "Create and Save Requirements",
-    description:
-      "Create coverage requirements without generating a draft schedule.",
-    embedUrl: "https://www.youtube.com/embed/-7mv6I-eqG0",
-  },
-  {
-    id: "ai-draft",
-    label: "AI-generate draft",
-    title: "Create and AI-Generate a Draft",
-    description:
-      "Create coverage and immediately generate a draft schedule with AI.",
-    embedUrl: "https://www.youtube.com/embed/qJpZoB-dL7A",
-  },
-];
+const FILL_STATUS_OPTIONS = [
+  { value: "open", label: "Needs coverage" },
+  { value: "partial", label: "Partially staffed" },
+  { value: "filled", label: "Fully staffed" },
+] as const;
 
 type CoverageItem = {
   _id?: string;
   role?: string;
   requiredCount?: number;
+  assignedCount?: number;
   remaining?: number;
   startTime?: string;
   endTime?: string;
@@ -71,6 +80,14 @@ type CoverageItem = {
 
 type FacilityPreferences = {
   roleFamilies?: string[];
+  unitAreas?: string[];
+};
+
+type CoverageFilters = {
+  roles: string[];
+  fillStatuses: string[];
+  unitAreas: string[];
+  searchQuery: string;
 };
 
 function getCoverageDayKey(coverageDate?: string) {
@@ -230,13 +247,33 @@ function formatRequiredCertTags(coverage: CoverageItem) {
 }
 
 function getCoverageStatusColor(item: CoverageItem) {
-  const required = Number(item.requiredCount) || 0;
-  const remaining = Number(item.remaining) || 0;
-
-  const status =
-    remaining > 0 ? (remaining < required ? "partial" : "open") : "filled";
+  const status = getFillStatus(item).status;
 
   return STATUS_COLORS[status] || "#6b7280";
+}
+
+function getFillStatus(item: CoverageItem) {
+  const required = Number(item.requiredCount) || 0;
+  const assigned = Number.isFinite(Number(item.assignedCount))
+    ? Number(item.assignedCount)
+    : Math.max(0, required - (Number(item.remaining) || 0));
+  const remaining = Math.max(0, required - assigned);
+
+  if (required === 0) return { assigned, required, status: "none" };
+  if (remaining === 0) return { assigned, required, status: "filled" };
+  if (assigned > 0) return { assigned, required, status: "partial" };
+  return { assigned, required, status: "open" };
+}
+
+function getFillStatusLabel(status: string) {
+  return (
+    {
+      filled: "Fully staffed",
+      partial: "Partially staffed",
+      open: "Needs coverage",
+      none: "No staff required",
+    }[status] || "Needs coverage"
+  );
 }
 
 export default function CoveragePlanningPage() {
@@ -250,7 +287,13 @@ export default function CoveragePlanningPage() {
     useState<FacilityPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"table" | "calendar">("table");
-  const [selectedRole, setSelectedRole] = useState("all");
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedFillStatuses, setSelectedFillStatuses] = useState<string[]>(
+    [],
+  );
+  const [selectedUnitAreas, setSelectedUnitAreas] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<string>(toDayKey(new Date()));
   const [calendarDetailsOpen, setCalendarDetailsOpen] = useState(false);
@@ -271,8 +314,10 @@ export default function CoveragePlanningPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(10);
   const [error, setError] = useState("");
-  const [rolePickerOpen, setRolePickerOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
+  const [filterPicker, setFilterPicker] = useState<
+    "roles" | "statuses" | "units" | null
+  >(null);
+  const { startTourIfUnseen } = useGuideTour();
 
   const roleOptions = useMemo(() => {
     return getRoleOptionsFromFacilityPreferences(facilityPreferences).map(
@@ -287,12 +332,83 @@ export default function CoveragePlanningPage() {
     return Array.from(new Set([...roleOptions, ...existingRoles]));
   }, [coverages, roleOptions]);
 
-  const selectedRoleLabel =
-    selectedRole === "all" ? "All Roles" : getRoleDisplayName(selectedRole);
+  const unitAreaFilterOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...(facilityPreferences?.unitAreas || []),
+          ...coverages.map((coverage) => coverage.unitArea).filter(Boolean),
+        ]),
+      ).sort() as string[],
+    [coverages, facilityPreferences?.unitAreas],
+  );
+  const userScopeId = String(
+    user?._id || user?.id || user?.tenantId || "default",
+  );
+  const filtersStorageKey = `wisershifts_coverage_filters_${userScopeId}`;
+  const hasActiveFilters =
+    selectedRoles.length > 0 ||
+    selectedFillStatuses.length > 0 ||
+    selectedUnitAreas.length > 0 ||
+    Boolean(searchQuery.trim());
 
   useEffect(() => {
     fetchCoverages();
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    AsyncStorage.getItem(filtersStorageKey)
+      .then((stored) => {
+        if (!mounted || !stored) return;
+        const parsed = JSON.parse(stored) as Partial<CoverageFilters>;
+        setSelectedRoles(Array.isArray(parsed.roles) ? parsed.roles : []);
+        setSelectedFillStatuses(
+          Array.isArray(parsed.fillStatuses) ? parsed.fillStatuses : [],
+        );
+        setSelectedUnitAreas(
+          Array.isArray(parsed.unitAreas) ? parsed.unitAreas : [],
+        );
+        setSearchQuery(
+          typeof parsed.searchQuery === "string" ? parsed.searchQuery : "",
+        );
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) setFiltersHydrated(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [filtersStorageKey]);
+
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    void AsyncStorage.setItem(
+      filtersStorageKey,
+      JSON.stringify({
+        roles: selectedRoles,
+        fillStatuses: selectedFillStatuses,
+        unitAreas: selectedUnitAreas,
+        searchQuery,
+      }),
+    );
+  }, [
+    filtersHydrated,
+    filtersStorageKey,
+    searchQuery,
+    selectedFillStatuses,
+    selectedRoles,
+    selectedUnitAreas,
+  ]);
+
+  useEffect(() => {
+    if (!loading) {
+      void startTourIfUnseen("coverage-planning", COVERAGE_TOUR_STEPS);
+    }
+  }, [loading, startTourIfUnseen]);
 
   const fetchCoverages = async () => {
     setLoading(true);
@@ -394,9 +510,39 @@ export default function CoveragePlanningPage() {
   };
 
   const displayedCoverages = useMemo(() => {
-    const filtered = coverages.filter(
-      (c) => selectedRole === "all" || isRoleCompatible(c.role, selectedRole),
-    );
+    const filtered = coverages.filter((coverage) => {
+      if (
+        selectedRoles.length > 0 &&
+        !selectedRoles.some((role) => isRoleCompatible(coverage.role, role))
+      ) {
+        return false;
+      }
+      if (
+        selectedFillStatuses.length > 0 &&
+        !selectedFillStatuses.includes(getFillStatus(coverage).status)
+      ) {
+        return false;
+      }
+      if (
+        selectedUnitAreas.length > 0 &&
+        !selectedUnitAreas.includes(coverage.unitArea || "")
+      ) {
+        return false;
+      }
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return [
+        getRoleDisplayName(coverage.role),
+        getUnitAreaDisplayName(coverage.unitArea),
+        getShiftTypeDisplayName(coverage.shiftType),
+        getShiftTagDisplayName(coverage.shiftTag),
+        coverage.note || "",
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(query),
+      );
+    });
 
     return filtered.sort((a, b) => {
       const da = getCoverageDayKey(a.date || a.startTime);
@@ -410,7 +556,17 @@ export default function CoveragePlanningPage() {
         new Date(a.startTime || "").getTime()
       );
     });
-  }, [coverages, selectedRole]);
+  }, [
+    coverages,
+    searchQuery,
+    selectedFillStatuses,
+    selectedRoles,
+    selectedUnitAreas,
+  ]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, selectedFillStatuses, selectedRoles, selectedUnitAreas]);
 
   const paginated = displayedCoverages.slice(
     page * rowsPerPage,
@@ -532,6 +688,10 @@ export default function CoveragePlanningPage() {
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
+        <GuideHelpButton
+          tourId="coverage-planning"
+          tourSteps={COVERAGE_TOUR_STEPS}
+        />
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrap}>
             <Text style={styles.title}>Coverage Planning</Text>
@@ -539,13 +699,6 @@ export default function CoveragePlanningPage() {
           </View>
 
           <View style={styles.headerActions}>
-            <Pressable
-              style={styles.guideBtn}
-              onPress={() => setGuideOpen(true)}
-            >
-              <Feather name="play-circle" size={14} color="#1d4ed8" />
-              <Text style={styles.guideBtnText}>Watch guides</Text>
-            </Pressable>
             <View style={styles.toggleWrap}>
               <Pressable
                 style={[
@@ -634,31 +787,58 @@ export default function CoveragePlanningPage() {
         ) : null}
 
         <View style={styles.filterCard}>
-          <Text style={styles.filterLabel}>Filter by role</Text>
-
-          <View style={styles.filterField}>
-            <Text style={styles.filterFieldLabel}>Role</Text>
-            <Pressable
-              style={styles.filterSelect}
-              onPress={() => setRolePickerOpen(true)}
-            >
-              <Text style={styles.filterSelectText} numberOfLines={1}>
-                {selectedRoleLabel}
-              </Text>
-              <Feather name="chevron-down" size={16} color="#6b7280" />
-            </Pressable>
+          <View style={styles.filterHeaderRow}>
+            <Text style={styles.filterLabel}>
+              Filters ({displayedCoverages.length})
+            </Text>
+            {hasActiveFilters ? (
+              <Pressable
+                style={styles.clearFiltersBtn}
+                onPress={() => {
+                  setSelectedRoles([]);
+                  setSelectedFillStatuses([]);
+                  setSelectedUnitAreas([]);
+                  setSearchQuery("");
+                }}
+              >
+                <Text style={styles.clearFiltersText}>Clear all</Text>
+              </Pressable>
+            ) : null}
           </View>
-
-          <Pressable
-            style={styles.clearFiltersBtn}
-            onPress={() => {
-              setSelectedRole("all");
-              setPage(0);
-            }}
-          >
-            <Feather name="rotate-ccw" size={13} color="#475569" />
-            <Text style={styles.clearFiltersText}>Reset Filters</Text>
-          </Pressable>
+          <View style={styles.searchField}>
+            <Feather name="search" size={15} color="#9ca3af" />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search role, unit, note..."
+              placeholderTextColor="#9ca3af"
+              style={styles.searchInput}
+            />
+            {searchQuery ? (
+              <Pressable onPress={() => setSearchQuery("")}>
+                <Feather name="x" size={15} color="#6b7280" />
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={styles.filterButtonsRow}>
+            <FilterButton
+              label="Roles"
+              count={selectedRoles.length}
+              onPress={() => setFilterPicker("roles")}
+            />
+            <FilterButton
+              label="Status"
+              count={selectedFillStatuses.length}
+              onPress={() => setFilterPicker("statuses")}
+            />
+            {unitAreaFilterOptions.length ? (
+              <FilterButton
+                label="Units"
+                count={selectedUnitAreas.length}
+                onPress={() => setFilterPicker("units")}
+              />
+            ) : null}
+          </View>
         </View>
 
         {loading ? (
@@ -742,6 +922,10 @@ export default function CoveragePlanningPage() {
                       />
                       <Text style={styles.countText}>
                         {Number(c.requiredCount) || 0} needed
+                      </Text>
+                      <Text style={styles.fillStatusText}>
+                        {getFillStatus(c).assigned}/{getFillStatus(c).required}{" "}
+                        {getFillStatusLabel(getFillStatus(c).status)}
                       </Text>
                     </View>
                   </View>
@@ -1077,13 +1261,6 @@ export default function CoveragePlanningPage() {
         onConfirm={confirmDelete}
       />
 
-      <GuideVideoDialog
-        open={guideOpen}
-        onClose={() => setGuideOpen(false)}
-        title="Coverage Planning Guides"
-        videos={COVERAGE_GUIDE_VIDEOS}
-      />
-
       <ConfirmDialog
         open={bulkConfirmOpen}
         title="Delete Selected Coverage?"
@@ -1092,40 +1269,73 @@ export default function CoveragePlanningPage() {
         onConfirm={confirmBulkDelete}
       />
 
-      <PickerModal
-        open={rolePickerOpen}
-        title="Filter by Role"
-        value={selectedRole}
-        onClose={() => setRolePickerOpen(false)}
-        onSelect={(value) => {
-          setSelectedRole(value);
-          setPage(0);
-        }}
-        options={[
-          { value: "all", label: "All Roles" },
-          ...filterRoleOptions.map((role) => ({
-            value: role,
-            label: getRoleDisplayName(role),
-          })),
-        ]}
+      <MultiSelectPickerModal
+        open={filterPicker === "roles"}
+        title="Filter Roles"
+        values={selectedRoles}
+        options={filterRoleOptions.map((role) => ({
+          value: role,
+          label: getRoleDisplayName(role),
+        }))}
+        onChange={setSelectedRoles}
+        onClose={() => setFilterPicker(null)}
+      />
+      <MultiSelectPickerModal
+        open={filterPicker === "statuses"}
+        title="Filter Staffing Status"
+        values={selectedFillStatuses}
+        options={[...FILL_STATUS_OPTIONS]}
+        onChange={setSelectedFillStatuses}
+        onClose={() => setFilterPicker(null)}
+      />
+      <MultiSelectPickerModal
+        open={filterPicker === "units"}
+        title="Filter Unit Areas"
+        values={selectedUnitAreas}
+        options={unitAreaFilterOptions.map((unit) => ({
+          value: unit,
+          label: getUnitAreaDisplayName(unit),
+        }))}
+        onChange={setSelectedUnitAreas}
+        onClose={() => setFilterPicker(null)}
       />
     </SafeAreaView>
   );
 }
 
-function PickerModal({
+function FilterButton({
+  label,
+  count,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={styles.filterButton} onPress={onPress}>
+      <Text style={styles.filterButtonText}>
+        {label}
+        {count ? ` (${count})` : ""}
+      </Text>
+      <Feather name="chevron-down" size={14} color="#475569" />
+    </Pressable>
+  );
+}
+
+function MultiSelectPickerModal({
   open,
   title,
-  value,
+  values,
   onClose,
-  onSelect,
+  onChange,
   options,
 }: {
   open: boolean;
   title: string;
-  value: string;
+  values: string[];
   onClose: () => void;
-  onSelect: (value: string) => void;
+  onChange: (values: string[]) => void;
   options: { value: string; label: string }[];
 }) {
   return (
@@ -1146,7 +1356,7 @@ function PickerModal({
 
           <ScrollView contentContainerStyle={styles.pickerList}>
             {options.map((option) => {
-              const selected = option.value === value;
+              const selected = values.includes(option.value);
               return (
                 <Pressable
                   key={option.value}
@@ -1155,8 +1365,11 @@ function PickerModal({
                     selected ? styles.pickerItemActive : null,
                   ]}
                   onPress={() => {
-                    onSelect(option.value);
-                    onClose();
+                    onChange(
+                      selected
+                        ? values.filter((value) => value !== option.value)
+                        : [...values, option.value],
+                    );
                   }}
                 >
                   <Text
@@ -1174,6 +1387,9 @@ function PickerModal({
               );
             })}
           </ScrollView>
+          <Pressable style={styles.filterDoneBtn} onPress={onClose}>
+            <Text style={styles.filterDoneBtnText}>Done</Text>
+          </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -1331,6 +1547,12 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 8,
   },
+  filterHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
   filterLabel: {
     color: "#6b7280",
     fontSize: 12,
@@ -1341,6 +1563,45 @@ const styles = StyleSheet.create({
   },
   filterFieldLabel: {
     color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  searchField: {
+    minHeight: 40,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    color: "#111827",
+    fontSize: 13,
+    paddingVertical: 7,
+  },
+  filterButtonsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterButton: {
+    minHeight: 36,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  filterButtonText: {
+    color: "#334155",
     fontSize: 12,
     fontWeight: "700",
   },
@@ -1433,6 +1694,19 @@ const styles = StyleSheet.create({
     color: "#1d4ed8",
     fontWeight: "700",
   },
+  filterDoneBtn: {
+    minHeight: 40,
+    borderRadius: 8,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  filterDoneBtnText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   loadingWrap: {
     marginTop: 16,
     alignItems: "center",
@@ -1511,6 +1785,13 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 12,
     fontWeight: "700",
+  },
+  fillStatusText: {
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: "600",
+    textAlign: "right",
+    marginTop: 3,
   },
   rowNote: {
     color: "#4b5563",

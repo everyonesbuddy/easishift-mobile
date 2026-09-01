@@ -10,8 +10,10 @@ import {
   View,
 } from "react-native";
 
+import GuideHelpButton from "@/components/shared/guide-help-button";
 import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
 
 import TimeOffRequestModal from "./timeoff-request-modal";
 import {
@@ -28,8 +30,22 @@ import {
   normalizeTimeOffPayload,
 } from "./timeoff-shared";
 
+const TIMEOFF_LIST_TOUR_STEPS = [
+  {
+    target: "timeoff-add",
+    title: "Request time off",
+    body: "Submit a start and end date/time with an optional reason. An administrator reviews your request.",
+  },
+  {
+    target: "timeoff-list",
+    title: "Track your requests",
+    body: "Review the status of your submitted requests and any administrator response notes.",
+  },
+];
+
 export default function TimeOffRequestListPage() {
   const { user, can } = useAuth();
+  const { startTourIfUnseen } = useGuideTour();
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [openModal, setOpenModal] = useState(false);
@@ -54,6 +70,12 @@ export default function TimeOffRequestListPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  useEffect(() => {
+    if (!loading) {
+      void startTourIfUnseen("timeoff-list", TIMEOFF_LIST_TOUR_STEPS);
+    }
+  }, [loading, startTourIfUnseen]);
 
   const isAdmin = can("timeoff.review");
 
@@ -97,6 +119,10 @@ export default function TimeOffRequestListPage() {
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
+        <GuideHelpButton
+          tourId="timeoff-list"
+          tourSteps={TIMEOFF_LIST_TOUR_STEPS}
+        />
         <View style={styles.headerRow}>
           <Text style={styles.title}>Time Off Requests</Text>
           <Pressable style={styles.newBtn} onPress={() => setOpenModal(true)}>

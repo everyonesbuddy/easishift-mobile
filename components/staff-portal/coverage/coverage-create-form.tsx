@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,6 +13,8 @@ import {
   View,
 } from "react-native";
 
+import GuideHelpButton from "@/components/shared/guide-help-button";
+import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import api from "@/config/api";
 import {
   getRoleDisplayName,
@@ -20,6 +23,25 @@ import {
   getUnitAreaDisplayName,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
+
+const COVERAGE_FORM_TOUR_STEPS = [
+  {
+    target: "coverage-form-date-pattern",
+    title: "Choose your date pattern",
+    body: "Set a start date, planning horizon, and repeat pattern. Every active date receives the requirements below.",
+  },
+  {
+    target: "coverage-form-requirements",
+    title: "Define staffing requirements",
+    body: "Add the role, count, time slot, unit area, and certifications needed for each coverage template.",
+  },
+  {
+    target: "coverage-form-submit",
+    title: "Save or generate a draft",
+    body: "Save requirements when you will schedule manually, or generate a draft schedule from available qualified staff.",
+  },
+];
 
 type ShiftSlot = {
   tag?: unknown;
@@ -39,6 +61,8 @@ type FacilityPreferences = {
   unitAreas?: unknown[];
   certificationTags?: unknown[];
   shiftTypeDefinitions?: ShiftTypeDefinition[];
+  facilityTimezone?: string;
+  facilityTimezoneConfirmed?: boolean;
 };
 
 type Requirement = {
@@ -69,6 +93,16 @@ const weekdayOptions = [
 ] as const;
 
 const horizonOptions = [1, 2, 3, 7, 14, 28, 42, 56] as const;
+
+const REPEAT_MODE_FROM_API: Record<string, string> = {
+  daily: "everyday",
+  weekdays: "weekdays",
+  weekends: "weekends",
+  custom: "custom",
+};
+
+const COVERAGE_COPY_PATTERN =
+  /(?:copy|repeat|reuse|duplicate)\s+(?:coverage|staffing|shifts?)\s+from\s+/i;
 
 const defaultRequirement: Requirement = {
   role: "",
@@ -232,12 +266,26 @@ function buildDates(
   return dates;
 }
 
+function formatNlUnresolvedItem(item: unknown) {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object") return "Unknown issue";
+
+  const value = item as { path?: unknown; message?: unknown };
+  const path = String(value.path || "").trim();
+  const message = String(value.message || "").trim();
+  return path && message
+    ? `${path}: ${message}`
+    : message || path || "Unknown issue";
+}
+
 export default function CoverageCreateForm({
   tenantId,
   onSuccess,
   onClose,
 }: Props) {
-  const { tenant } = useAuth();
+  const { tenant, can } = useAuth();
+  const router = useRouter();
+  const { startTourIfUnseen } = useGuideTour();
   const [facilityPreferences, setFacilityPreferences] =
     useState<FacilityPreferences | null>(null);
   const [plannerStartDate, setPlannerStartDate] = useState(
@@ -263,6 +311,11 @@ export default function CoverageCreateForm({
   const [repeatOpen, setRepeatOpen] = useState(false);
   const [datesOpen, setDatesOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(true);
+  const [nlMessage, setNlMessage] = useState("");
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlError, setNlError] = useState("");
+  const [nlUnresolved, setNlUnresolved] = useState<string[]>([]);
   const [horizonPickerOpen, setHorizonPickerOpen] = useState(false);
   const [startDatePickerOpen, setStartDatePickerOpen] = useState(false);
   const [startDatePickerValue, setStartDatePickerValue] = useState(new Date());
@@ -270,6 +323,10 @@ export default function CoverageCreateForm({
     requirementIndex: number;
     field: "role" | "unitArea" | "shiftDefinition";
   } | null>(null);
+
+  const canTrustFacilityTimezone = Boolean(
+    facilityPreferences?.facilityTimezoneConfirmed,
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -294,6 +351,10 @@ export default function CoverageCreateForm({
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    void startTourIfUnseen("coverage-create-form", COVERAGE_FORM_TOUR_STEPS);
+  }, [startTourIfUnseen]);
 
   const shiftTypeDefinitions = useMemo(() => {
     const defs = Array.isArray(facilityPreferences?.shiftTypeDefinitions)
@@ -357,6 +418,7 @@ export default function CoverageCreateForm({
       ? facilityRoleOptions
       : getRoleOptionsForIndustry(tenant?.industry);
   }, [facilityPreferences, tenant?.industry]);
+  const canUseNlParser = can("coverage.manage");
 
   const unitAreas = useMemo(
     () => normalizeStringArray(facilityPreferences?.unitAreas),
@@ -366,6 +428,27 @@ export default function CoverageCreateForm({
     () => normalizeStringArray(facilityPreferences?.certificationTags),
     [facilityPreferences?.certificationTags],
   );
+  const nlSuggestions = useMemo(() => {
+    const sampleRole = roleOptions[0]?.label || "staff";
+    const sampleUnit = unitAreas[0]
+      ? ` for ${getUnitAreaDisplayName(unitAreas[0])}`
+      : "";
+    const slots = shiftTypeDefinitions.flatMap((definition) =>
+      definition.timeSlots.map((slot) => ({
+        ...slot,
+        shiftType: definition.key,
+      })),
+    );
+    const firstSlot = slots[0];
+
+    return [
+      firstSlot
+        ? `Need 1 ${sampleRole}${sampleUnit}, ${to12HourTime(firstSlot.startLocalTime)} to ${to12HourTime(firstSlot.endLocalTime)}, weekdays for the next 2 weeks`
+        : null,
+      `Need 1 ${sampleRole}`,
+      "Copy coverage from last week to this week",
+    ].filter((suggestion): suggestion is string => Boolean(suggestion));
+  }, [roleOptions, shiftTypeDefinitions, unitAreas]);
 
   const generatedDates = useMemo(
     () =>
@@ -548,6 +631,135 @@ export default function CoverageCreateForm({
     setExcludedDates([]);
   };
 
+  const applyNlDraft = (draft: unknown) => {
+    const data = (draft || {}) as {
+      datePattern?: {
+        startDate?: string;
+        horizonDays?: number;
+        repeatMode?: string;
+        customWeekdays?: number[];
+      };
+      shifts?: Partial<Requirement>[];
+      unresolved?: unknown[];
+    };
+    const datePattern = data.datePattern || {};
+    const mappedMode =
+      REPEAT_MODE_FROM_API[datePattern.repeatMode || ""] || "weekdays";
+
+    if (datePattern.startDate) setPlannerStartDate(datePattern.startDate);
+    if (
+      Number.isFinite(Number(datePattern.horizonDays)) &&
+      Number(datePattern.horizonDays) > 0
+    ) {
+      setHorizonDays(Number(datePattern.horizonDays));
+    }
+    setRepeatMode(mappedMode);
+    setSelectedWeekdays(
+      mappedMode === "custom" && Array.isArray(datePattern.customWeekdays)
+        ? datePattern.customWeekdays
+        : mappedMode === "weekends"
+          ? [0, 6]
+          : mappedMode === "everyday"
+            ? [0, 1, 2, 3, 4, 5, 6]
+            : [1, 2, 3, 4, 5],
+    );
+
+    if (Array.isArray(data.shifts) && data.shifts.length) {
+      setRequirements(
+        data.shifts.map((shift) => ({
+          role: normalizeToken(shift.role),
+          requiredCount: Number(shift.requiredCount) || 1,
+          startTime: String(shift.startTime || defaultRequirement.startTime),
+          endTime: String(shift.endTime || defaultRequirement.endTime),
+          unitArea: normalizeToken(shift.unitArea),
+          shiftType: normalizeToken(shift.shiftType),
+          shiftTag: normalizeToken(shift.shiftTag),
+          requiredCertificationTags: normalizeStringArray(
+            shift.requiredCertificationTags,
+          ),
+        })),
+      );
+    }
+
+    setNlUnresolved(
+      Array.isArray(data.unresolved)
+        ? data.unresolved.map(formatNlUnresolvedItem).filter(Boolean)
+        : [],
+    );
+  };
+
+  const handleNlParse = async () => {
+    const message = nlMessage.trim();
+    if (!message) {
+      setNlError("Describe the coverage you need first.");
+      return;
+    }
+
+    setNlLoading(true);
+    setNlError("");
+    setNlUnresolved([]);
+    try {
+      const basePayload = {
+        formType: "coverage",
+        message,
+        currentFormState: {
+          plannerStartDate,
+          horizonDays,
+          repeatMode,
+          selectedWeekdays,
+          requirements,
+        },
+      };
+      const coverageHistory = COVERAGE_COPY_PATTERN.test(message)
+        ? await api
+            .get("/coverage")
+            .then((response) =>
+              Array.isArray(response.data) ? response.data : [],
+            )
+            .catch(() => [])
+        : [];
+      const response = await api.post(
+        "/nl/parse",
+        coverageHistory.length
+          ? { ...basePayload, coverageHistory }
+          : basePayload,
+      );
+
+      if (!response.data?.draft) {
+        throw new Error("No draft returned.");
+      }
+      applyNlDraft(response.data.draft);
+      setSuccess(
+        "Form filled from your description. Review before submitting.",
+      );
+    } catch (requestError: unknown) {
+      const data =
+        typeof requestError === "object" &&
+        requestError !== null &&
+        "response" in requestError
+          ? (
+              requestError as {
+                response?: {
+                  data?: {
+                    message?: string;
+                    gaps?: unknown[];
+                    errors?: unknown[];
+                  };
+                };
+              }
+            ).response?.data
+          : undefined;
+      setNlError(data?.message || "Couldn't understand that. Try rephrasing.");
+      setNlUnresolved(
+        [...(data?.gaps || []), ...(data?.errors || [])]
+          .map(formatNlUnresolvedItem)
+          .filter(Boolean),
+      );
+    } finally {
+      setNlLoading(false);
+    }
+  };
+
   const handleSubmit = async (modeOverride?: "save-only" | "generate") => {
     setError("");
     setSuccess("");
@@ -592,44 +804,66 @@ export default function CoverageCreateForm({
 
     try {
       const createdCoverages: Array<{ _id?: string }> = [];
-
-      const createResponses = await Promise.all(
-        activeDates.map((dateValue) => {
-          const shifts = requirements.map((req) => {
-            const selectedSlot = getSelectedSlot(req);
-            const startTime = selectedSlot?.startLocalTime || req.startTime;
-            const endTime = selectedSlot?.endLocalTime || req.endTime;
-            const overnight = isOvernight(startTime, endTime);
-            let endDate = dateValue;
-
-            if (overnight) {
-              const nextDay = new Date(`${dateValue}T00:00:00`);
-              nextDay.setDate(nextDay.getDate() + 1);
-              endDate = toDayKey(nextDay);
-            }
-
-            return {
-              role: req.role,
-              requiredCount: Number(req.requiredCount) || 0,
-              unitArea: req.unitArea || null,
-              shiftType: req.shiftType || null,
-              shiftTag: req.shiftTag || null,
-              startTime: toUTCISOString(dateValue, startTime),
-              endTime: toUTCISOString(endDate, endTime),
-              requiredCertificationTags: dedupeStrings(
-                req.requiredCertificationTags,
-              ),
-              note,
-            };
-          });
-
-          return api.post("/coverage", {
-            tenantId,
-            dates: [dateValue],
-            shifts,
-          });
-        }),
+      const allRequirementsUseSlots = requirements.every((requirement) =>
+        Boolean(getSelectedSlot(requirement)),
       );
+      const createResponses =
+        canTrustFacilityTimezone && allRequirementsUseSlots
+          ? [
+              await api.post("/coverage", {
+                tenantId,
+                dates: activeDates,
+                shifts: requirements.map((requirement) => ({
+                  role: requirement.role,
+                  requiredCount: Number(requirement.requiredCount) || 0,
+                  unitArea: requirement.unitArea || null,
+                  shiftType: requirement.shiftType || null,
+                  shiftTag: requirement.shiftTag || null,
+                  requiredCertificationTags: dedupeStrings(
+                    requirement.requiredCertificationTags,
+                  ),
+                  note,
+                })),
+              }),
+            ]
+          : await Promise.all(
+              activeDates.map((dateValue) => {
+                const shifts = requirements.map((req) => {
+                  const selectedSlot = getSelectedSlot(req);
+                  const startTime =
+                    selectedSlot?.startLocalTime || req.startTime;
+                  const endTime = selectedSlot?.endLocalTime || req.endTime;
+                  const overnight = isOvernight(startTime, endTime);
+                  let endDate = dateValue;
+
+                  if (overnight) {
+                    const nextDay = new Date(`${dateValue}T00:00:00`);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    endDate = toDayKey(nextDay);
+                  }
+
+                  return {
+                    role: req.role,
+                    requiredCount: Number(req.requiredCount) || 0,
+                    unitArea: req.unitArea || null,
+                    shiftType: req.shiftType || null,
+                    shiftTag: req.shiftTag || null,
+                    startTime: toUTCISOString(dateValue, startTime),
+                    endTime: toUTCISOString(endDate, endTime),
+                    requiredCertificationTags: dedupeStrings(
+                      req.requiredCertificationTags,
+                    ),
+                    note,
+                  };
+                });
+
+                return api.post("/coverage", {
+                  tenantId,
+                  dates: [dateValue],
+                  shifts,
+                });
+              }),
+            );
 
       createResponses.forEach((response) => {
         const createdForDate = Array.isArray(response.data)
@@ -671,6 +905,14 @@ export default function CoverageCreateForm({
       setExcludedDates([]);
       setNote("");
       onSuccess?.();
+
+      if (draftWasGenerated) {
+        router.push(
+          "/schedule?draftReview=1" as Parameters<typeof router.push>[0],
+        );
+      } else if (!shouldGenerateDraft) {
+        router.push("/schedule" as Parameters<typeof router.push>[0]);
+      }
     } catch (requestError: unknown) {
       const message =
         typeof requestError === "object" &&
@@ -819,6 +1061,10 @@ export default function CoverageCreateForm({
 
   return (
     <ScrollView contentContainerStyle={styles.card}>
+      <GuideHelpButton
+        tourId="coverage-create-form"
+        tourSteps={COVERAGE_FORM_TOUR_STEPS}
+      />
       <View style={styles.headerRow}>
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>Coverage Planner</Text>
@@ -842,6 +1088,77 @@ export default function CoverageCreateForm({
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {success ? <Text style={styles.success}>{success}</Text> : null}
+
+      {canUseNlParser ? (
+        <View style={styles.aiCard}>
+          <AccordionHeader
+            icon="zap"
+            title="Describe with AI"
+            subtitle="Describe the coverage you need and review the prefilled plan."
+            open={aiOpen}
+            onToggle={() => setAiOpen((value) => !value)}
+          />
+          {aiOpen ? (
+            <View style={styles.accordionBody}>
+              <TextInput
+                value={nlMessage}
+                onChangeText={(value) => {
+                  setNlMessage(value);
+                  setNlError("");
+                }}
+                placeholder="e.g. 3 RNs every weekday night next month"
+                placeholderTextColor="#9ca3af"
+                multiline
+                textAlignVertical="top"
+                style={[styles.input, styles.nlInput]}
+              />
+              <View style={styles.rowWrap}>
+                {nlSuggestions.map((suggestion) => (
+                  <Pressable
+                    key={suggestion}
+                    onPress={() => setNlMessage(suggestion)}
+                    style={styles.nlSuggestion}
+                  >
+                    <Text style={styles.nlSuggestionText}>{suggestion}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {nlError ? (
+                <Text style={styles.fieldError}>{nlError}</Text>
+              ) : null}
+              {nlUnresolved.length ? (
+                <View style={styles.nlWarning}>
+                  <Text style={styles.nlWarningTitle}>
+                    Double-check these details:
+                  </Text>
+                  {nlUnresolved.map((item) => (
+                    <Text key={item} style={styles.nlWarningText}>
+                      • {item}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              <Pressable
+                style={[
+                  styles.aiActionBtn,
+                  nlLoading ? styles.disabledButton : null,
+                ]}
+                onPress={() => void handleNlParse()}
+                disabled={nlLoading || !nlMessage.trim()}
+              >
+                {nlLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Feather name="zap" size={15} color="#ffffff" />
+                )}
+                <Text style={styles.aiActionBtnText}>
+                  {nlLoading ? "Filling form..." : "Fill Form with AI"}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={[styles.sectionCard, styles.datePatternCard]}>
         <Text style={styles.sectionTitle}>Quick Planner</Text>
@@ -1371,6 +1688,7 @@ export default function CoverageCreateForm({
           </Pressable>
         </Pressable>
       </Modal>
+      <GuideTourOverlay />
     </ScrollView>
   );
 }
@@ -1510,6 +1828,71 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  aiCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    backgroundColor: "#fffbeb",
+    overflow: "hidden",
+  },
+  nlInput: {
+    minHeight: 76,
+    paddingTop: 9,
+  },
+  nlSuggestion: {
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  nlSuggestionText: {
+    color: "#92400e",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  fieldError: {
+    color: "#b91c1c",
+    fontSize: 12,
+  },
+  nlWarning: {
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    borderRadius: 8,
+    backgroundColor: "#fff7ed",
+    padding: 9,
+    gap: 3,
+  },
+  nlWarningTitle: {
+    color: "#92400e",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  nlWarningText: {
+    color: "#78350f",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  aiActionBtn: {
+    alignSelf: "flex-start",
+    minHeight: 38,
+    borderRadius: 8,
+    backgroundColor: "#d97706",
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  aiActionBtnText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   sectionCard: {
     borderRadius: 10,

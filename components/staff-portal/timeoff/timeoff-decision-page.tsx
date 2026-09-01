@@ -12,7 +12,22 @@ import {
   View,
 } from "react-native";
 
+import GuideHelpButton from "@/components/shared/guide-help-button";
 import api from "@/config/api";
+import { useGuideTour } from "@/context/guide-tour-context";
+
+const TIMEOFF_DECISION_TOUR_STEPS = [
+  {
+    target: "timeoff-decision-filters",
+    title: "Filter by status",
+    body: "Focus on pending requests that need a decision, or review previous approvals and denials.",
+  },
+  {
+    target: "timeoff-decision-list",
+    title: "Review a request",
+    body: "Open a pending request to approve or deny it, with an optional note for the staff member.",
+  },
+];
 
 import {
   TimeOffRequest,
@@ -28,6 +43,7 @@ import {
 } from "./timeoff-shared";
 
 export default function TimeOffDecisionPage() {
+  const { startTourIfUnseen } = useGuideTour();
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<TimeOffRequest | null>(null);
@@ -56,6 +72,12 @@ export default function TimeOffDecisionPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  useEffect(() => {
+    if (!loading) {
+      void startTourIfUnseen("timeoff-decision", TIMEOFF_DECISION_TOUR_STEPS);
+    }
+  }, [loading, startTourIfUnseen]);
 
   const filtered = useMemo(
     () =>
@@ -122,6 +144,10 @@ export default function TimeOffDecisionPage() {
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
+        <GuideHelpButton
+          tourId="timeoff-decision"
+          tourSteps={TIMEOFF_DECISION_TOUR_STEPS}
+        />
         <View style={styles.headerRow}>
           <Text style={styles.title}>Time Off Approvals</Text>
           <Text style={styles.subtitle}>

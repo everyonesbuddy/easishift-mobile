@@ -1,4 +1,13 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+
+import {
+  type BillingInterval,
+  getCapacityLabel,
+  getSupportLabel,
+  SHARED_FEATURE_LIST,
+  useBillingPlans,
+} from "@/components/staff-portal/billing/billing-plans";
 
 type TenantLike = {
   _id?: string;
@@ -8,71 +17,10 @@ type Props = {
   tenant?: TenantLike | null;
 };
 
-type Plan = {
-  key: string;
-  name: string;
-  priceLabel: string;
-  price: number | null;
-  seats: number | string;
-  supportTier: "standard" | "priority";
-  highlight?: boolean;
-  isEnterprise?: boolean;
-};
-
-const YEARLY_PLANS: Plan[] = [
-  {
-    key: "starterYearly",
-    name: "Starter",
-    priceLabel: "$4,000/yr",
-    price: 4000,
-    seats: 50,
-    supportTier: "standard",
-  },
-  {
-    key: "growthYearly",
-    name: "Growth",
-    priceLabel: "$7,000/yr",
-    price: 7000,
-    seats: 100,
-    supportTier: "standard",
-    highlight: true,
-  },
-  {
-    key: "premiumYearly",
-    name: "Premium",
-    priceLabel: "$9,000/yr",
-    price: 9000,
-    seats: 150,
-    supportTier: "priority",
-  },
-  {
-    key: "enterpriseYearly",
-    name: "Enterprise",
-    priceLabel: "Custom pricing",
-    price: null,
-    seats: "150+",
-    supportTier: "priority",
-    isEnterprise: true,
-  },
-];
-
-const SHARED_FEATURE_LIST = [
-  "Automated scheduling",
-  "Shift swaps",
-  "Time-off management",
-  "Internal messaging",
-  "Coverage planning",
-  "Staff directory",
-];
-
 export default function Paywall({ tenant }: Props) {
-  const getCapacityLabel = (plan: Plan) =>
-    plan.isEnterprise
-      ? `${plan.seats} active employees`
-      : `Up to ${plan.seats} active employees`;
-
-  const getSupportLabel = (plan: Plan) =>
-    plan.supportTier === "priority" ? "Priority support" : "Standard support";
+  const [billingInterval, setBillingInterval] =
+    useState<BillingInterval>("year");
+  const plans = useBillingPlans(billingInterval);
 
   if (!tenant) {
     return null;
@@ -91,10 +39,36 @@ export default function Paywall({ tenant }: Props) {
           details in the WiserShifts web portal.
         </Text>
 
+        <View style={styles.intervalControl}>
+          {(["year", "month"] as BillingInterval[]).map((interval) => (
+            <Pressable
+              key={interval}
+              onPress={() => setBillingInterval(interval)}
+              style={[
+                styles.intervalButton,
+                billingInterval === interval
+                  ? styles.intervalButtonActive
+                  : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.intervalButtonText,
+                  billingInterval === interval
+                    ? styles.intervalButtonTextActive
+                    : null,
+                ]}
+              >
+                {interval === "year" ? "Yearly" : "Monthly"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         <View style={styles.planColumn}>
-          {YEARLY_PLANS.map((plan) => (
+          {plans.map((plan) => (
             <View
-              key={plan.key}
+              key={plan.planKey}
               style={[
                 styles.planCard,
                 plan.highlight ? styles.planCardHighlight : null,
@@ -104,7 +78,9 @@ export default function Paywall({ tenant }: Props) {
                 <View>
                   <Text style={styles.planName}>{plan.name}</Text>
                   <Text style={styles.planPeriodLabel}>
-                    Per facility / year
+                    {plan.isEnterprise
+                      ? "Custom package"
+                      : `Per facility / ${billingInterval === "year" ? "year" : "month"}`}
                   </Text>
                 </View>
                 {plan.highlight ? (
@@ -116,7 +92,7 @@ export default function Paywall({ tenant }: Props) {
               <Text style={styles.planSub}>
                 {plan.isEnterprise
                   ? "Talk to sales for a custom package"
-                  : `Equivalent to $${Math.round((plan.price ?? 0) / 12)}/mo billed yearly`}
+                  : plan.cadenceNote}
               </Text>
               <Text style={styles.planSeats}>{getCapacityLabel(plan)}</Text>
 
@@ -125,7 +101,7 @@ export default function Paywall({ tenant }: Props) {
               {[getSupportLabel(plan), ...SHARED_FEATURE_LIST].map(
                 (feature) => (
                   <View
-                    key={`${plan.key}-${feature}`}
+                    key={`${plan.planKey}-${feature}`}
                     style={styles.featureRow}
                   >
                     <Text style={styles.featureBullet}>•</Text>
@@ -141,48 +117,6 @@ export default function Paywall({ tenant }: Props) {
               ) : null}
             </View>
           ))}
-        </View>
-
-        <View style={styles.implementationWrap}>
-          <View style={styles.implementationHeader}>
-            <Text style={styles.implementationBadge}>Recommended</Text>
-            <Text style={styles.implementationTitle}>
-              Guided Implementation
-            </Text>
-            <Text style={styles.implementationSub}>
-              A hands-on launch package for teams that want a smoother rollout
-              with direct support from day one.
-            </Text>
-
-            <View style={styles.startingAtWrap}>
-              <Text style={styles.startingAtLabel}>STARTING AT</Text>
-              <Text style={styles.startingAtPrice}>$2,500</Text>
-              <Text style={styles.startingAtSub}>per location</Text>
-            </View>
-          </View>
-
-          <View style={styles.implementationBody}>
-            <Text style={styles.includesLabel}>INCLUDES</Text>
-            {[
-              "Employee import",
-              "Schedule configuration",
-              "Manager training",
-              "Go-live support",
-            ].map((item) => (
-              <View key={item} style={styles.includesItem}>
-                <Text style={styles.featureBullet}>•</Text>
-                <Text style={styles.includesText}>{item}</Text>
-              </View>
-            ))}
-
-            <View style={styles.implementationAside}>
-              <Text style={styles.implementationAsideText}>
-                Self-serve setup is always available at no additional cost. Many
-                teams choose to get started on their own and add implementation
-                later if needed.
-              </Text>
-            </View>
-          </View>
         </View>
 
         <Text style={styles.footerNote}>
@@ -237,6 +171,33 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 12,
     textAlign: "center",
+  },
+  intervalControl: {
+    alignSelf: "center",
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    padding: 3,
+    backgroundColor: "#eff6ff",
+  },
+  intervalButton: {
+    minWidth: 88,
+    borderRadius: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignItems: "center",
+  },
+  intervalButtonActive: {
+    backgroundColor: "#2563eb",
+  },
+  intervalButtonText: {
+    color: "#1e40af",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  intervalButtonTextActive: {
+    color: "#ffffff",
   },
   planColumn: {
     gap: 10,
@@ -318,99 +279,6 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 11,
     marginTop: 4,
-  },
-  implementationWrap: {
-    marginTop: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
-    overflow: "hidden",
-    backgroundColor: "#ffffff",
-  },
-  implementationHeader: {
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(15,23,42,0.06)",
-    backgroundColor: "#f8fbff",
-    gap: 8,
-  },
-  implementationBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: "#dbeafe",
-    color: "#1d4ed8",
-    fontSize: 11,
-    fontWeight: "800",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    overflow: "hidden",
-  },
-  implementationTitle: {
-    color: "#111827",
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  implementationSub: {
-    color: "#6b7280",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  startingAtWrap: {
-    marginTop: 2,
-  },
-  startingAtLabel: {
-    color: "#6b7280",
-    fontSize: 10,
-    letterSpacing: 1,
-    fontWeight: "700",
-  },
-  startingAtPrice: {
-    color: "#111827",
-    fontSize: 29,
-    fontWeight: "900",
-    marginTop: 2,
-  },
-  startingAtSub: {
-    color: "#6b7280",
-    fontSize: 12,
-  },
-  implementationBody: {
-    padding: 14,
-    gap: 9,
-  },
-  includesLabel: {
-    color: "#6b7280",
-    fontSize: 10,
-    letterSpacing: 1,
-    fontWeight: "700",
-  },
-  includesItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 9,
-    backgroundColor: "rgba(15,23,42,0.03)",
-  },
-  includesText: {
-    color: "#111827",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  implementationAside: {
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: "#fbfdff",
-    gap: 9,
-  },
-  implementationAsideText: {
-    color: "#6b7280",
-    fontSize: 12,
-    lineHeight: 18,
   },
   footerNote: {
     marginTop: 10,

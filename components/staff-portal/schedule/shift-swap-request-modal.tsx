@@ -196,8 +196,13 @@ export default function ShiftSwapRequestModal({
         return false;
       }
 
-      return getFacilityRolesFromUser(staff, facilityPreferences).some((role) =>
-        isRoleCompatible(role, activeSchedule.role),
+      return (
+        getUserRoles(staff).some((role) =>
+          isRoleCompatible(role, activeSchedule.role),
+        ) ||
+        getFacilityRolesFromUser(staff, facilityPreferences).some((role) =>
+          isRoleCompatible(role, activeSchedule.role),
+        )
       );
     });
   }, [activeSchedule, facilityPreferences, staffList]);

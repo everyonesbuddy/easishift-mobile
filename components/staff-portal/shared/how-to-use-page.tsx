@@ -9,47 +9,6 @@ import {
   View,
 } from "react-native";
 
-import GuideVideoDialog from "@/components/shared/guide-video-dialog";
-
-const TRAINING_GUIDE_VIDEOS = [
-  {
-    id: "staff-management",
-    label: "Staff management",
-    title: "Staff Management Guide",
-    description: "Add, edit, filter, import, and review staff profiles.",
-    embedUrl: "https://www.youtube.com/embed/GEzs9F-LysY",
-  },
-  {
-    id: "facility-preferences",
-    label: "Facility preferences",
-    title: "Facility Preferences Guide",
-    description:
-      "Configure roles, areas, shift types, certifications, and rules.",
-    embedUrl: "https://www.youtube.com/embed/fI3JscDuFkk",
-  },
-  {
-    id: "coverage-requirements",
-    label: "Save coverage requirements",
-    title: "Create and Save Requirements",
-    description: "Create coverage requirements without generating a draft.",
-    embedUrl: "https://www.youtube.com/embed/-7mv6I-eqG0",
-  },
-  {
-    id: "coverage-ai-draft",
-    label: "AI-generate coverage draft",
-    title: "Create and AI-Generate a Draft",
-    description: "Create coverage and generate a draft schedule with AI.",
-    embedUrl: "https://www.youtube.com/embed/qJpZoB-dL7A",
-  },
-  {
-    id: "schedule-ai",
-    label: "AI-generated schedules",
-    title: "AI-Generated Schedule Guide",
-    description: "Review AI-generated draft schedules before publishing.",
-    embedUrl: "https://www.youtube.com/embed/r8kQbvdqWpA",
-  },
-];
-
 type GuideSection = {
   title: string;
   purpose: string;
@@ -277,7 +236,6 @@ function getRoleLabel(role: "admin" | "staff") {
 export default function HowToUsePage() {
   const [activeRole, setActiveRole] = useState<"admin" | "staff">("admin");
   const [expandedPanel, setExpandedPanel] = useState<string>("panel-0");
-  const [guideOpen, setGuideOpen] = useState(false);
 
   const guide = useMemo(() => GUIDE_DATA[activeRole], [activeRole]);
 
@@ -309,13 +267,6 @@ export default function HowToUsePage() {
             <Text style={styles.badgeText}>Daily Checklist Included</Text>
           </View>
         </View>
-        <Pressable
-          style={styles.guideButton}
-          onPress={() => setGuideOpen(true)}
-        >
-          <Feather name="play-circle" size={16} color="#1d4ed8" />
-          <Text style={styles.guideButtonText}>Watch video guides</Text>
-        </Pressable>
       </View>
 
       <View style={styles.card}>
@@ -490,13 +441,6 @@ export default function HowToUsePage() {
           retention and reduces overwhelm.
         </Text>
       </View>
-
-      <GuideVideoDialog
-        open={guideOpen}
-        onClose={() => setGuideOpen(false)}
-        title="WiserShifts Video Guides"
-        videos={TRAINING_GUIDE_VIDEOS}
-      />
     </ScrollView>
   );
 }

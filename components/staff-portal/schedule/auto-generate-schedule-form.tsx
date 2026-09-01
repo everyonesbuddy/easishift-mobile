@@ -1,3 +1,5 @@
+import GuideHelpButton from "@/components/shared/guide-help-button";
+import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import { Feather } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -23,6 +25,7 @@ import {
   isRoleCompatible,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
 
 import { CoverageItem, ScheduleItem, StaffUser } from "./schedule-types";
 
@@ -111,6 +114,24 @@ const DRAFT_EDITABLE_STATES = new Set([
 ]);
 
 const ASSIGNMENT_STATES = ["proposed", "unfilled", "locked", "removed"];
+
+const AUTO_GENERATE_TOUR_STEPS = [
+  {
+    target: "auto-legend",
+    title: "Live, open, and proposed work",
+    body: "These counts distinguish published schedules, coverage that still needs staff, and AI assignments ready to publish.",
+  },
+  {
+    target: "auto-calendar",
+    title: "Review the draft visually",
+    body: "Use the calendar to compare live schedules, open coverage, and proposed draft assignments before publishing.",
+  },
+  {
+    target: "auto-workspace",
+    title: "Review and publish",
+    body: "Select individual assignments or publish all eligible proposals. Nothing becomes live until you publish it.",
+  },
+];
 
 const DRAFT_STATE_META: Record<
   string,
@@ -622,6 +643,7 @@ export default function AutoGenerateScheduleForm({
   schedules = [],
 }: Props) {
   const { can } = useAuth();
+  const { startTourIfUnseen } = useGuideTour();
   const canManageSchedules = can("schedule.manage");
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
   const [drafts, setDrafts] = useState<DraftSchedule[]>([]);
@@ -1322,6 +1344,12 @@ export default function AutoGenerateScheduleForm({
   }, [canManageSchedules]);
 
   useEffect(() => {
+    if (canManageSchedules && !loadingDrafts) {
+      void startTourIfUnseen("auto-generate-form", AUTO_GENERATE_TOUR_STEPS);
+    }
+  }, [canManageSchedules, loadingDrafts, startTourIfUnseen]);
+
+  useEffect(() => {
     if (!canManageSchedules) return;
     void loadDraftDetail(activeDraftId);
   }, [activeDraftId, canManageSchedules]);
@@ -1809,6 +1837,10 @@ export default function AutoGenerateScheduleForm({
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.card}>
+        <GuideHelpButton
+          tourId="auto-generate-form"
+          tourSteps={AUTO_GENERATE_TOUR_STEPS}
+        />
         <View style={styles.header}>
           <View style={styles.headerTextWrap}>
             <Text style={styles.title}>Schedule Workspace</Text>
@@ -2636,6 +2668,7 @@ export default function AutoGenerateScheduleForm({
             </Pressable>
           </Pressable>
         </Modal>
+        <GuideTourOverlay />
       </ScrollView>
 
       {toastMessage ? (

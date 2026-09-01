@@ -7,7 +7,9 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 
+import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import { AuthProvider } from "@/context/auth-context";
+import { GuideTourProvider } from "@/context/guide-tour-context";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export default function RootLayout() {
@@ -15,13 +17,18 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(public)" />
-          <Stack.Screen name="(protected)" />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <GuideTourProvider>
+        <ThemeProvider
+          value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+        >
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(public)" />
+            <Stack.Screen name="(protected)" />
+          </Stack>
+          <GuideTourOverlay />
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </GuideTourProvider>
     </AuthProvider>
   );
 }

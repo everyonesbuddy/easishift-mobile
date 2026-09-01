@@ -1,4 +1,4 @@
-# WiserShifts Mobile — Frontend
+# WiserShifts Mobile
 
 WiserShifts Mobile is the Expo React Native frontend for the WiserShifts multi-tenant workforce scheduling platform used by care facilities.
 
@@ -8,19 +8,16 @@ Admins can manage coverage, schedules, staff, time off, messages, and subscripti
 
 ## Table of Contents
 
-1. Tech Stack
-2. Project Structure
-3. Getting Started
-4. Environment and API Configuration
-5. Authentication Flow
-6. Role System
-7. App Entry Point and Routing
-8. Paywall and Billing Guard
-9. Feature Areas
-10. Shared Components
-11. Key Developer Patterns
-12. Deployment Guide
-13. Recent Major Changes
+1. [Tech Stack](#tech-stack)
+2. [Project Structure](#project-structure)
+3. [Getting Started](#getting-started)
+4. [Environment and API Configuration](#environment-and-api-configuration)
+5. [Authentication and Roles](#authentication-and-roles)
+6. [Routing and Billing Guard](#routing-and-billing-guard)
+7. [Feature Areas](#feature-areas)
+8. [Guided Tours](#guided-tours)
+9. [Key Developer Patterns](#key-developer-patterns)
+10. [Deployment](#deployment)
 
 ---
 
@@ -91,9 +88,11 @@ components/
 
 config/
 	api.ts
+	timezone.ts
 
 context/
 	auth-context.tsx
+	guide-tour-context.tsx
 
 constants/
 	industry-roles.ts
@@ -130,45 +129,38 @@ Deployment and store release instructions are documented in `docs/mobile-app-dep
 
 ## Environment and API Configuration
 
-All network requests go through a shared Axios client in config/api.ts.
+All network requests go through a shared Axios client in [config/api.ts](config/api.ts).
 
 Typical behavior:
 
-- Central base URL and credentials setup
-- Shared auth header behavior
-- One import path used consistently across modules
+- Production requests use the deployed API.
+- Development requests use `localhost:5000` on web, `10.0.2.2:5000` on Android emulators, or the Expo host for iOS/physical devices.
+- `EXPO_PUBLIC_API_BASE` overrides the selected API base URL.
+- The client uses the `/api/v1` prefix and restores a bearer token after session hydration.
 
-If backend URL behavior changes, update only config/api.ts.
+If backend URL behavior changes, update only [config/api.ts](config/api.ts).
 
 ---
 
-## Authentication Flow
+## Authentication and Roles
 
-Auth state is managed in context/auth-context.tsx.
+Auth state is managed in [context/auth-context.tsx](context/auth-context.tsx).
 
 Core responsibilities:
 
-- Session hydration from local storage on app start
+- Session hydration from `AsyncStorage` on app start
 - User/role/tenant state management
 - Login/logout helpers
 - Tenant refresh after billing events
+- Facility preference hydration alongside tenant context
 
 Protected routes are rendered inside app/(protected), while unauthenticated entry is in app/(public).
 
----
-
-## Role System
-
-Two role categories drive UI and behavior:
-
-- Admin roles: admin, superadmin
-- Staff role: staff
-
-Role-aware navigation and feature behavior is implemented in protected layouts and screen-level logic.
+Permissions are derived from normalized system and facility roles using [constants/industry-roles.ts](constants/industry-roles.ts). Feature screens should use `can(permission)` and facility-role helpers instead of relying on a single role string.
 
 ---
 
-## App Entry Point and Routing
+## Routing and Billing Guard
 
 This app uses Expo Router file-based routing.
 
@@ -200,129 +192,44 @@ Protected routes:
 
 ---
 
-## Paywall and Billing Guard
+The protected layout gates admins when a subscription is inactive or the tenant requires a plan upgrade. The `inPaywallFlow` check prevents redirect loops while the user is already at `/paywall` or `/billing`.
 
-Admin users are gated when subscription is inactive (or tenant limits require upgrade). In that case, navigation is redirected into paywall/billing flow.
-
-Flow summary:
+Mobile billing is deliberately view-only:
 
 1. Inactive admin enters protected area.
 2. Redirect to /paywall.
-3. Checkout starts via backend Stripe session endpoint.
-4. Return to /billing/success or /billing/cancel.
-5. Tenant state refresh controls unlock behavior.
+3. Paywall and subscription screens show published yearly/monthly plans from `/stripe/plans` with a yearly fallback for offline plan reference.
+4. Subscription setup, upgrades, and cancellations occur in the WiserShifts web portal.
 
 ---
 
 ## Feature Areas
 
-### Dashboard
+### Facility Preferences
 
-Admin and staff dashboards present role-appropriate operational views.
+Facility administrators configure scheduling patterns, role families, unit areas, shift types, time slots, certification tags, workload signals, fairness settings, notifications, and time tracking. Facility timezones are stored as IANA identifiers with confirmation state; the device-zone shortcut uses [config/timezone.ts](config/timezone.ts).
 
-Recent changes:
+### Coverage and Schedule
 
-- Dashboard quick-action block removed for a lighter experience.
+Coverage planning and staff scheduling provide list/calendar workflows, taxonomy-aware requirements, modal forms, draft generation/review, shift creation/editing, and swap requests. Shared `MonthCalendar` supplies mobile calendar interactions.
 
-### Coverage Planning
+### Staff Management and Preferences
 
-Coverage planning supports:
+Staff records include capability restrictions (`allowedAreas`, `allowedShiftTags`, `allowedShiftTypes`, `certificationTags`) and scheduler signals. Administrators can configure preferred and avoided days, overtime openness, weekly hour targets, shift and consecutive-day limits, and alternate-week rotation anchors. The staff-only Preferences screen exposes only personal preferred days, avoided days, overtime openness, and notification choices.
 
-- List and calendar views
-- Add coverage, edit headcount, delete coverage
-- Taxonomy-aware fields:
-  - unitArea
-  - shiftType
-  - shiftTag
-  - requiredCertificationTags
+### Time Off, Swaps, and Messages
 
-Coverage create flow updates:
+All staff can create personal time-off requests, swap requests, and tenant-scoped messages. Administrators can review time-off decisions and access broader operational workflows according to permissions.
 
-- Slot-definition-first time selection
-- Searchable slot selection
-- Save-only and save-plus-generate-draft actions
+### Billing
 
-Calendar UX update:
-
-- Clicking a day opens a popup day-details panel (instead of persistent bottom list).
-
-### Schedule Builder
-
-Schedule module supports:
-
-- List view
-- Calendar view
-- Roster view
-- Shift create/edit
-- Swap requests
-- AI draft workspace
-
-Auto-generate draft workspace includes:
-
-- Open coverage intake
-- Draft create/review/edit/publish flow
-- Assignment-level edit/state controls
-- Fill with AI for unfilled draft slots
-- Publish selected or publish all
-- Live schedule overlay support (schedules prop wired from schedule list)
-
-UX updates:
-
-- Day details shown in popup modals
-- Needs-coverage summary simplified
-- Improved legend presentation
-- Toast feedback moved to temporary bottom toast
-
-### Staff Management
-
-Staff management includes:
-
-- Create/edit staff
-- Bulk staff import/add flows
-- Capability tags:
-  - allowedAreas
-  - allowedShiftTypes
-  - allowedShiftTags
-  - certificationTags
-
-### Time Off
-
-Screens:
-
-- timeoff-requests (all users for personal requests)
-- timeoff-decisions (admin review flow)
-
-### Shift Swaps
-
-Includes swap request creation and inbox/sent handling.
-
-### Messages
-
-Internal tenant-scoped messaging with list and composer workflows.
-
-### Preferences
-
-Staff-facing preferences flow with backend-supported payload only.
-
-### Billing and Subscription
-
-Screens:
-
-- paywall
-- billing
-- billing/success
-- billing/cancel
+`/paywall` and `/billing` display the current subscription, seat limit, billing contact, and plan reference. The native app does not initiate checkout or modify subscriptions.
 
 ---
 
-## Shared Components
+## Guided Tours
 
-Key shared building blocks include:
-
-- ConfirmDialog
-- MonthCalendar
-- Protected top bar / bottom navigation components
-- Modal-based forms for create/edit flows
+[context/guide-tour-context.tsx](context/guide-tour-context.tsx) provides the foundation for in-app guided tours. Tour completion is saved per user in `AsyncStorage` using `wisershifts_guide_seen_<tourId>_<userScopeId>`. It exposes tour state and `startTourIfUnseen`, but no video-guide system is included.
 
 ---
 
@@ -346,67 +253,12 @@ Key shared building blocks include:
 
 - Create/edit flows are primarily modal-driven.
 
-5. Calendar day drill-down
+5. Native persistence
 
-- Day click opens popup details for schedule and coverage modules.
-
----
-
-## Recent Major Changes
-
-1. Schedules and coverage now support expanded taxonomy fields.
-2. Auto-generate schedule workspace migrated to richer draft lifecycle UX.
-3. Manual scheduling safeguards added for draft-linked coverage conflicts.
-4. Coverage create flow split into save-only and save-and-generate-draft paths.
-5. Coverage slot selection hardened to configured slot definitions.
-6. Dashboard quick actions removed for simplification.
-7. Schedule and coverage calendar UX updated to popup day details.
-8. Auto-generate workspace now consumes live schedules directly via props.
-9. In-app feedback moved to temporary bottom toast UX.
+- Use `AsyncStorage` for session and per-user client persistence. Do not use browser `localStorage` APIs in native components.
 
 ---
 
-If you also want a second README section specifically for backend contract endpoints (per feature), I can append an API matrix next.
+## Deployment
 
-**Loop prevention**: The `inPaywallFlow` check in the protected layout prevents the redirect logic from looping when the admin is already on `/paywall` or `/billing`.
-
-## Important Files
-
-- `app/(public)` - public route entry points
-- `app/(protected)` - authenticated route entry points
-- `app/(protected)/_layout.tsx` - protected shell and billing gate logic
-- `components/shared/protected-bottom-nav.tsx` - role-based navigation
-- `context/auth-context.tsx` - login/session/role state
-- `components/staff-portal/dashboard` - dashboard quick actions and modals
-- `components/staff-portal/staff` - staff management
-- `components/staff-portal/coverage` - coverage planning (includes real calendar view)
-- `components/staff-portal/schedule` - manual, AI, and swap scheduling flows (includes real calendar view)
-- `components/staff-portal/timeoff` - request and approval flows
-- `components/staff-portal/preferences` - scheduling preferences
-- `components/staff-portal/messages` - inbox and composer flows
-- `components/staff-portal/billing` - active subscription management (`ManageSubscriptionPage`)
-- `components/staff-portal/shared/month-calendar.tsx` - reusable month-grid calendar component
-- `app/(protected)/paywall.tsx` - standalone initial paywall route
-- `app/(protected)/billing/index.tsx` - ongoing billing management route
-
-## Development Notes
-
-- Routing is file-based through Expo Router.
-- The app relies on the backend to provide tenant, auth, staffing, schedule, messaging, time-off, preference, and Stripe session APIs.
-- Role-specific behavior is primarily controlled by auth context and protected bottom navigation.
-
-## Current Product Story in One Pass
-
-1. A facility admin signs up the tenant.
-2. The admin logs in.
-3. The app restores auth, fetches tenant context, and routes to the protected dashboard.
-4. Because the tenant is inactive or effectively single-seat, the protected layout redirects the admin to `/paywall`.
-5. The admin selects a plan (Starter, Growth, or Premium) with yearly or monthly billing and completes Stripe checkout.
-6. On checkout success, tenant state refreshes and the admin lands on the normal dashboard.
-7. From that point the admin can access all features. `/billing` is available under `More → Manage Subscription` for ongoing plan changes.
-8. The admin adds staff.
-9. The admin creates coverage needs.
-10. The admin schedules people manually or with AI.
-11. Staff log in and see their own schedule-centric experience.
-12. Staff manage preferences, request time off, swap shifts, and send messages.
-13. Admins review time-off decisions and manage subscription changes from `/billing` when needed.
+Deployment and store release instructions are documented in [docs/mobile-app-deployment-guide.md](docs/mobile-app-deployment-guide.md).

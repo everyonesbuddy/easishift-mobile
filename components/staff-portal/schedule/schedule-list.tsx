@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -9,11 +10,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
-import GuideVideoDialog from "@/components/shared/guide-video-dialog";
+import GuideHelpButton from "@/components/shared/guide-help-button";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
 import {
@@ -29,6 +31,7 @@ import {
   getUserRoles,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
 
 import AutoGenerateScheduleForm from "./auto-generate-schedule-form";
 import ScheduleForm from "./schedule-form";
@@ -42,16 +45,40 @@ import {
 } from "./schedule-types";
 import ShiftSwapRequestModal from "./shift-swap-request-modal";
 
-const STATUS_FILTERS = ["", "scheduled", "completed", "call_out"] as const;
+const STATUS_FILTERS = [
+  "",
+  "scheduled",
+  "in_progress",
+  "completed",
+  "left_early",
+  "no_show",
+  "call_out",
+] as const;
 
-const SCHEDULE_GUIDE_VIDEOS = [
+type ScheduleFilters = {
+  roles: string[];
+  statuses: string[];
+  unitAreas: string[];
+  shiftTimes: string[];
+  searchQuery: string;
+  staffVisibility: "mine" | "all";
+};
+
+const SCHEDULE_TOUR_STEPS = [
   {
-    id: "ai-generated-schedule",
-    label: "AI-generated schedule",
-    title: "AI-Generated Schedule Guide",
-    description:
-      "Learn how to review AI-generated draft schedules before publishing.",
-    embedUrl: "https://www.youtube.com/embed/r8kQbvdqWpA",
+    target: "schedule-view-toggle",
+    title: "List, calendar, or roster",
+    body: "Switch between a shift list, monthly calendar, and roster view.",
+  },
+  {
+    target: "schedule-drafts",
+    title: "Review AI-generated drafts",
+    body: "Open the draft workspace to review, edit, and publish proposed schedules.",
+  },
+  {
+    target: "schedule-filters",
+    title: "Filter and search",
+    body: "Narrow schedules by role, status, unit area, or shift time. Your filter choices are saved for your next visit.",
   },
 ];
 
@@ -197,9 +224,47 @@ function parseLocalDateKey(dateKey: string) {
   return new Date(year, month - 1, day);
 }
 
+function extractSchedules(payload: unknown): ScheduleItem[] {
+  if (Array.isArray(payload)) return payload as ScheduleItem[];
+  if (!payload || typeof payload !== "object") return [];
+
+  const value = payload as {
+    schedules?: unknown;
+    data?: unknown;
+    results?: unknown;
+    items?: unknown;
+  };
+
+  for (const candidate of [
+    value.schedules,
+    value.data,
+    value.results,
+    value.items,
+  ]) {
+    if (candidate !== undefined) {
+      const schedules = extractSchedules(candidate);
+      if (schedules.length > 0 || Array.isArray(candidate)) {
+        return schedules;
+      }
+    }
+  }
+
+  return [];
+}
+
+function getStatusLabel(status: string) {
+  return status
+    ? status
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "All Statuses";
+}
+
 export default function ScheduleListPage() {
   const router = useRouter();
+  const { draftReview } = useLocalSearchParams<{ draftReview?: string }>();
   const { user, can, tenant, facilityPreferences } = useAuth();
+  const { startTourIfUnseen } = useGuideTour();
   const isAdmin = can("schedule.manage");
   const hasFacilityRole =
     getFacilityRolesFromUser(user, facilityPreferences).length > 0;
@@ -220,17 +285,18 @@ export default function ScheduleListPage() {
   const [view, setView] = useState<"list" | "calendar" | "roster">("list");
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<string>(toDayKey(new Date()));
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedUnitAreas, setSelectedUnitAreas] = useState<string[]>([]);
+  const [selectedShiftTimes, setSelectedShiftTimes] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [staffVisibility, setStaffVisibility] = useState<"mine" | "all">(
     "mine",
   );
-  const [shiftTimeFilter, setShiftTimeFilter] = useState("");
   const [filterPickerOpen, setFilterPickerOpen] = useState<
-    "visibility" | "role" | "status" | "shift" | null
+    "visibility" | "roles" | "statuses" | "units" | "shifts" | null
   >(null);
-  const [guideOpen, setGuideOpen] = useState(false);
-
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
@@ -247,6 +313,10 @@ export default function ScheduleListPage() {
   const [rowsPerPage] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const userScopeId = String(
+    user?._id || user?.id || user?.tenantId || "default",
+  );
+  const filtersStorageKey = `wisershifts_schedule_filters_${userScopeId}`;
 
   const timeTrackingEnabled = Boolean(
     (facilityPreferences as { timeTracking?: { enabled?: boolean } } | null)
@@ -263,7 +333,7 @@ export default function ScheduleListPage() {
     setLoading(true);
     try {
       const res = await api.get("/schedules");
-      const raw = Array.isArray(res.data) ? (res.data as ScheduleItem[]) : [];
+      const raw = extractSchedules(res.data);
 
       const sorted = raw.sort((a, b) => {
         const aTime = new Date(a.startTime || a.createdAt || "").getTime();
@@ -298,6 +368,84 @@ export default function ScheduleListPage() {
     fetchSchedules();
     fetchStaff();
   }, [fetchSchedules, fetchStaff]);
+
+  useEffect(() => {
+    if (isAdmin || can("schedule.view")) {
+      setStaffVisibility("all");
+    }
+  }, [can, isAdmin]);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(filtersStorageKey)
+      .then((stored) => {
+        if (!mounted || !stored) return;
+        const parsed = JSON.parse(stored) as Partial<ScheduleFilters>;
+        setSelectedRoles(Array.isArray(parsed.roles) ? parsed.roles : []);
+        setSelectedStatuses(
+          Array.isArray(parsed.statuses) ? parsed.statuses : [],
+        );
+        setSelectedUnitAreas(
+          Array.isArray(parsed.unitAreas) ? parsed.unitAreas : [],
+        );
+        setSelectedShiftTimes(
+          Array.isArray(parsed.shiftTimes) ? parsed.shiftTimes : [],
+        );
+        setSearchQuery(
+          typeof parsed.searchQuery === "string" ? parsed.searchQuery : "",
+        );
+        if (
+          parsed.staffVisibility === "mine" ||
+          parsed.staffVisibility === "all"
+        ) {
+          setStaffVisibility(parsed.staffVisibility);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) setFiltersHydrated(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [filtersStorageKey]);
+
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    void AsyncStorage.setItem(
+      filtersStorageKey,
+      JSON.stringify({
+        roles: selectedRoles,
+        statuses: selectedStatuses,
+        unitAreas: selectedUnitAreas,
+        shiftTimes: selectedShiftTimes,
+        searchQuery,
+        staffVisibility,
+      }),
+    );
+  }, [
+    filtersHydrated,
+    filtersStorageKey,
+    searchQuery,
+    selectedRoles,
+    selectedShiftTimes,
+    selectedStatuses,
+    selectedUnitAreas,
+    staffVisibility,
+  ]);
+
+  useEffect(() => {
+    if (!loading) {
+      void startTourIfUnseen("schedule-list", SCHEDULE_TOUR_STEPS);
+    }
+  }, [loading, startTourIfUnseen]);
+
+  useEffect(() => {
+    if (draftReview === "1" && isAdmin) {
+      setOpenAutoModal(true);
+      router.replace("/schedule" as Parameters<typeof router.replace>[0]);
+    }
+  }, [draftReview, isAdmin, router]);
 
   const openEdit = (schedule: ScheduleItem) => {
     setEditingSchedule(schedule);
@@ -472,17 +620,19 @@ export default function ScheduleListPage() {
 
     return options.sort((a, b) => a.key.localeCompare(b.key));
   }, [schedules]);
-
-  const selectedRoleLabel =
-    roleFilter === "all" ? "All Roles" : getRoleDisplayName(roleFilter);
-  const selectedStatusLabel = statusFilter
-    ? statusFilter.replace("_", " ").toUpperCase()
-    : "All Statuses";
+  const unitAreaFilterOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...((facilityPreferences as { unitAreas?: string[] } | null)
+            ?.unitAreas || []),
+          ...schedules.map((schedule) => schedule.unitArea).filter(Boolean),
+        ]),
+      ).sort() as string[],
+    [facilityPreferences, schedules],
+  );
   const selectedVisibilityLabel =
     staffVisibility === "mine" ? "My Schedule" : "Everyone";
-  const selectedShiftTimeLabel =
-    uniqueShiftTimes.find((option) => option.key === shiftTimeFilter)?.label ||
-    "All Times";
 
   const filteredSchedules = useMemo(
     () =>
@@ -494,40 +644,73 @@ export default function ScheduleListPage() {
           return false;
         }
 
-        if (roleFilter !== "all" && schedule.role !== roleFilter) {
+        if (
+          selectedRoles.length > 0 &&
+          !selectedRoles.includes(schedule.role || "")
+        ) {
           return false;
         }
-
-        if (statusFilter && schedule.status !== statusFilter) {
+        if (
+          selectedStatuses.length > 0 &&
+          !selectedStatuses.includes(schedule.status || "")
+        ) {
           return false;
         }
-
-        if (shiftTimeFilter) {
-          const [startKey, endKey] = shiftTimeFilter.split("|");
-          if (
-            getTimeKey(schedule.startTime) !== startKey ||
-            getTimeKey(schedule.endTime) !== endKey
-          ) {
-            return false;
-          }
+        if (
+          selectedUnitAreas.length > 0 &&
+          !selectedUnitAreas.includes(schedule.unitArea || "")
+        ) {
+          return false;
+        }
+        if (
+          selectedShiftTimes.length > 0 &&
+          !selectedShiftTimes.includes(
+            `${getTimeKey(schedule.startTime)}|${getTimeKey(schedule.endTime)}`,
+          )
+        ) {
+          return false;
+        }
+        const query = searchQuery.trim().toLowerCase();
+        if (
+          query &&
+          ![
+            extractStaffName(schedule),
+            getRoleDisplayName(schedule.role),
+            getUnitAreaDisplayName(schedule.unitArea),
+            schedule.notes || "",
+          ].some((value) =>
+            String(value || "")
+              .toLowerCase()
+              .includes(query),
+          )
+        ) {
+          return false;
         }
 
         return true;
       }),
     [
       schedules,
-      isAdmin,
-      roleFilter,
-      shiftTimeFilter,
+      searchQuery,
+      selectedRoles,
+      selectedShiftTimes,
+      selectedStatuses,
+      selectedUnitAreas,
       staffVisibility,
-      statusFilter,
       user?._id,
     ],
   );
 
   useEffect(() => {
     setPage(0);
-  }, [roleFilter, statusFilter, staffVisibility, shiftTimeFilter]);
+  }, [
+    searchQuery,
+    selectedRoles,
+    selectedShiftTimes,
+    selectedStatuses,
+    selectedUnitAreas,
+    staffVisibility,
+  ]);
 
   const pageCount = Math.max(
     1,
@@ -634,6 +817,10 @@ export default function ScheduleListPage() {
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
+        <GuideHelpButton
+          tourId="schedule-list"
+          tourSteps={SCHEDULE_TOUR_STEPS}
+        />
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrap}>
             <Text style={styles.title}>Staff Scheduling</Text>
@@ -641,15 +828,6 @@ export default function ScheduleListPage() {
           </View>
 
           <View style={styles.headerActions}>
-            {isAdmin ? (
-              <Pressable
-                style={[styles.actionBtn, styles.guideBtn]}
-                onPress={() => setGuideOpen(true)}
-              >
-                <Feather name="play-circle" size={14} color="#1d4ed8" />
-                <Text style={styles.guideText}>Watch Guide</Text>
-              </Pressable>
-            ) : null}
             <View style={styles.toggleWrap}>
               <Pressable
                 style={[
@@ -786,80 +964,107 @@ export default function ScheduleListPage() {
         </View>
 
         <View style={styles.filterCard}>
-          <Text style={styles.filterLabel}>Filter</Text>
+          <View style={styles.filterHeaderRow}>
+            <Text style={styles.filterLabel}>
+              Filters ({filteredSchedules.length})
+            </Text>
+            <Pressable
+              style={styles.clearFiltersBtn}
+              onPress={() => {
+                setSelectedRoles([]);
+                setSelectedStatuses([]);
+                setSelectedUnitAreas([]);
+                setSelectedShiftTimes([]);
+                setSearchQuery("");
+                setStaffVisibility("mine");
+              }}
+            >
+              <Text style={styles.clearFiltersText}>Clear all</Text>
+            </Pressable>
+          </View>
 
-          <View style={styles.filterFieldsWrap}>
-            {hasFacilityRole ? (
-              <View style={styles.filterField}>
-                <Text style={styles.filterFieldLabel}>Schedule</Text>
-                <Pressable
-                  style={styles.filterSelect}
-                  onPress={() => setFilterPickerOpen("visibility")}
-                >
-                  <Text style={styles.filterSelectText} numberOfLines={1}>
-                    {selectedVisibilityLabel}
-                  </Text>
-                  <Feather name="chevron-down" size={16} color="#6b7280" />
-                </Pressable>
-              </View>
-            ) : null}
-
-            {isAdmin ? (
-              <View style={styles.filterField}>
-                <Text style={styles.filterFieldLabel}>Role</Text>
-                <Pressable
-                  style={styles.filterSelect}
-                  onPress={() => setFilterPickerOpen("role")}
-                >
-                  <Text style={styles.filterSelectText} numberOfLines={1}>
-                    {selectedRoleLabel}
-                  </Text>
-                  <Feather name="chevron-down" size={16} color="#6b7280" />
-                </Pressable>
-              </View>
-            ) : null}
-
-            <View style={styles.filterField}>
-              <Text style={styles.filterFieldLabel}>Status</Text>
-              <Pressable
-                style={styles.filterSelect}
-                onPress={() => setFilterPickerOpen("status")}
-              >
-                <Text style={styles.filterSelectText} numberOfLines={1}>
-                  {selectedStatusLabel}
-                </Text>
-                <Feather name="chevron-down" size={16} color="#6b7280" />
+          <View style={styles.searchField}>
+            <Feather name="search" size={15} color="#9ca3af" />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search staff, role, note..."
+              placeholderTextColor="#9ca3af"
+              style={styles.searchInput}
+            />
+            {searchQuery ? (
+              <Pressable onPress={() => setSearchQuery("")}>
+                <Feather name="x" size={15} color="#6b7280" />
               </Pressable>
-            </View>
-
-            {uniqueShiftTimes.length > 0 ? (
-              <View style={styles.filterField}>
-                <Text style={styles.filterFieldLabel}>Shift Time</Text>
-                <Pressable
-                  style={styles.filterSelect}
-                  onPress={() => setFilterPickerOpen("shift")}
-                >
-                  <Text style={styles.filterSelectText} numberOfLines={1}>
-                    {selectedShiftTimeLabel}
-                  </Text>
-                  <Feather name="chevron-down" size={16} color="#6b7280" />
-                </Pressable>
-              </View>
             ) : null}
           </View>
 
-          <Pressable
-            style={styles.clearFiltersBtn}
-            onPress={() => {
-              setRoleFilter("all");
-              setStatusFilter("");
-              setShiftTimeFilter("");
-              setStaffVisibility("mine");
-            }}
-          >
-            <Feather name="rotate-ccw" size={13} color="#475569" />
-            <Text style={styles.clearFiltersText}>Reset Filters</Text>
-          </Pressable>
+          {hasFacilityRole ? (
+            <View style={styles.scopeSection}>
+              <Text style={styles.scopeLabel}>Show schedules</Text>
+              <View style={styles.scopeToggle}>
+                {(
+                  [
+                    { value: "mine", label: "My Schedule" },
+                    { value: "all", label: "Everyone" },
+                  ] as const
+                ).map((option) => {
+                  const selected = staffVisibility === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      style={[
+                        styles.scopeButton,
+                        selected ? styles.scopeButtonActive : null,
+                      ]}
+                      onPress={() => setStaffVisibility(option.value)}
+                    >
+                      <Text
+                        style={[
+                          styles.scopeButtonText,
+                          selected ? styles.scopeButtonTextActive : null,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.filterFieldsWrap}>
+            {isAdmin ? (
+              <FilterButton
+                label="Roles"
+                count={selectedRoles.length}
+                onPress={() => setFilterPickerOpen("roles")}
+              />
+            ) : null}
+
+            <FilterButton
+              label="Status"
+              count={selectedStatuses.length}
+              onPress={() => setFilterPickerOpen("statuses")}
+            />
+
+            {unitAreaFilterOptions.length ? (
+              <FilterButton
+                label="Units"
+                count={selectedUnitAreas.length}
+                onPress={() => setFilterPickerOpen("units")}
+              />
+            ) : null}
+
+            {uniqueShiftTimes.length > 0 ? (
+              <FilterButton
+                label="Shift time"
+                count={selectedShiftTimes.length}
+                onPress={() => setFilterPickerOpen("shifts")}
+              />
+            ) : null}
+          </View>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -887,8 +1092,25 @@ export default function ScheduleListPage() {
             {paginated.length === 0 ? (
               <View style={styles.centerCard}>
                 <Text style={styles.emptyText}>
-                  No schedules found for this filter.
+                  {schedules.length
+                    ? "No schedules match the current filters."
+                    : "No schedules were returned for this account."}
                 </Text>
+                {schedules.length ? (
+                  <Pressable
+                    style={styles.emptyResetBtn}
+                    onPress={() => {
+                      setSelectedRoles([]);
+                      setSelectedStatuses([]);
+                      setSelectedUnitAreas([]);
+                      setSelectedShiftTimes([]);
+                      setSearchQuery("");
+                      setStaffVisibility(isAdmin ? "all" : "mine");
+                    }}
+                  >
+                    <Text style={styles.emptyResetBtnText}>Reset filters</Text>
+                  </Pressable>
+                ) : null}
               </View>
             ) : (
               <View style={styles.listWrap}>
@@ -1277,13 +1499,6 @@ export default function ScheduleListPage() {
         </Pressable>
       </Modal>
 
-      <GuideVideoDialog
-        open={guideOpen}
-        onClose={() => setGuideOpen(false)}
-        title="Schedule Guide"
-        videos={SCHEDULE_GUIDE_VIDEOS}
-      />
-
       <Modal
         visible={detailsOpen}
         animationType="slide"
@@ -1483,73 +1698,60 @@ export default function ScheduleListPage() {
       />
 
       <PickerModal
-        open={filterPickerOpen !== null}
-        title={
-          filterPickerOpen === "visibility"
-            ? "Schedule Scope"
-            : filterPickerOpen === "role"
-              ? "Filter by Role"
-              : filterPickerOpen === "status"
-                ? "Filter by Status"
-                : "Filter by Shift Time"
-        }
-        value={
-          filterPickerOpen === "visibility"
-            ? staffVisibility
-            : filterPickerOpen === "role"
-              ? roleFilter
-              : filterPickerOpen === "status"
-                ? statusFilter
-                : shiftTimeFilter
-        }
+        open={filterPickerOpen === "visibility"}
+        title="Schedule Scope"
+        value={staffVisibility}
         onClose={() => setFilterPickerOpen(null)}
         onSelect={(value) => {
-          if (filterPickerOpen === "visibility") {
-            setStaffVisibility(value as "mine" | "all");
-            return;
-          }
-
-          if (filterPickerOpen === "role") {
-            setRoleFilter(value);
-            return;
-          }
-
-          if (filterPickerOpen === "status") {
-            setStatusFilter(value);
-            return;
-          }
-
-          setShiftTimeFilter(value);
+          setStaffVisibility(value as "mine" | "all");
         }}
-        options={
-          filterPickerOpen === "visibility"
-            ? [
-                { value: "mine", label: "My Schedule" },
-                { value: "all", label: "Everyone" },
-              ]
-            : filterPickerOpen === "role"
-              ? roleFilterOptions.map((roleValue) => ({
-                  value: roleValue,
-                  label:
-                    roleValue === "all"
-                      ? "All Roles"
-                      : getRoleDisplayName(roleValue),
-                }))
-              : filterPickerOpen === "status"
-                ? STATUS_FILTERS.map((statusValue) => ({
-                    value: statusValue,
-                    label: statusValue
-                      ? statusValue.replace("_", " ").toUpperCase()
-                      : "All Statuses",
-                  }))
-                : [
-                    { value: "", label: "All Times" },
-                    ...uniqueShiftTimes.map((option) => ({
-                      value: option.key,
-                      label: option.label,
-                    })),
-                  ]
-        }
+        options={[
+          { value: "mine", label: "My Schedule" },
+          { value: "all", label: "Everyone" },
+        ]}
+      />
+      <MultiSelectPickerModal
+        open={filterPickerOpen === "roles"}
+        title="Filter Roles"
+        values={selectedRoles}
+        onChange={setSelectedRoles}
+        onClose={() => setFilterPickerOpen(null)}
+        options={roleFilterOptions
+          .filter((role) => role !== "all")
+          .map((role) => ({ value: role, label: getRoleDisplayName(role) }))}
+      />
+      <MultiSelectPickerModal
+        open={filterPickerOpen === "statuses"}
+        title="Filter Status"
+        values={selectedStatuses}
+        onChange={setSelectedStatuses}
+        onClose={() => setFilterPickerOpen(null)}
+        options={STATUS_FILTERS.filter(Boolean).map((status) => ({
+          value: status,
+          label: getStatusLabel(status),
+        }))}
+      />
+      <MultiSelectPickerModal
+        open={filterPickerOpen === "units"}
+        title="Filter Unit Areas"
+        values={selectedUnitAreas}
+        onChange={setSelectedUnitAreas}
+        onClose={() => setFilterPickerOpen(null)}
+        options={unitAreaFilterOptions.map((unit) => ({
+          value: unit,
+          label: getUnitAreaDisplayName(unit),
+        }))}
+      />
+      <MultiSelectPickerModal
+        open={filterPickerOpen === "shifts"}
+        title="Filter Shift Times"
+        values={selectedShiftTimes}
+        onChange={setSelectedShiftTimes}
+        onClose={() => setFilterPickerOpen(null)}
+        options={uniqueShiftTimes.map((time) => ({
+          value: time.key,
+          label: time.label,
+        }))}
       />
     </SafeAreaView>
   );
@@ -1616,6 +1818,91 @@ function PickerModal({
               );
             })}
           </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function FilterButton({
+  label,
+  count,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={styles.filterButton} onPress={onPress}>
+      <Text style={styles.filterButtonText}>
+        {label}
+        {count ? ` (${count})` : ""}
+      </Text>
+      <Feather name="chevron-down" size={14} color="#475569" />
+    </Pressable>
+  );
+}
+
+function MultiSelectPickerModal({
+  open,
+  title,
+  values,
+  onClose,
+  onChange,
+  options,
+}: {
+  open: boolean;
+  title: string;
+  values: string[];
+  onClose: () => void;
+  onChange: (values: string[]) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.pickerBackdrop} onPress={onClose}>
+        <Pressable style={styles.pickerCard} onPress={() => {}}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>{title}</Text>
+            <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Feather name="x" size={18} color="#6b7280" />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.pickerList}>
+            {options.map((option) => {
+              const selected = values.includes(option.value);
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.pickerItem,
+                    selected ? styles.pickerItemActive : null,
+                  ]}
+                  onPress={() =>
+                    onChange(
+                      selected
+                        ? values.filter((value) => value !== option.value)
+                        : [...values, option.value],
+                    )
+                  }
+                >
+                  <Text style={styles.pickerItemText}>{option.label}</Text>
+                  {selected ? (
+                    <Feather name="check" size={16} color="#2563eb" />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <Pressable style={styles.filterDoneBtn} onPress={onClose}>
+            <Text style={styles.filterDoneBtnText}>Done</Text>
+          </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -1740,8 +2027,93 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  filterHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  searchField: {
+    minHeight: 40,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    color: "#111827",
+    fontSize: 13,
+    paddingVertical: 7,
+  },
   filterFieldsWrap: {
-    gap: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  scopeSection: {
+    gap: 6,
+  },
+  scopeLabel: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  scopeToggle: {
+    alignSelf: "stretch",
+    minHeight: 42,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+    flexDirection: "row",
+    gap: 3,
+  },
+  scopeButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  scopeButtonActive: {
+    backgroundColor: "#ffffff",
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  scopeButtonText: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  scopeButtonTextActive: {
+    color: "#1d4ed8",
+  },
+  filterButton: {
+    minHeight: 36,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  filterButtonText: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "700",
   },
   filterField: {
     gap: 6,
@@ -1865,6 +2237,19 @@ const styles = StyleSheet.create({
     color: "#1d4ed8",
     fontWeight: "700",
   },
+  filterDoneBtn: {
+    minHeight: 40,
+    borderRadius: 8,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  filterDoneBtnText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   error: {
     color: "#b91c1c",
     backgroundColor: "#fee2e2",
@@ -1883,10 +2268,25 @@ const styles = StyleSheet.create({
     paddingVertical: 28,
     alignItems: "center",
     justifyContent: "center",
+    gap: 10,
   },
   emptyText: {
     color: "#6b7280",
     fontSize: 13,
+  },
+  emptyResetBtn: {
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#93c5fd",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 12,
+    justifyContent: "center",
+  },
+  emptyResetBtnText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
   },
   emptyState: {
     flex: 1,

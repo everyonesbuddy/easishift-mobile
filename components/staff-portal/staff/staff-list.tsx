@@ -15,7 +15,6 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
-import GuideVideoDialog from "@/components/shared/guide-video-dialog";
 import api from "@/config/api";
 import {
   getCertificationTagDisplayName,
@@ -39,16 +38,6 @@ import {
 
 const ROWS_PER_PAGE = 10;
 
-const STAFF_MANAGEMENT_GUIDE_VIDEOS = [
-  {
-    id: "staff-management",
-    label: "Staff management",
-    title: "Staff Management Guide",
-    description: "Learn how to add, edit, filter, and import staff profiles.",
-    embedUrl: "https://www.youtube.com/embed/GEzs9F-LysY",
-  },
-];
-
 export default function StaffListPage() {
   const { can, tenant } = useAuth();
 
@@ -65,7 +54,6 @@ export default function StaffListPage() {
   const [error, setError] = useState("");
   const [resetSendingId, setResetSendingId] = useState<string | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
   const [facilityPreferences, setFacilityPreferences] = useState<{
     roleFamilies?: unknown[];
   } | null>(null);
@@ -289,13 +277,6 @@ export default function StaffListPage() {
 
           {can("staff.manage") ? (
             <View style={styles.headerActions}>
-              <Pressable
-                style={styles.guideBtn}
-                onPress={() => setGuideOpen(true)}
-              >
-                <Feather name="play-circle" size={14} color="#1d4ed8" />
-                <Text style={styles.guideBtnText}>Watch guide</Text>
-              </Pressable>
               <Pressable
                 style={styles.bulkBtn}
                 onPress={() => setBulkOpen(true)}
@@ -534,13 +515,6 @@ export default function StaffListPage() {
         staffList={staff}
         onClose={() => setBulkOpen(false)}
         onSuccess={fetchStaff}
-      />
-
-      <GuideVideoDialog
-        open={guideOpen}
-        onClose={() => setGuideOpen(false)}
-        title="Staff Management Guide"
-        videos={STAFF_MANAGEMENT_GUIDE_VIDEOS}
       />
 
       <PickerModal

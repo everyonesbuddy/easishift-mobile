@@ -12,6 +12,8 @@ import {
   View,
 } from "react-native";
 
+import GuideHelpButton from "@/components/shared/guide-help-button";
+import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import api from "@/config/api";
 import {
   getFacilityRolesFromUser,
@@ -23,6 +25,7 @@ import {
   isRoleCompatible,
 } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
 
 import { CoverageItem, ScheduleItem, StaffUser } from "./schedule-types";
 
@@ -61,6 +64,43 @@ type FormData = {
 type CoverageOption = CoverageItem & {
   spotsRemaining: number;
 };
+
+const SCHEDULE_STATUS_OPTIONS: FormData["status"][] = [
+  "scheduled",
+  "in_progress",
+  "completed",
+  "left_early",
+  "no_show",
+  "call_out",
+];
+
+function getScheduleFormTourSteps(isEditing: boolean, isPickup: boolean) {
+  const steps = [];
+
+  if (!isPickup) {
+    steps.push({
+      target: "schedule-form-staff",
+      title: "Choose a staff member",
+      body: "Only staff compatible with the selected coverage role and restrictions are available.",
+    });
+  }
+
+  if (!isEditing) {
+    steps.push({
+      target: "schedule-form-shift",
+      title: isPickup ? "Pick an open shift" : "Select a shift",
+      body: "Choose an open coverage requirement to populate its time, role, area, and qualification requirements.",
+    });
+  }
+
+  steps.push({
+    target: "schedule-form-submit",
+    title: isPickup ? "Claim the shift" : "Save the schedule",
+    body: "The backend checks scheduling conflicts and availability before it saves the change.",
+  });
+
+  return steps;
+}
 
 function toLocalInputValue(dateString?: string) {
   if (!dateString) return "";
@@ -321,6 +361,16 @@ export default function ScheduleForm({
   const { user, can, facilityPreferences } = useAuth();
   const isPickup = mode === "pickup";
   const canManageSchedules = can("schedule.manage");
+  const { startTourIfUnseen } = useGuideTour();
+  const tourId = isPickup
+    ? "schedule-form-pickup"
+    : isEditing
+      ? "schedule-form-edit"
+      : "schedule-form-create";
+  const tourSteps = useMemo(
+    () => getScheduleFormTourSteps(isEditing, isPickup),
+    [isEditing, isPickup],
+  );
   const canPickUpShift =
     can("schedule.pick_up") &&
     getFacilityRolesFromUser(user, facilityPreferences).length > 0;
@@ -355,6 +405,10 @@ export default function ScheduleForm({
   const [staffSelectOpen, setStaffSelectOpen] = useState(false);
   const [shiftSelectOpen, setShiftSelectOpen] = useState(false);
 
+  useEffect(() => {
+    void startTourIfUnseen(tourId, tourSteps);
+  }, [startTourIfUnseen, tourId, tourSteps]);
+
   const activeCoverageContext = !isEditing
     ? initialCoverage ||
       coverageOptions.find(
@@ -373,7 +427,10 @@ export default function ScheduleForm({
         member,
         facilityPreferences,
       ).some((role) => isRoleCompatible(role, activeCoverageContext?.role));
-      if (!compatibleFacilityRole) {
+      const compatibleSystemRole = getUserRoles(member).some((role) =>
+        isRoleCompatible(role, activeCoverageContext?.role),
+      );
+      if (!compatibleFacilityRole && !compatibleSystemRole) {
         return false;
       }
 
@@ -755,7 +812,7 @@ export default function ScheduleForm({
   }, [coverageOptions, formData.coverageId]);
 
   const statusButtons: FormData["status"][] = canManageSchedules
-    ? ["scheduled", "completed", "call_out"]
+    ? SCHEDULE_STATUS_OPTIONS
     : ["scheduled", "call_out"];
 
   const submit = async () => {
@@ -880,6 +937,7 @@ export default function ScheduleForm({
 
   return (
     <ScrollView contentContainerStyle={styles.card}>
+      <GuideHelpButton tourId={tourId} tourSteps={tourSteps} />
       <View style={styles.header}>
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>
@@ -1164,6 +1222,7 @@ export default function ScheduleForm({
           disabled: coverage.spotsRemaining <= 0,
         }))}
       />
+      <GuideTourOverlay />
     </ScrollView>
   );
 }

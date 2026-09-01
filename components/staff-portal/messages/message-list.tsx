@@ -12,12 +12,32 @@ import {
   View,
 } from "react-native";
 
+import GuideHelpButton from "@/components/shared/guide-help-button";
 import { getInitials } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
 import { getRoleColor } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
+import { useGuideTour } from "@/context/guide-tour-context";
 
 import MessageComposer from "./message-composer";
+
+const MESSAGES_TOUR_STEPS = [
+  {
+    target: "messages-new",
+    title: "Send a new message",
+    body: "Choose an individual, a role, or all staff in your facility to start a conversation.",
+  },
+  {
+    target: "messages-tabs",
+    title: "Inbox and sent",
+    body: "Switch between messages you received and messages you sent.",
+  },
+  {
+    target: "messages-search",
+    title: "Search conversations",
+    body: "Search by sender or recipient, subject, or message content.",
+  },
+];
 
 type MessagePerson = {
   _id?: string;
@@ -64,6 +84,7 @@ function formatReplySubject(subject?: string) {
 
 export default function MessageListPage() {
   const { user } = useAuth();
+  const { startTourIfUnseen } = useGuideTour();
   const [inboxMessages, setInboxMessages] = useState<MessageItem[]>([]);
   const [sentMessages, setSentMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +139,12 @@ export default function MessageListPage() {
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
+
+  useEffect(() => {
+    if (!loading) {
+      void startTourIfUnseen("messages", MESSAGES_TOUR_STEPS);
+    }
+  }, [loading, startTourIfUnseen]);
 
   const handleNewMessage = () => {
     setComposerDefaults({ recipientId: "", subject: "", lockRecipient: false });
@@ -210,6 +237,7 @@ export default function MessageListPage() {
   return (
     <SafeAreaView style={styles.page}>
       <ScrollView contentContainerStyle={styles.content}>
+        <GuideHelpButton tourId="messages" tourSteps={MESSAGES_TOUR_STEPS} />
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.title}>Messages</Text>

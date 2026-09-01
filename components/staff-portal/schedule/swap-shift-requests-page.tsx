@@ -88,24 +88,7 @@ export default function SwapShiftRequestsPage() {
       setLoading(true);
       setError("");
 
-      if (isAdmin && canUseShiftSwap) {
-        const [adminRes, inboxRes, outboxRes] = await Promise.all([
-          api.get("/schedules/swap-requests"),
-          api.get("/schedules/swap-requests?view=inbox"),
-          api.get("/schedules/swap-requests?view=outbox"),
-        ]);
-
-        setInboxRequests(
-          Array.isArray(adminRes.data)
-            ? (adminRes.data as SwapRequestItem[])
-            : [],
-        );
-        setSentRequests(
-          Array.isArray(outboxRes.data)
-            ? (outboxRes.data as SwapRequestItem[])
-            : [],
-        );
-      } else if (isAdmin) {
+      if (isAdmin) {
         const res = await api.get("/schedules/swap-requests");
         setInboxRequests(
           Array.isArray(res.data) ? (res.data as SwapRequestItem[]) : [],
@@ -241,7 +224,7 @@ export default function SwapShiftRequestsPage() {
               <Text style={styles.refreshText}>Refresh</Text>
             </Pressable>
 
-            {canUseShiftSwap ? (
+            {canUseShiftSwap && !isAdmin ? (
               <Pressable
                 style={styles.newBtn}
                 onPress={() => setRequestModalOpen(true)}
@@ -271,7 +254,7 @@ export default function SwapShiftRequestsPage() {
             </Text>
           </Pressable>
 
-          {canUseShiftSwap ? (
+          {canUseShiftSwap && !isAdmin ? (
             <Pressable
               style={[
                 styles.tabBtn,

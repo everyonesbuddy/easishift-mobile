@@ -15,9 +15,12 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
-import GuideVideoDialog from "@/components/shared/guide-video-dialog";
 import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
+import {
+  getDeviceTimeZone,
+  getLocalTimeZoneAbbreviation,
+} from "../../../config/timezone";
 
 type ShiftSlot = {
   tag: string;
@@ -45,6 +48,8 @@ type TimeTrackingPrefs = {
 
 type FacilityPreferences = {
   schedulingPattern?: string;
+  facilityTimezone?: string;
+  facilityTimezoneConfirmed?: boolean;
   roleFamilies?: string[];
   unitAreas?: string[];
   shiftTypes?: string[];
@@ -73,17 +78,6 @@ const SCHEDULING_PATTERNS = [
   { value: "custom", label: "Custom (coverage-driven)" },
 ] as const;
 
-const FACILITY_PREFERENCES_GUIDE_VIDEOS = [
-  {
-    id: "facility-preferences",
-    label: "Facility preferences",
-    title: "Facility Preferences Guide",
-    description:
-      "Configure roles, areas, shift types, certifications, and scheduling rules.",
-    embedUrl: "https://www.youtube.com/embed/fI3JscDuFkk",
-  },
-];
-
 const TAXONOMY_FIELDS = [
   "roleFamilies",
   "unitAreas",
@@ -103,6 +97,8 @@ const TIME_TRACKING_DEFAULTS: Required<TimeTrackingPrefs> = {
 
 const DEFAULT_PREFS: FacilityPreferences = {
   schedulingPattern: "balance",
+  facilityTimezone: "UTC",
+  facilityTimezoneConfirmed: false,
   roleFamilies: [],
   unitAreas: [],
   shiftTypes: [],
@@ -281,6 +277,9 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
   );
 
   next.timeTracking = normalizeTimeTrackingPrefs(safePrefs.timeTracking);
+  next.facilityTimezone =
+    String(safePrefs.facilityTimezone || "UTC").trim() || "UTC";
+  next.facilityTimezoneConfirmed = Boolean(safePrefs.facilityTimezoneConfirmed);
 
   return next;
 }
@@ -300,7 +299,8 @@ export default function FacilityPreferencesPage() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [patternPickerOpen, setPatternPickerOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
+  const deviceTimezone = getDeviceTimeZone();
+  const deviceTimezoneAbbreviation = getLocalTimeZoneAbbreviation();
 
   const [arrayInputs, setArrayInputs] = useState({
     roleFamilies: "",
@@ -555,7 +555,10 @@ export default function FacilityPreferencesPage() {
     setSuccess("");
 
     try {
-      const payload = normalizeTaxonomyPrefs(safePrefs);
+      const payload = {
+        ...normalizeTaxonomyPrefs(safePrefs),
+        facilityTimezoneConfirmed: Boolean(safePrefs.facilityTimezone),
+      };
       const res = await api.post("/facility-preferences", payload);
       setPrefs(normalizeTaxonomyPrefs(res.data));
       setSuccess("Facility preferences saved");
@@ -628,13 +631,6 @@ export default function FacilityPreferencesPage() {
             </Text>
           </View>
           <View style={styles.headerActions}>
-            <Pressable
-              style={styles.guideBtn}
-              onPress={() => setGuideOpen(true)}
-            >
-              <Feather name="play-circle" size={14} color="#1d4ed8" />
-              <Text style={styles.guideBtnText}>Watch guide</Text>
-            </Pressable>
             {canManageFacilityPreferences ? (
               <Pressable
                 style={styles.resetBtn}
@@ -674,6 +670,65 @@ export default function FacilityPreferencesPage() {
               </Text>
               <Feather name="chevron-down" size={16} color="#6b7280" />
             </Pressable>
+          </View>
+        </Section>
+
+        <Section title="Facility Timezone">
+          <View style={styles.fieldWrap}>
+            <Text style={styles.fieldLabel}>Timezone</Text>
+            <TextInput
+              value={safePrefs.facilityTimezone || "UTC"}
+              onChangeText={(value) =>
+                handleChange("facilityTimezone", value || "UTC")
+              }
+              editable={canManageFacilityPreferences}
+              autoCapitalize="none"
+              placeholder="e.g. America/New_York"
+              style={styles.input}
+            />
+            <Text style={styles.hintText}>
+              Use an IANA timezone, such as America/New_York or Europe/London.
+            </Text>
+            {canManageFacilityPreferences ? (
+              <Pressable
+                style={styles.useDeviceTimezoneBtn}
+                onPress={() => handleChange("facilityTimezone", deviceTimezone)}
+              >
+                <Feather name="map-pin" size={14} color="#1d4ed8" />
+                <Text style={styles.useDeviceTimezoneText}>
+                  Use device timezone ({deviceTimezone}
+                  {deviceTimezoneAbbreviation
+                    ? `, ${deviceTimezoneAbbreviation}`
+                    : ""}
+                  )
+                </Text>
+              </Pressable>
+            ) : null}
+            <View
+              style={[
+                styles.timezoneStatus,
+                safePrefs.facilityTimezoneConfirmed
+                  ? styles.timezoneStatusConfirmed
+                  : styles.timezoneStatusPending,
+              ]}
+            >
+              <Feather
+                name={
+                  safePrefs.facilityTimezoneConfirmed
+                    ? "check-circle"
+                    : "alert-circle"
+                }
+                size={15}
+                color={
+                  safePrefs.facilityTimezoneConfirmed ? "#166534" : "#92400e"
+                }
+              />
+              <Text style={styles.timezoneStatusText}>
+                {safePrefs.facilityTimezoneConfirmed
+                  ? `Confirmed: shift-slot times use ${safePrefs.facilityTimezone}.`
+                  : "Not confirmed. Save this timezone to use it for facility shift-slot times."}
+              </Text>
+            </View>
           </View>
         </Section>
 
@@ -1004,7 +1059,7 @@ export default function FacilityPreferencesPage() {
             }
           />
           <Text style={styles.hintText}>
-            Timezone is fixed to UTC and converted to local time in the app.
+            Shift reminders use the facility timezone after it is confirmed.
           </Text>
         </Section>
 
@@ -1054,13 +1109,6 @@ export default function FacilityPreferencesPage() {
         message="This will remove all custom facility preferences and restore defaults."
         onCancel={() => setResetDialogOpen(false)}
         onConfirm={handleReset}
-      />
-
-      <GuideVideoDialog
-        open={guideOpen}
-        onClose={() => setGuideOpen(false)}
-        title="Facility Preferences Guide"
-        videos={FACILITY_PREFERENCES_GUIDE_VIDEOS}
       />
 
       <ConfirmDialog
@@ -1615,6 +1663,40 @@ const styles = StyleSheet.create({
   hintText: {
     color: "#6b7280",
     fontSize: 12,
+  },
+  useDeviceTimezoneBtn: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 5,
+  },
+  useDeviceTimezoneText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  timezoneStatus: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+  },
+  timezoneStatusConfirmed: {
+    borderColor: "#86efac",
+    backgroundColor: "#f0fdf4",
+  },
+  timezoneStatusPending: {
+    borderColor: "#fcd34d",
+    backgroundColor: "#fffbeb",
+  },
+  timezoneStatusText: {
+    flex: 1,
+    color: "#334155",
+    fontSize: 12,
+    lineHeight: 17,
   },
   dangerCard: {
     borderRadius: 10,

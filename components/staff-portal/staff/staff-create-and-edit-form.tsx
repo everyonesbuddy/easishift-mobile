@@ -38,6 +38,13 @@ type FormState = {
   allowedShiftTypes: string[];
   certificationTags: string[];
   preferredDaysOfWeek: number[];
+  avoidDaysOfWeek: number[];
+  targetHoursPerWeek: string;
+  maxShiftsPerWeek: string;
+  maxConsecutiveDays: string;
+  wantsOvertime: boolean;
+  worksEveryOtherWeek: boolean;
+  rotationAnchorDate: string;
   emailNotificationsEnabled: boolean;
   smsNotificationsEnabled: boolean;
   role: string;
@@ -88,6 +95,17 @@ function normalizeNumberArray(values: unknown) {
         .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6),
     ),
   ).sort((a, b) => a - b);
+}
+
+function normalizeOptionalNumber(value: string, min: number, max: number) {
+  const numberValue = Number(value);
+
+  return value.trim() &&
+    Number.isFinite(numberValue) &&
+    numberValue >= min &&
+    numberValue <= max
+    ? numberValue
+    : null;
 }
 
 function normalizeToken(value: unknown) {
@@ -187,6 +205,13 @@ export default function StaffCreateAndEditForm({
     allowedShiftTypes: [],
     certificationTags: [],
     preferredDaysOfWeek: [],
+    avoidDaysOfWeek: [],
+    targetHoursPerWeek: "",
+    maxShiftsPerWeek: "",
+    maxConsecutiveDays: "",
+    wantsOvertime: false,
+    worksEveryOtherWeek: false,
+    rotationAnchorDate: "",
     emailNotificationsEnabled: true,
     smsNotificationsEnabled: true,
     role: "",
@@ -437,6 +462,34 @@ export default function StaffCreateAndEditForm({
         preferredDaysOfWeek: normalizeNumberArray(
           (data as { preferredDaysOfWeek?: unknown[] }).preferredDaysOfWeek,
         ),
+        avoidDaysOfWeek: normalizeNumberArray(
+          (data as { avoidDaysOfWeek?: unknown[] }).avoidDaysOfWeek,
+        ),
+        targetHoursPerWeek:
+          (data as { targetHoursPerWeek?: unknown }).targetHoursPerWeek == null
+            ? ""
+            : String(
+                (data as { targetHoursPerWeek?: unknown }).targetHoursPerWeek,
+              ),
+        maxShiftsPerWeek:
+          (data as { maxShiftsPerWeek?: unknown }).maxShiftsPerWeek == null
+            ? ""
+            : String((data as { maxShiftsPerWeek?: unknown }).maxShiftsPerWeek),
+        maxConsecutiveDays:
+          (data as { maxConsecutiveDays?: unknown }).maxConsecutiveDays == null
+            ? ""
+            : String(
+                (data as { maxConsecutiveDays?: unknown }).maxConsecutiveDays,
+              ),
+        wantsOvertime: !!(data as { wantsOvertime?: unknown }).wantsOvertime,
+        worksEveryOtherWeek: !!(data as { worksEveryOtherWeek?: unknown })
+          .worksEveryOtherWeek,
+        rotationAnchorDate: (data as { rotationAnchorDate?: unknown })
+          .rotationAnchorDate
+          ? String(
+              (data as { rotationAnchorDate?: unknown }).rotationAnchorDate,
+            ).slice(0, 10)
+          : "",
         emailNotificationsEnabled:
           (data as { emailNotificationsEnabled?: boolean })
             .emailNotificationsEnabled ?? true,
@@ -453,6 +506,13 @@ export default function StaffCreateAndEditForm({
     staffId: string | undefined,
     preferencesPayload: {
       preferredDaysOfWeek: number[];
+      avoidDaysOfWeek: number[];
+      targetHoursPerWeek: number | null;
+      maxShiftsPerWeek: number | null;
+      maxConsecutiveDays: number | null;
+      wantsOvertime: boolean;
+      worksEveryOtherWeek: boolean;
+      rotationAnchorDate: string | null;
       emailNotificationsEnabled: boolean;
       smsNotificationsEnabled: boolean;
     },
@@ -491,6 +551,13 @@ export default function StaffCreateAndEditForm({
       allowedShiftTypes: normalizeStringArray(staff.allowedShiftTypes),
       certificationTags: normalizeStringArray(staff.certificationTags),
       preferredDaysOfWeek: [],
+      avoidDaysOfWeek: [],
+      targetHoursPerWeek: "",
+      maxShiftsPerWeek: "",
+      maxConsecutiveDays: "",
+      wantsOvertime: false,
+      worksEveryOtherWeek: false,
+      rotationAnchorDate: "",
       emailNotificationsEnabled: true,
       smsNotificationsEnabled: true,
       role: staff.roles?.[0] || staff.role || "staff",
@@ -590,6 +657,24 @@ export default function StaffCreateAndEditForm({
 
       const preferencesPayload = {
         preferredDaysOfWeek: normalizedPreferredDays,
+        avoidDaysOfWeek: normalizeNumberArray(form.avoidDaysOfWeek),
+        targetHoursPerWeek: normalizeOptionalNumber(
+          form.targetHoursPerWeek,
+          0,
+          168,
+        ),
+        maxShiftsPerWeek: normalizeOptionalNumber(form.maxShiftsPerWeek, 1, 7),
+        maxConsecutiveDays: normalizeOptionalNumber(
+          form.maxConsecutiveDays,
+          1,
+          31,
+        ),
+        wantsOvertime: !!form.wantsOvertime,
+        worksEveryOtherWeek: !!form.worksEveryOtherWeek,
+        rotationAnchorDate:
+          form.worksEveryOtherWeek && form.rotationAnchorDate
+            ? form.rotationAnchorDate
+            : null,
         emailNotificationsEnabled: !!form.emailNotificationsEnabled,
         smsNotificationsEnabled: !!form.smsNotificationsEnabled,
       };
@@ -999,6 +1084,137 @@ export default function StaffCreateAndEditForm({
               );
             })}
           </View>
+
+          <Text style={styles.label}>Days to Avoid</Text>
+          <Text style={styles.helperText}>
+            Days this staff member would rather not work, if avoidable.
+          </Text>
+          <View style={styles.dayGrid}>
+            {DAYS.map((day, index) => {
+              const selected = form.avoidDaysOfWeek.includes(index);
+              return (
+                <Pressable
+                  key={day}
+                  onPress={() => {
+                    const nextValues = selected
+                      ? form.avoidDaysOfWeek.filter((item) => item !== index)
+                      : [...form.avoidDaysOfWeek, index];
+
+                    setForm((prev) => ({
+                      ...prev,
+                      avoidDaysOfWeek: normalizeNumberArray(nextValues),
+                    }));
+                  }}
+                  style={[
+                    styles.dayChip,
+                    selected ? styles.dayChipAvoided : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayChipText,
+                      selected ? styles.dayChipTextAvoided : null,
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.switchRow}>
+            <View style={styles.switchTextWrap}>
+              <Text style={styles.switchLabel}>Open to Overtime</Text>
+              <Text style={styles.switchDescription}>
+                Do not count projected overtime against this staff member when
+                ranking assignments.
+              </Text>
+            </View>
+            <Switch
+              value={!!form.wantsOvertime}
+              onValueChange={(value) =>
+                setForm((prev) => ({ ...prev, wantsOvertime: value }))
+              }
+            />
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.fieldWrap, styles.rowField]}>
+              <Text style={styles.label}>Target Hours / Week</Text>
+              <TextInput
+                value={form.targetHoursPerWeek}
+                onChangeText={(value) =>
+                  setForm((prev) => ({ ...prev, targetHoursPerWeek: value }))
+                }
+                style={styles.input}
+                placeholder="Optional"
+                keyboardType="number-pad"
+              />
+            </View>
+            <View style={[styles.fieldWrap, styles.rowField]}>
+              <Text style={styles.label}>Max Shifts / Week</Text>
+              <TextInput
+                value={form.maxShiftsPerWeek}
+                onChangeText={(value) =>
+                  setForm((prev) => ({ ...prev, maxShiftsPerWeek: value }))
+                }
+                style={styles.input}
+                placeholder="Optional"
+                keyboardType="number-pad"
+              />
+            </View>
+          </View>
+
+          <View style={styles.fieldWrap}>
+            <Text style={styles.label}>Max Consecutive Days</Text>
+            <TextInput
+              value={form.maxConsecutiveDays}
+              onChangeText={(value) =>
+                setForm((prev) => ({ ...prev, maxConsecutiveDays: value }))
+              }
+              style={styles.input}
+              placeholder="Optional"
+              keyboardType="number-pad"
+            />
+          </View>
+
+          <View style={styles.switchRow}>
+            <View style={styles.switchTextWrap}>
+              <Text style={styles.switchLabel}>Works Every Other Week</Text>
+              <Text style={styles.switchDescription}>
+                Enable a biweekly rotation for auto-scheduling.
+              </Text>
+            </View>
+            <Switch
+              value={!!form.worksEveryOtherWeek}
+              onValueChange={(value) =>
+                setForm((prev) => ({
+                  ...prev,
+                  worksEveryOtherWeek: value,
+                  rotationAnchorDate: value ? prev.rotationAnchorDate : "",
+                }))
+              }
+            />
+          </View>
+
+          {form.worksEveryOtherWeek ? (
+            <View style={styles.fieldWrap}>
+              <Text style={styles.label}>First Working Week Anchor Date</Text>
+              <Text style={styles.helperText}>
+                Use YYYY-MM-DD to define the first week in the rotation.
+              </Text>
+              <TextInput
+                value={form.rotationAnchorDate}
+                onChangeText={(value) =>
+                  setForm((prev) => ({ ...prev, rotationAnchorDate: value }))
+                }
+                style={styles.input}
+                placeholder="YYYY-MM-DD"
+                autoCapitalize="none"
+              />
+            </View>
+          ) : null}
 
           <Text style={styles.label}>Notification Preferences</Text>
           <Text style={styles.helperText}>
@@ -1729,6 +1945,13 @@ const styles = StyleSheet.create({
   dayChipTextSelected: {
     color: "#166534",
   },
+  dayChipAvoided: {
+    borderColor: "#dc2626",
+    backgroundColor: "#fef2f2",
+  },
+  dayChipTextAvoided: {
+    color: "#b91c1c",
+  },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1744,6 +1967,16 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 13,
     fontWeight: "600",
+  },
+  switchTextWrap: {
+    flex: 1,
+    gap: 2,
+    paddingRight: 8,
+  },
+  switchDescription: {
+    color: "#6b7280",
+    fontSize: 11,
+    lineHeight: 15,
   },
   actionBtn: {
     flex: 1,

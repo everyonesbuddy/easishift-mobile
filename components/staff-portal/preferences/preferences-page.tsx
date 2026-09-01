@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,10 +14,13 @@ import {
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
+import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 type PreferencesData = {
   preferredDaysOfWeek?: number[];
+  avoidDaysOfWeek?: number[];
+  wantsOvertime?: boolean;
   emailNotificationsEnabled?: boolean;
   smsNotificationsEnabled?: boolean;
 };
@@ -26,6 +29,8 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const defaultPrefs: PreferencesData = {
   preferredDaysOfWeek: [],
+  avoidDaysOfWeek: [],
+  wantsOvertime: false,
   emailNotificationsEnabled: true,
   smsNotificationsEnabled: true,
 };
@@ -43,6 +48,13 @@ function sanitizePrefs(value: unknown): PreferencesData {
           .map((item) => Number(item))
           .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6)
       : [],
+    avoidDaysOfWeek: Array.isArray(source.avoidDaysOfWeek)
+      ? source.avoidDaysOfWeek
+          .map((item) => Number(item))
+          .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6)
+      : [],
+    wantsOvertime:
+      typeof source.wantsOvertime === "boolean" ? source.wantsOvertime : false,
     emailNotificationsEnabled:
       typeof source.emailNotificationsEnabled === "boolean"
         ? source.emailNotificationsEnabled
@@ -56,7 +68,9 @@ function sanitizePrefs(value: unknown): PreferencesData {
 
 export default function PreferencesPage() {
   const router = useRouter();
-  const { logout, user } = useAuth();
+  const { facilityPreferences, logout, user } = useAuth();
+  const hasSchedulableRole =
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
   const [prefs, setPrefs] = useState<PreferencesData>({ ...defaultPrefs });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,11 +80,17 @@ export default function PreferencesPage() {
   const [success, setSuccess] = useState("");
   const [expandedSections, setExpandedSections] = useState({
     preferredDays: false,
+    scheduling: false,
     notifications: false,
     dangerZone: false,
   });
 
   useEffect(() => {
+    if (!hasSchedulableRole) {
+      setLoading(false);
+      return;
+    }
+
     async function fetchPrefs() {
       try {
         setLoading(true);
@@ -86,11 +106,15 @@ export default function PreferencesPage() {
     }
 
     fetchPrefs();
-  }, []);
+  }, [hasSchedulableRole]);
 
   const preferredSet = useMemo(
     () => new Set<number>(prefs.preferredDaysOfWeek || []),
     [prefs.preferredDaysOfWeek],
+  );
+  const avoidedSet = useMemo(
+    () => new Set<number>(prefs.avoidDaysOfWeek || []),
+    [prefs.avoidDaysOfWeek],
   );
 
   const handleChange = <K extends keyof PreferencesData>(
@@ -101,9 +125,14 @@ export default function PreferencesPage() {
   };
 
   const togglePreferredDay = (dayIndex: number) => {
-    const arr = Array.isArray(prefs.preferredDaysOfWeek)
-      ? [...prefs.preferredDaysOfWeek]
-      : [];
+    toggleDay("preferredDaysOfWeek", dayIndex);
+  };
+
+  const toggleDay = (
+    field: "preferredDaysOfWeek" | "avoidDaysOfWeek",
+    dayIndex: number,
+  ) => {
+    const arr = Array.isArray(prefs[field]) ? [...prefs[field]] : [];
     const idx = arr.indexOf(dayIndex);
 
     if (idx >= 0) {
@@ -113,7 +142,7 @@ export default function PreferencesPage() {
       arr.sort((a, b) => a - b);
     }
 
-    handleChange("preferredDaysOfWeek", arr);
+    handleChange(field, arr);
   };
 
   const handleSave = async () => {
@@ -126,6 +155,10 @@ export default function PreferencesPage() {
         preferredDaysOfWeek: Array.isArray(prefs.preferredDaysOfWeek)
           ? prefs.preferredDaysOfWeek
           : [],
+        avoidDaysOfWeek: Array.isArray(prefs.avoidDaysOfWeek)
+          ? prefs.avoidDaysOfWeek
+          : [],
+        wantsOvertime: !!prefs.wantsOvertime,
         emailNotificationsEnabled: prefs.emailNotificationsEnabled ?? true,
         smsNotificationsEnabled: prefs.smsNotificationsEnabled ?? true,
       };
@@ -179,6 +212,10 @@ export default function PreferencesPage() {
         </View>
       </SafeAreaView>
     );
+  }
+
+  if (!hasSchedulableRole) {
+    return <Redirect href="/dashboard" />;
   }
 
   return (
@@ -240,6 +277,50 @@ export default function PreferencesPage() {
               );
             })}
           </View>
+        </SectionCard>
+
+        <SectionCard
+          title="Scheduling Preferences"
+          description="These are soft preferences that help auto-scheduling make better assignments."
+          expanded={expandedSections.scheduling}
+          onToggle={() => toggleSection("scheduling")}
+        >
+          <Text style={styles.preferenceLabel}>Days to Avoid</Text>
+          <Text style={styles.helperText}>
+            Days you would rather not work, if it can be avoided.
+          </Text>
+          <View style={styles.daysGrid}>
+            {DAYS.map((day, index) => {
+              const isAvoided = avoidedSet.has(index);
+
+              return (
+                <Pressable
+                  key={day}
+                  style={[
+                    styles.dayPill,
+                    isAvoided ? styles.dayPillAvoided : null,
+                  ]}
+                  onPress={() => toggleDay("avoidDaysOfWeek", index)}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.dayPillText,
+                      isAvoided ? styles.dayPillTextAvoided : null,
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <SwitchRow
+            title="Open to Overtime"
+            description="Projected overtime will not count against you when assignments are ranked."
+            value={!!prefs.wantsOvertime}
+            onValueChange={(value) => handleChange("wantsOvertime", value)}
+          />
         </SectionCard>
 
         <SectionCard
@@ -524,6 +605,23 @@ const styles = StyleSheet.create({
   },
   dayPillTextPreferred: {
     color: "#166534",
+  },
+  dayPillAvoided: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#dc2626",
+    borderWidth: 2,
+  },
+  dayPillTextAvoided: {
+    color: "#b91c1c",
+  },
+  preferenceLabel: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  helperText: {
+    color: "#6b7280",
+    fontSize: 12,
   },
   switchRow: {
     flexDirection: "row",

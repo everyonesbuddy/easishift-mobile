@@ -1,5 +1,6 @@
 export type StaffUser = {
   _id?: string;
+  id?: string;
   name?: string;
   role?: string;
   roles?: string[];
@@ -172,7 +173,7 @@ export function extractStaffId(schedule: ScheduleItem) {
     return schedule.staffId;
   }
 
-  return schedule.staffId?._id || "";
+  return schedule.staffId?._id || schedule.staffId?.id || "";
 }
 
 export function extractStaffName(schedule: ScheduleItem) {

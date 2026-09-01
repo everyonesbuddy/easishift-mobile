@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -10,80 +11,19 @@ import {
 } from "react-native";
 
 import { useAuth } from "@/context/auth-context";
-
-type Plan = {
-  key: string;
-  name: string;
-  priceLabel: string;
-  price: number | null;
-  seats: number | string;
-  supportTier: "standard" | "priority";
-  isEnterprise?: boolean;
-  highlight: boolean;
-};
-
-const YEARLY_PLANS: Plan[] = [
-  {
-    key: "starterYearly",
-    name: "Starter",
-    priceLabel: "$4,000/yr",
-    price: 4000,
-    seats: 50,
-    supportTier: "standard",
-    highlight: false,
-  },
-  {
-    key: "growthYearly",
-    name: "Growth",
-    priceLabel: "$7,000/yr",
-    price: 7000,
-    seats: 100,
-    supportTier: "standard",
-    highlight: true,
-  },
-  {
-    key: "premiumYearly",
-    name: "Premium",
-    priceLabel: "$9,000/yr",
-    price: 9000,
-    seats: 150,
-    supportTier: "priority",
-    highlight: false,
-  },
-  {
-    key: "enterpriseYearly",
-    name: "Enterprise",
-    priceLabel: "Custom pricing",
-    price: null,
-    seats: "150+",
-    supportTier: "priority",
-    isEnterprise: true,
-    highlight: false,
-  },
-];
-
-const SHARED_FEATURE_LIST = [
-  "Automated scheduling",
-  "Shift swaps",
-  "Time-off management",
-  "Internal messaging",
-  "Coverage planning",
-  "Staff directory",
-];
-
-const WEBSITE_BILLING_URL = "https://www.wisershifts.com";
+import {
+  type BillingInterval,
+  getCapacityLabel,
+  getSupportLabel,
+  SHARED_FEATURE_LIST,
+  useBillingPlans,
+} from "./billing-plans";
 
 export default function ManageSubscriptionPage() {
   const { tenant } = useAuth();
-  const [error, setError] = useState<string | null>(null);
-
-  const getCapacityLabel = (plan: Plan) =>
-    plan.isEnterprise
-      ? `${plan.seats} active employees`
-      : `Up to ${plan.seats} active employees`;
-
-  const getSupportLabel = (plan: Plan) =>
-    plan.supportTier === "priority" ? "Priority support" : "Standard support";
+  const [billingInterval, setBillingInterval] =
+    useState<BillingInterval>("year");
+  const plans = useBillingPlans(billingInterval);
 
   const getPlanDisplayName = (planKey?: string | null) => {
     const displayMap: Record<string, string> = {
@@ -91,6 +31,10 @@ export default function ManageSubscriptionPage() {
       growthYearly: "Growth Annual",
       premiumYearly: "Premium Annual",
       enterpriseYearly: "Enterprise Annual",
+      starterMonthly: "Starter Monthly",
+      growthMonthly: "Growth Monthly",
+      premiumMonthly: "Premium Monthly",
+      enterprise: "Enterprise",
     };
 
     if (!planKey) return "No plan";
@@ -178,12 +122,39 @@ export default function ManageSubscriptionPage() {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Plan reference</Text>
+        <View style={styles.planSectionHeader}>
+          <Text style={styles.sectionTitle}>Plan reference</Text>
+          <View style={styles.intervalControl}>
+            {(["year", "month"] as BillingInterval[]).map((interval) => (
+              <Pressable
+                key={interval}
+                onPress={() => setBillingInterval(interval)}
+                style={[
+                  styles.intervalButton,
+                  billingInterval === interval
+                    ? styles.intervalButtonActive
+                    : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.intervalButtonText,
+                    billingInterval === interval
+                      ? styles.intervalButtonTextActive
+                      : null,
+                  ]}
+                >
+                  {interval === "year" ? "Yearly" : "Monthly"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
 
         <View style={styles.planGrid}>
-          {YEARLY_PLANS.map((plan) => (
+          {plans.map((plan) => (
             <View
-              key={plan.key}
+              key={plan.planKey}
               style={[
                 styles.planCard,
                 plan.highlight ? styles.planCardHighlight : null,
@@ -193,7 +164,7 @@ export default function ManageSubscriptionPage() {
                 <View style={styles.planTitleRow}>
                   <Text style={styles.planName}>{plan.name}</Text>
                   <View style={styles.planBadgeRow}>
-                    {currentPlanKey === plan.key ? (
+                    {currentPlanKey === plan.planKey ? (
                       <Text style={styles.currentPlanPill}>Current plan</Text>
                     ) : null}
                     {plan.highlight ? (
@@ -202,12 +173,16 @@ export default function ManageSubscriptionPage() {
                   </View>
                 </View>
 
-                <Text style={styles.planCycle}>Per facility / year</Text>
+                <Text style={styles.planCycle}>
+                  {plan.isEnterprise
+                    ? "Custom package"
+                    : `Per facility / ${billingInterval === "year" ? "year" : "month"}`}
+                </Text>
                 <Text style={styles.planPrice}>{plan.priceLabel}</Text>
                 <Text style={styles.planPriceHint}>
                   {plan.isEnterprise
                     ? "Custom plan details are available through WiserShifts support."
-                    : `Equivalent to $${Math.round((plan.price ?? 0) / 12)}/mo billed yearly`}
+                    : plan.cadenceNote}
                 </Text>
                 <Text style={styles.planSeats}>{getCapacityLabel(plan)}</Text>
 
@@ -239,8 +214,6 @@ export default function ManageSubscriptionPage() {
         <Text style={styles.footerText}>
           One price per facility. Each facility is billed independently.
         </Text>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -386,6 +359,36 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 18,
     fontWeight: "800",
+  },
+  planSectionHeader: {
+    gap: 10,
+  },
+  intervalControl: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 8,
+    padding: 3,
+    backgroundColor: "#eff6ff",
+  },
+  intervalButton: {
+    minWidth: 84,
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    alignItems: "center",
+  },
+  intervalButtonActive: {
+    backgroundColor: "#2563eb",
+  },
+  intervalButtonText: {
+    color: "#1e40af",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  intervalButtonTextActive: {
+    color: "#ffffff",
   },
   planGrid: {
     gap: 12,
