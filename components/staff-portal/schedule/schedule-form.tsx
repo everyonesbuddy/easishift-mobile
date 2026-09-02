@@ -409,16 +409,29 @@ export default function ScheduleForm({
     void startTourIfUnseen(tourId, tourSteps);
   }, [startTourIfUnseen, tourId, tourSteps]);
 
-  const activeCoverageContext = !isEditing
-    ? initialCoverage ||
+  const activeCoverageContext = isEditing
+    ? {
+        role: formData.role,
+        unitArea: formData.unitArea,
+        shiftType: formData.shiftType,
+        shiftTag: formData.shiftTag,
+        requiredCertificationTags: formData.certificationTags,
+      }
+    : initialCoverage ||
       coverageOptions.find(
         (coverage) => coverage._id === formData.coverageId,
       ) ||
-      null
-    : null;
-
+      null;
   const compatibleStaffOptions = useMemo(() => {
     return staffList.filter((member) => {
+      const editingStaffId =
+        typeof schedule?.staffId === "string"
+          ? schedule.staffId
+          : schedule?.staffId?._id || "";
+      if (isEditing && String(member._id || "") === String(editingStaffId)) {
+        return true;
+      }
+
       if (!activeCoverageContext) {
         return true;
       }
@@ -887,14 +900,6 @@ export default function ScheduleForm({
       timezone: formData.timezone,
     };
 
-    if (!canManageSchedules && isEditing) {
-      Object.keys(payload).forEach((key) => {
-        if (key !== "status") {
-          delete payload[key];
-        }
-      });
-    }
-
     if (!isEditing && !payload.staffId) {
       setMessage("Please select a staff member.");
       setSubmitting(false);
@@ -912,8 +917,17 @@ export default function ScheduleForm({
 
     try {
       if (isEditing && schedule?._id) {
-        await api.put(`/schedules/${schedule._id}`, payload);
+        if (canManageSchedules) {
+          await api.put(`/schedules/${schedule._id}`, payload);
+        } else {
+          await api.patch(`/schedules/${schedule._id}/status`, {
+            status: formData.status,
+          });
+        }
       } else {
+        if (formData.coverageId) {
+          payload.coverageId = formData.coverageId;
+        }
         await api.post("/schedules", payload);
       }
 
@@ -963,7 +977,7 @@ export default function ScheduleForm({
           <Text style={styles.label}>Staff</Text>
           <Pressable
             style={styles.selectBtn}
-            disabled={isEditing || disableStaffSelect}
+            disabled={(isEditing && !canManageSchedules) || disableStaffSelect}
             onPress={() => setStaffSelectOpen(true)}
           >
             <Text style={styles.selectText}>{selectedStaffLabel}</Text>

@@ -36,6 +36,7 @@ import { useGuideTour } from "@/context/guide-tour-context";
 import AutoGenerateScheduleForm from "./auto-generate-schedule-form";
 import ScheduleForm from "./schedule-form";
 import {
+  CoverageItem,
   extractStaffId,
   extractStaffName,
   formatLocal,
@@ -276,6 +277,7 @@ export default function ScheduleListPage() {
     getFacilityRolesFromUser(user, facilityPreferences).length > 0;
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [coverageGaps, setCoverageGaps] = useState<CoverageItem[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [open, setOpen] = useState(false);
   const [openAutoModal, setOpenAutoModal] = useState(false);
@@ -356,18 +358,49 @@ export default function ScheduleListPage() {
 
   const fetchStaff = useCallback(async () => {
     try {
-      const res = await api.get("/auth/users");
+      const res = await api.get(
+        can("staff.view") ? "/auth/users" : "/auth/users/directory",
+      );
       setStaff(Array.isArray(res.data) ? (res.data as StaffUser[]) : []);
     } catch (requestError) {
       console.warn("Failed to fetch staff", requestError);
       setStaff([]);
     }
-  }, []);
+  }, [can]);
+
+  const fetchCoverageGaps = useCallback(async () => {
+    if (!isAdmin) {
+      setCoverageGaps([]);
+      return;
+    }
+
+    try {
+      const res = await api.get("/coverage/unfilled-auto");
+      const payload = Array.isArray(res.data)
+        ? (res.data as CoverageItem[])
+        : [];
+      const now = new Date();
+      setCoverageGaps(
+        payload.filter((coverage) => {
+          const end = new Date(coverage.endTime || "");
+          const required = Number(coverage.requiredCount) || 0;
+          const remaining = Number.isFinite(Number(coverage.remaining))
+            ? Number(coverage.remaining)
+            : Math.max(0, required - (Number(coverage.assignedCount) || 0));
+          return !Number.isNaN(end.getTime()) && end >= now && remaining > 0;
+        }),
+      );
+    } catch (requestError) {
+      console.warn("Failed to fetch open coverage", requestError);
+      setCoverageGaps([]);
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     fetchSchedules();
     fetchStaff();
-  }, [fetchSchedules, fetchStaff]);
+    fetchCoverageGaps();
+  }, [fetchCoverageGaps, fetchSchedules, fetchStaff]);
 
   useEffect(() => {
     if (isAdmin || can("schedule.view")) {
@@ -745,8 +778,19 @@ export default function ScheduleListPage() {
       });
     });
 
+    if (isAdmin) {
+      coverageGaps.forEach((coverage) => {
+        const dayKey = getScheduleCalendarDayKey(coverage);
+        if (!dayKey) return;
+        meta[dayKey] = {
+          count: (meta[dayKey]?.count || 0) + 1,
+          color: "#dc2626",
+        };
+      });
+    }
+
     return meta;
-  }, [filteredSchedules]);
+  }, [coverageGaps, filteredSchedules, isAdmin]);
 
   const selectedDayEntries = useMemo(
     () =>
@@ -754,6 +798,15 @@ export default function ScheduleListPage() {
         getScheduleCalendarDayKeys(schedule).includes(selectedDay),
       ),
     [filteredSchedules, selectedDay],
+  );
+  const selectedDayCoverageGaps = useMemo(
+    () =>
+      isAdmin
+        ? coverageGaps.filter(
+            (coverage) => getScheduleCalendarDayKey(coverage) === selectedDay,
+          )
+        : [],
+    [coverageGaps, isAdmin, selectedDay],
   );
 
   const selectedDayLabel = useMemo(() => {
@@ -1347,30 +1400,67 @@ export default function ScheduleListPage() {
                       })}
                     </Text>
                     <View style={styles.rosterShiftWrap}>
-                      {shiftsOnDay.length === 0 ? (
+                      {shiftsOnDay.length === 0 &&
+                      !(
+                        isAdmin &&
+                        coverageGaps.some(
+                          (coverage) =>
+                            getScheduleCalendarDayKey(coverage) === dayKey,
+                        )
+                      ) ? (
                         <Text style={styles.calendarEmptyText}>No shifts</Text>
                       ) : (
-                        shiftsOnDay.map((shift, index) => (
-                          <View
-                            key={`${shift._id || "shift"}-${index}`}
-                            style={styles.rosterShiftPill}
-                          >
+                        <>
+                          {shiftsOnDay.map((shift, index) => (
                             <View
-                              style={[
-                                styles.roleDot,
-                                { backgroundColor: getRoleColor(shift.role) },
-                              ]}
-                            />
-                            <Text style={styles.rosterShiftText}>
-                              {extractStaffName(shift)} •{" "}
-                              {getRoleDisplayName(shift.role)} •{" "}
-                              {formatScheduleTimeRange(shift, {
-                                withNextDayHint: false,
-                              })}
-                              {isOvernightShift(shift) ? " (+1 day)" : ""}
-                            </Text>
-                          </View>
-                        ))
+                              key={`${shift._id || "shift"}-${index}`}
+                              style={styles.rosterShiftPill}
+                            >
+                              <View
+                                style={[
+                                  styles.roleDot,
+                                  { backgroundColor: getRoleColor(shift.role) },
+                                ]}
+                              />
+                              <Text style={styles.rosterShiftText}>
+                                {extractStaffName(shift)} •{" "}
+                                {getRoleDisplayName(shift.role)} •{" "}
+                                {formatScheduleTimeRange(shift, {
+                                  withNextDayHint: false,
+                                })}
+                                {isOvernightShift(shift) ? " (+1 day)" : ""}
+                              </Text>
+                            </View>
+                          ))}
+                          {isAdmin
+                            ? coverageGaps
+                                .filter(
+                                  (coverage) =>
+                                    getScheduleCalendarDayKey(coverage) ===
+                                    dayKey,
+                                )
+                                .map((coverage, index) => (
+                                  <View
+                                    key={`gap-${coverage._id || index}`}
+                                    style={styles.coverageGapPill}
+                                  >
+                                    <Feather
+                                      name="alert-triangle"
+                                      size={13}
+                                      color="#b91c1c"
+                                    />
+                                    <Text style={styles.coverageGapText}>
+                                      Needs {getRoleDisplayName(coverage.role)}{" "}
+                                      (
+                                      {coverage.remaining ??
+                                        coverage.requiredCount ??
+                                        0}
+                                      )
+                                    </Text>
+                                  </View>
+                                ))
+                            : null}
+                        </>
                       )}
                     </View>
                   </View>
@@ -1439,60 +1529,81 @@ export default function ScheduleListPage() {
             </View>
 
             <ScrollView contentContainerStyle={styles.calendarDetailsBody}>
-              {selectedDayEntries.length === 0 ? (
+              {selectedDayEntries.length === 0 &&
+              selectedDayCoverageGaps.length === 0 ? (
                 <Text style={styles.calendarEmptyText}>
                   No schedules on this day.
                 </Text>
               ) : (
-                selectedDayEntries.map((entry) => (
-                  <Pressable
-                    key={entry._id}
-                    style={styles.dayEntry}
-                    onPress={() => {
-                      setCalendarDetailsOpen(false);
-                      openDetails(entry);
-                    }}
-                  >
-                    <View style={styles.dayEntryTop}>
-                      <Text style={styles.dayEntryStaff}>
-                        {extractStaffName(entry)}
+                <>
+                  {selectedDayCoverageGaps.map((coverage) => (
+                    <View
+                      key={`gap-${coverage._id || coverage.startTime}`}
+                      style={styles.coverageGapCard}
+                    >
+                      <Text style={styles.coverageGapTitle}>
+                        Needs Coverage: {getRoleDisplayName(coverage.role)}
                       </Text>
-                      <Text
-                        style={[
-                          styles.dayEntryStatus,
-                          {
-                            color:
-                              STATUS_COLORS[entry.status || "scheduled"] ||
-                              "#6b7280",
-                          },
-                        ]}
-                      >
-                        {(entry.status || "scheduled")
-                          .replace("_", " ")
-                          .toUpperCase()}
+                      <Text style={styles.dayEntryMeta}>
+                        {formatLocal(coverage.startTime)} -{" "}
+                        {formatLocal(coverage.endTime)}
+                      </Text>
+                      <Text style={styles.dayEntryMeta}>
+                        {coverage.remaining ?? coverage.requiredCount ?? 0} open
+                        position(s)
                       </Text>
                     </View>
-                    <Text style={styles.dayEntryMeta}>
-                      {getRoleDisplayName(entry.role)}
-                    </Text>
-                    <Text style={styles.dayEntryMeta}>
-                      Start: {formatLocal(entry.startTime)}
-                    </Text>
-                    <Text style={styles.dayEntryMeta}>
-                      End: {formatLocal(entry.endTime)}
-                    </Text>
-                    {isOvernightShift(entry) ? (
-                      <>
-                        <Text style={styles.overnightText}>
-                          Overnight shift
+                  ))}
+                  {selectedDayEntries.map((entry) => (
+                    <Pressable
+                      key={entry._id}
+                      style={styles.dayEntry}
+                      onPress={() => {
+                        setCalendarDetailsOpen(false);
+                        openDetails(entry);
+                      }}
+                    >
+                      <View style={styles.dayEntryTop}>
+                        <Text style={styles.dayEntryStaff}>
+                          {extractStaffName(entry)}
                         </Text>
-                        <Text style={styles.dayEntrySpanMeta}>
-                          Spans: {formatScheduleDateRange(entry)}
+                        <Text
+                          style={[
+                            styles.dayEntryStatus,
+                            {
+                              color:
+                                STATUS_COLORS[entry.status || "scheduled"] ||
+                                "#6b7280",
+                            },
+                          ]}
+                        >
+                          {(entry.status || "scheduled")
+                            .replace("_", " ")
+                            .toUpperCase()}
                         </Text>
-                      </>
-                    ) : null}
-                  </Pressable>
-                ))
+                      </View>
+                      <Text style={styles.dayEntryMeta}>
+                        {getRoleDisplayName(entry.role)}
+                      </Text>
+                      <Text style={styles.dayEntryMeta}>
+                        Start: {formatLocal(entry.startTime)}
+                      </Text>
+                      <Text style={styles.dayEntryMeta}>
+                        End: {formatLocal(entry.endTime)}
+                      </Text>
+                      {isOvernightShift(entry) ? (
+                        <>
+                          <Text style={styles.overnightText}>
+                            Overnight shift
+                          </Text>
+                          <Text style={styles.dayEntrySpanMeta}>
+                            Spans: {formatScheduleDateRange(entry)}
+                          </Text>
+                        </>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </>
               )}
             </ScrollView>
           </Pressable>
@@ -1647,7 +1758,7 @@ export default function ScheduleListPage() {
             onClose={() => closeModal()}
             schedule={editingSchedule}
             staffList={staff}
-            mode={isAdmin ? "manual" : "pickup"}
+            mode={!isAdmin && !editingSchedule ? "pickup" : "manual"}
             initialStaffId={
               !isAdmin && !editingSchedule ? String(user?._id || "") : ""
             }
@@ -2563,6 +2674,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
   },
+  coverageGapPill: {
+    borderWidth: 1,
+    borderColor: "#fca5a5",
+    borderRadius: 8,
+    backgroundColor: "#fef2f2",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  coverageGapText: {
+    color: "#b91c1c",
+    fontSize: 12,
+    fontWeight: "700",
+    flex: 1,
+  },
   legendWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2632,6 +2760,21 @@ const styles = StyleSheet.create({
     color: "#475569",
     fontSize: 11,
     fontWeight: "600",
+  },
+  coverageGapCard: {
+    borderWidth: 1,
+    borderColor: "#fca5a5",
+    borderLeftWidth: 4,
+    borderLeftColor: "#dc2626",
+    borderRadius: 8,
+    backgroundColor: "#fef2f2",
+    padding: 10,
+    gap: 4,
+  },
+  coverageGapTitle: {
+    color: "#991b1b",
+    fontSize: 13,
+    fontWeight: "800",
   },
   calendarEmptyText: {
     color: "#6b7280",

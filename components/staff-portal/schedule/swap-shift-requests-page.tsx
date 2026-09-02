@@ -67,14 +67,17 @@ export default function SwapShiftRequestsPage() {
   const [submittingResponse, setSubmittingResponse] = useState(false);
   const [error, setError] = useState("");
 
-  const loadStaff = async () => {
+  const loadStaff = useCallback(async () => {
     try {
-      const res = await api.get("/auth/users");
+      const res = await api.get(
+        can("staff.view") ? "/auth/users" : "/auth/users/directory",
+      );
       setStaffList(Array.isArray(res.data) ? (res.data as StaffUser[]) : []);
     } catch (loadError) {
       console.warn("Failed to fetch staff list", loadError);
+      setStaffList([]);
     }
-  };
+  }, [can]);
 
   const loadSwapRequests = useCallback(async () => {
     if (!canViewSwapRequests) {
@@ -122,7 +125,7 @@ export default function SwapShiftRequestsPage() {
   useEffect(() => {
     loadSwapRequests();
     loadStaff();
-  }, [loadSwapRequests]);
+  }, [loadStaff, loadSwapRequests]);
 
   const openRespondDialog = (
     request: SwapRequestItem,
@@ -196,7 +199,7 @@ export default function SwapShiftRequestsPage() {
 
   if (!canViewSwapRequests) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.page}>
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Swap access unavailable</Text>
           <Text style={styles.emptyText}>
