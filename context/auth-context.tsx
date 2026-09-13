@@ -14,6 +14,7 @@ import {
   getUserRoles,
   normalizeRole,
 } from "@/constants/industry-roles";
+import { cancelAllUserNotifications } from "@/services/notifications/notification-service";
 
 const USER_KEY = "user";
 const ROLE_KEY = "role";
@@ -267,6 +268,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    const currentUserId = typeof user?._id === "string" ? user._id : undefined;
+    if (currentUserId) {
+      void cancelAllUserNotifications(currentUserId);
+    }
+
     setUser(null);
     setRole("");
     setTenant(null);

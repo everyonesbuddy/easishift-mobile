@@ -1,13 +1,28 @@
-import { Redirect, Slot, useSegments } from "expo-router";
+import { Redirect, Slot, useRouter, useSegments } from "expo-router";
+import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import ProtectedBottomNav from "@/components/shared/protected-bottom-nav";
 import ProtectedTopBar from "@/components/shared/protected-top-bar";
 import { useAuth } from "@/context/auth-context";
+import { useNotificationsSync } from "@/hooks/use-notifications-sync";
+import { subscribeToNotificationClicks } from "@/services/notifications/notification-service";
 
 export default function ProtectedLayout() {
+  const router = useRouter();
   const { user, tenant, can, loading } = useAuth();
   const segments = useSegments();
+
+  // Run notification synchronizer for active user
+  useNotificationsSync();
+
+  // Subscribe to notification interactions for deep-linking
+  useEffect(() => {
+    const unsubscribe = subscribeToNotificationClicks(router);
+    return () => {
+      unsubscribe();
+    };
+  }, [router]);
 
   const seatLimit =
     typeof tenant?.seatLimit === "number"

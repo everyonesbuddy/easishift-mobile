@@ -2,7 +2,7 @@
   "expo": {
     "name": "WiserShifts Mobile",
     "slug": "wiser-shifts-mobile",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/icon-1024.png",
     "scheme": "wiser-shifts-mobile",
@@ -47,6 +47,13 @@
         "expo-camera",
         {
           "cameraPermission": "Allow WiserShifts to use your camera for attendance QR scanning."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon-1024.png",
+          "color": "#0284c7"
         }
       ],
       "expo-font",
