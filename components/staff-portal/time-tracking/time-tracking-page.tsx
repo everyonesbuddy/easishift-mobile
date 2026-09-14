@@ -13,6 +13,7 @@ import {
 
 import QrScannerDialog from "@/components/shared/qr-scanner-dialog";
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
 import { useAuth } from "@/context/auth-context";
 
 type TimeBreak = {
@@ -70,7 +71,7 @@ function toIsoNow() {
   return new Date().toISOString();
 }
 
-function formatDateTime(value: unknown) {
+function formatDateTime(value: unknown, timeZone?: string) {
   if (!value) {
     return "-";
   }
@@ -80,7 +81,9 @@ function formatDateTime(value: unknown) {
     return "-";
   }
 
-  return parsed.toLocaleString();
+  return parsed.toLocaleString(undefined, {
+    ...(timeZone ? { timeZone } : {}),
+  });
 }
 
 function formatMinutes(value: unknown) {
@@ -221,6 +224,7 @@ function getStatusStyle(status: string) {
 
 export default function TimeTrackingPage() {
   const { can, facilityPreferences, fetchFacilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isAdmin = can("staff.view");
 
   const [loading, setLoading] = useState(true);
@@ -651,12 +655,13 @@ export default function TimeTrackingPage() {
             </View>
 
             <Text style={styles.metaText}>
-              Clock In: {formatDateTime(activeEntry?.clockInAt)}
+              Clock In:{" "}
+              {formatDateTime(activeEntry?.clockInAt, displayTimeZone)}
             </Text>
             <Text style={styles.metaText}>
               Open Break:{" "}
               {openBreak
-                ? `Started ${formatDateTime(openBreak.startAt)}`
+                ? `Started ${formatDateTime(openBreak.startAt, displayTimeZone)}`
                 : "No"}
             </Text>
             <Text style={styles.metaText}>
@@ -756,8 +761,9 @@ export default function TimeTrackingPage() {
                       <View style={styles.entryTopRow}>
                         <View style={styles.entryTextWrap}>
                           <Text style={styles.entryTitleText}>
-                            {formatDateTime(entry.clockInAt)} to{" "}
-                            {formatDateTime(entry.clockOutAt)}
+                            {formatDateTime(entry.clockInAt, displayTimeZone)}{" "}
+                            to{" "}
+                            {formatDateTime(entry.clockOutAt, displayTimeZone)}
                           </Text>
                           <Text style={styles.entryMetaText}>
                             Breaks: {breakCount} | Worked:{" "}
@@ -870,10 +876,12 @@ export default function TimeTrackingPage() {
                         <View style={styles.entryTextWrap}>
                           <Text style={styles.entryTitleText}>{staffName}</Text>
                           <Text style={styles.entryMetaText}>
-                            In: {formatDateTime(entry.clockInAt)}
+                            In:{" "}
+                            {formatDateTime(entry.clockInAt, displayTimeZone)}
                           </Text>
                           <Text style={styles.entryMetaText}>
-                            Out: {formatDateTime(entry.clockOutAt)}
+                            Out:{" "}
+                            {formatDateTime(entry.clockOutAt, displayTimeZone)}
                           </Text>
                           <Text style={styles.entryMetaText}>
                             Worked: {formatMinutes(getWorkedMinutes(entry))}

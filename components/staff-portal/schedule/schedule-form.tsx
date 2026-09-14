@@ -15,6 +15,7 @@ import {
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
 import {
   getFacilityRolesFromUser,
   getRoleDisplayName,
@@ -247,7 +248,7 @@ function formatCertificationTags(value: unknown) {
   return tags.length ? tags.join(", ") : "-";
 }
 
-function formatShiftLabel(coverage: CoverageItem) {
+function formatShiftLabel(coverage: CoverageItem, timeZone?: string) {
   const start = new Date(coverage.startTime || "");
   const end = new Date(coverage.endTime || "");
 
@@ -257,6 +258,7 @@ function formatShiftLabel(coverage: CoverageItem) {
         year: "numeric",
         month: "short",
         day: "numeric",
+        ...(timeZone ? { timeZone } : {}),
       });
 
   const startLabel = Number.isNaN(start.getTime())
@@ -264,6 +266,7 @@ function formatShiftLabel(coverage: CoverageItem) {
     : start.toLocaleTimeString([], {
         hour: "numeric",
         minute: "2-digit",
+        ...(timeZone ? { timeZone } : {}),
       });
 
   const endLabel = Number.isNaN(end.getTime())
@@ -271,6 +274,7 @@ function formatShiftLabel(coverage: CoverageItem) {
     : end.toLocaleTimeString([], {
         hour: "numeric",
         minute: "2-digit",
+        ...(timeZone ? { timeZone } : {}),
       });
 
   return `${dateLabel} - ${startLabel} - ${endLabel}`;
@@ -359,6 +363,7 @@ export default function ScheduleForm({
 }: Props) {
   const isEditing = Boolean(schedule);
   const { user, can, facilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isPickup = mode === "pickup";
   const canManageSchedules = can("schedule.manage");
   const { startTourIfUnseen } = useGuideTour();
@@ -1232,7 +1237,7 @@ export default function ScheduleForm({
         }}
         options={coverageOptions.map((coverage) => ({
           value: coverage._id || "",
-          label: `${getRoleDisplayName(coverage.role)} | ${formatShiftLabel(coverage)}${coverage.unitArea ? ` | ${getUnitAreaDisplayName(coverage.unitArea)}` : ""}${coverage.shiftType ? ` | ${getShiftTypeDisplayName(coverage.shiftType)}` : ""}${coverage.shiftTag ? ` | ${getShiftTagDisplayName(coverage.shiftTag)}` : ""} (${coverage.spotsRemaining} spots left${coverage.spotsRemaining <= 0 ? " | Full" : ""})`,
+          label: `${getRoleDisplayName(coverage.role)} | ${formatShiftLabel(coverage, displayTimeZone)}${coverage.unitArea ? ` | ${getUnitAreaDisplayName(coverage.unitArea)}` : ""}${coverage.shiftType ? ` | ${getShiftTypeDisplayName(coverage.shiftType)}` : ""}${coverage.shiftTag ? ` | ${getShiftTagDisplayName(coverage.shiftTag)}` : ""} (${coverage.spotsRemaining} spots left${coverage.spotsRemaining <= 0 ? " | Full" : ""})`,
           disabled: coverage.spotsRemaining <= 0,
         }))}
       />

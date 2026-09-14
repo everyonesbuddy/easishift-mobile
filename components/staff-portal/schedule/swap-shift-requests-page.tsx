@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
 import { useAuth } from "@/context/auth-context";
 
 import {
@@ -44,7 +45,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function SwapShiftRequestsPage() {
-  const { user, can } = useAuth();
+  const { user, can, facilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isAdmin = can("schedule.manage");
   const canUseShiftSwap = can("shift_swap.use");
   const canViewSwapRequests = isAdmin || canUseShiftSwap;
@@ -303,6 +305,7 @@ export default function SwapShiftRequestsPage() {
                         {formatWindow(
                           requestItem.shiftStartTime,
                           requestItem.shiftEndTime,
+                          displayTimeZone,
                         )}
                       </Text>
                       <Text style={styles.requestMeta}>

@@ -79,7 +79,7 @@ export function getEndValue(request: TimeOffRequest) {
   return request.endTime || request.endDate || request.end || "";
 }
 
-export function formatDate(value?: string) {
+export function formatDate(value?: string, timeZone?: string) {
   if (!value) {
     return "-";
   }
@@ -89,10 +89,12 @@ export function formatDate(value?: string) {
     return "-";
   }
 
-  return parsed.toLocaleDateString();
+  return parsed.toLocaleDateString(undefined, {
+    ...(timeZone ? { timeZone } : {}),
+  });
 }
 
-export function formatDateTime(value?: string) {
+export function formatDateTime(value?: string, timeZone?: string) {
   if (!value) {
     return "";
   }
@@ -102,7 +104,9 @@ export function formatDateTime(value?: string) {
     return "";
   }
 
-  return parsed.toLocaleString();
+  return parsed.toLocaleString(undefined, {
+    ...(timeZone ? { timeZone } : {}),
+  });
 }
 
 export function calculateDaysInclusive(start?: string, end?: string) {

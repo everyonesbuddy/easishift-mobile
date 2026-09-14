@@ -12,6 +12,7 @@ import {
 
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
 import { useAuth } from "@/context/auth-context";
 import { useGuideTour } from "@/context/guide-tour-context";
 
@@ -44,7 +45,8 @@ const TIMEOFF_LIST_TOUR_STEPS = [
 ];
 
 export default function TimeOffRequestListPage() {
-  const { user, can } = useAuth();
+  const { user, can, facilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const { startTourIfUnseen } = useGuideTour();
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -187,7 +189,8 @@ export default function TimeOffRequestListPage() {
                   <View style={styles.requestBody}>
                     <View style={styles.requestTopRow}>
                       <Text style={styles.requestTitle}>
-                        {formatDate(start)} - {formatDate(end)}
+                        {formatDate(start, displayTimeZone)} -{" "}
+                        {formatDate(end, displayTimeZone)}
                       </Text>
                       <View style={styles.requestPills}>
                         <View
@@ -225,7 +228,9 @@ export default function TimeOffRequestListPage() {
                       </View>
                       <View style={styles.metaItem}>
                         <Feather name="calendar" size={13} color="#6b7280" />
-                        <Text style={styles.metaText}>{formatDate(start)}</Text>
+                        <Text style={styles.metaText}>
+                          {formatDate(start, displayTimeZone)}
+                        </Text>
                       </View>
                     </View>
 
@@ -252,9 +257,12 @@ export default function TimeOffRequestListPage() {
 
                     <Text style={styles.captionText}>
                       Submitted{" "}
-                      {formatDateTime(request.requestedAt || request.createdAt)}
+                      {formatDateTime(
+                        request.requestedAt || request.createdAt,
+                        displayTimeZone,
+                      )}
                       {request.reviewedAt
-                        ? ` • Reviewed ${formatDateTime(request.reviewedAt)}`
+                        ? ` • Reviewed ${formatDateTime(request.reviewedAt, displayTimeZone)}`
                         : ""}
                     </Text>
                   </View>

@@ -18,6 +18,7 @@ import ConfirmDialog from "@/components/shared/confirm-dialog";
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getCertificationTagDisplayName,
   getFacilityRolesFromUser,
@@ -90,7 +91,7 @@ function toDayKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function getScheduleCalendarDayKey(schedule: ScheduleItem) {
+function getScheduleCalendarDayKey(schedule: ScheduleItem, timeZone?: string) {
   const source = schedule.startTime || schedule.createdAt;
   if (!source) {
     return "";
@@ -101,11 +102,11 @@ function getScheduleCalendarDayKey(schedule: ScheduleItem) {
     return "";
   }
 
-  return toDayKey(parsed);
+  return timeZone ? getTimeZoneDayKey(parsed, timeZone) : toDayKey(parsed);
 }
 
-function getScheduleCalendarDayKeys(schedule: ScheduleItem) {
-  const primaryKey = getScheduleCalendarDayKey(schedule);
+function getScheduleCalendarDayKeys(schedule: ScheduleItem, timeZone?: string) {
+  const primaryKey = getScheduleCalendarDayKey(schedule, timeZone);
   if (!primaryKey) {
     return [];
   }
@@ -117,9 +118,9 @@ function getScheduleCalendarDayKeys(schedule: ScheduleItem) {
   if (
     !Number.isNaN(start.getTime()) &&
     !Number.isNaN(end.getTime()) &&
-    start.toDateString() !== end.toDateString()
+    isOvernightShift(schedule, timeZone)
   ) {
-    const endKey = toDayKey(end);
+    const endKey = timeZone ? getTimeZoneDayKey(end, timeZone) : toDayKey(end);
     if (endKey && endKey !== primaryKey) {
       keys.push(endKey);
     }
@@ -128,7 +129,7 @@ function getScheduleCalendarDayKeys(schedule: ScheduleItem) {
   return keys;
 }
 
-function getTimeKey(value?: string) {
+function getTimeKey(value?: string, timeZone?: string) {
   if (!value) {
     return "";
   }
@@ -138,10 +139,25 @@ function getTimeKey(value?: string) {
     return "";
   }
 
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      ...(timeZone ? { timeZone } : {}),
+    }).formatToParts(d);
+    const values = Object.fromEntries(
+      parts
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    );
+    return `${values.hour}:${values.minute}`;
+  } catch {
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
 }
 
-function isOvernightShift(schedule: ScheduleItem) {
+function isOvernightShift(schedule: ScheduleItem, timeZone?: string) {
   const start = new Date(schedule?.startTime || "");
   const end = new Date(schedule?.endTime || "");
 
@@ -149,12 +165,21 @@ function isOvernightShift(schedule: ScheduleItem) {
     return false;
   }
 
+  if (timeZone) {
+    return (
+      getTimeZoneDayKey(start, timeZone) !== getTimeZoneDayKey(end, timeZone)
+    );
+  }
+
   return start.toDateString() !== end.toDateString();
 }
 
 function formatScheduleTimeRange(
   schedule: ScheduleItem,
-  { withNextDayHint = true }: { withNextDayHint?: boolean } = {},
+  {
+    withNextDayHint = true,
+    timeZone,
+  }: { withNextDayHint?: boolean; timeZone?: string } = {},
 ) {
   const start = new Date(schedule?.startTime || "");
   const end = new Date(schedule?.endTime || "");
@@ -163,18 +188,17 @@ function formatScheduleTimeRange(
     return "";
   }
 
-  const startLabel = start.toLocaleTimeString("default", {
+  const timeOptions: Intl.DateTimeFormatOptions = {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  });
-  const endLabel = end.toLocaleTimeString("default", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+    ...(timeZone ? { timeZone } : {}),
+  };
 
-  if (isOvernightShift(schedule) && withNextDayHint) {
+  const startLabel = start.toLocaleTimeString("default", timeOptions);
+  const endLabel = end.toLocaleTimeString("default", timeOptions);
+
+  if (isOvernightShift(schedule, timeZone) && withNextDayHint) {
     return `${startLabel} - ${endLabel} next day`;
   }
 
@@ -193,7 +217,7 @@ function formatCertificationTags(schedule: ScheduleItem) {
   return tags.length ? tags.join(", ") : "-";
 }
 
-function formatScheduleDateRange(schedule: ScheduleItem) {
+function formatScheduleDateRange(schedule: ScheduleItem, timeZone?: string) {
   const start = new Date(schedule?.startTime || "");
   const end = new Date(schedule?.endTime || "");
 
@@ -201,21 +225,20 @@ function formatScheduleDateRange(schedule: ScheduleItem) {
     return "-";
   }
 
-  const startLabel = start.toLocaleDateString(undefined, {
+  const dateOptions: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     year: "numeric",
-  });
+    ...(timeZone ? { timeZone } : {}),
+  };
 
-  if (!isOvernightShift(schedule)) {
+  const startLabel = start.toLocaleDateString(undefined, dateOptions);
+
+  if (!isOvernightShift(schedule, timeZone)) {
     return startLabel;
   }
 
-  const endLabel = end.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const endLabel = end.toLocaleDateString(undefined, dateOptions);
 
   return `${startLabel} - ${endLabel}`;
 }
@@ -266,6 +289,7 @@ export default function ScheduleListPage() {
   const { draftReview } = useLocalSearchParams<{ draftReview?: string }>();
   const { user, can, tenant, facilityPreferences } = useAuth();
   const { startTourIfUnseen } = useGuideTour();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isAdmin = can("schedule.manage");
   const hasFacilityRole =
     getFacilityRolesFromUser(user, facilityPreferences).length > 0;
@@ -631,8 +655,8 @@ export default function ScheduleListPage() {
         return;
       }
 
-      const startKey = getTimeKey(schedule.startTime);
-      const endKey = getTimeKey(schedule.endTime);
+      const startKey = getTimeKey(schedule.startTime, displayTimeZone);
+      const endKey = getTimeKey(schedule.endTime, displayTimeZone);
       if (!startKey || !endKey) {
         return;
       }
@@ -643,16 +667,18 @@ export default function ScheduleListPage() {
       }
 
       seen.add(key);
-      const overnightLabel = isOvernightShift(schedule) ? " (+1 day)" : "";
+      const overnightLabel = isOvernightShift(schedule, displayTimeZone)
+        ? " (+1 day)"
+        : "";
 
       options.push({
         key,
-        label: `${formatScheduleTimeRange(schedule, { withNextDayHint: false })}${overnightLabel}`,
+        label: `${formatScheduleTimeRange(schedule, { withNextDayHint: false, timeZone: displayTimeZone })}${overnightLabel}`,
       });
     });
 
     return options.sort((a, b) => a.key.localeCompare(b.key));
-  }, [schedules]);
+  }, [displayTimeZone, schedules]);
   const unitAreaFilterOptions = useMemo(
     () =>
       Array.from(
@@ -698,7 +724,7 @@ export default function ScheduleListPage() {
         if (
           selectedShiftTimes.length > 0 &&
           !selectedShiftTimes.includes(
-            `${getTimeKey(schedule.startTime)}|${getTimeKey(schedule.endTime)}`,
+            `${getTimeKey(schedule.startTime, displayTimeZone)}|${getTimeKey(schedule.endTime, displayTimeZone)}`,
           )
         ) {
           return false;
@@ -723,6 +749,7 @@ export default function ScheduleListPage() {
         return true;
       }),
     [
+      displayTimeZone,
       schedules,
       searchQuery,
       selectedRoles,
@@ -765,7 +792,7 @@ export default function ScheduleListPage() {
     const meta: Record<string, { count: number; color: string }> = {};
 
     filteredSchedules.forEach((schedule) => {
-      const dayKeys = getScheduleCalendarDayKeys(schedule);
+      const dayKeys = getScheduleCalendarDayKeys(schedule, displayTimeZone);
       if (dayKeys.length === 0) {
         return;
       }
@@ -780,7 +807,7 @@ export default function ScheduleListPage() {
 
     if (isAdmin) {
       coverageGaps.forEach((coverage) => {
-        const dayKey = getScheduleCalendarDayKey(coverage);
+        const dayKey = getScheduleCalendarDayKey(coverage, displayTimeZone);
         if (!dayKey) return;
         meta[dayKey] = {
           count: (meta[dayKey]?.count || 0) + 1,
@@ -790,23 +817,27 @@ export default function ScheduleListPage() {
     }
 
     return meta;
-  }, [coverageGaps, filteredSchedules, isAdmin]);
+  }, [coverageGaps, displayTimeZone, filteredSchedules, isAdmin]);
 
   const selectedDayEntries = useMemo(
     () =>
       filteredSchedules.filter((schedule) =>
-        getScheduleCalendarDayKeys(schedule).includes(selectedDay),
+        getScheduleCalendarDayKeys(schedule, displayTimeZone).includes(
+          selectedDay,
+        ),
       ),
-    [filteredSchedules, selectedDay],
+    [displayTimeZone, filteredSchedules, selectedDay],
   );
   const selectedDayCoverageGaps = useMemo(
     () =>
       isAdmin
         ? coverageGaps.filter(
-            (coverage) => getScheduleCalendarDayKey(coverage) === selectedDay,
+            (coverage) =>
+              getScheduleCalendarDayKey(coverage, displayTimeZone) ===
+              selectedDay,
           )
         : [],
-    [coverageGaps, isAdmin, selectedDay],
+    [coverageGaps, displayTimeZone, isAdmin, selectedDay],
   );
 
   const selectedDayLabel = useMemo(() => {
@@ -1213,10 +1244,11 @@ export default function ScheduleListPage() {
                             </Text>
                             <Text style={styles.staffMeta}>
                               {getRoleDisplayName(schedule.role)} |{" "}
-                              {formatLocal(schedule.startTime)}
+                              {formatLocal(schedule.startTime, displayTimeZone)}
                             </Text>
                             <Text style={styles.staffMeta}>
-                              Ends: {formatLocal(schedule.endTime)}
+                              Ends:{" "}
+                              {formatLocal(schedule.endTime, displayTimeZone)}
                             </Text>
                             <Text style={styles.staffMeta}>
                               Unit Area:{" "}
@@ -1230,7 +1262,7 @@ export default function ScheduleListPage() {
                             <Text style={styles.staffMeta}>
                               Cert Tags: {formatCertificationTags(schedule)}
                             </Text>
-                            {isOvernightShift(schedule) ? (
+                            {isOvernightShift(schedule, displayTimeZone) ? (
                               <Text style={styles.overnightText}>
                                 Overnight shift
                               </Text>
@@ -1387,7 +1419,9 @@ export default function ScheduleListPage() {
               {monthDays.map((dayKey) => {
                 const date = parseLocalDateKey(dayKey);
                 const shiftsOnDay = filteredSchedules.filter(
-                  (schedule) => getScheduleCalendarDayKey(schedule) === dayKey,
+                  (schedule) =>
+                    getScheduleCalendarDayKey(schedule, displayTimeZone) ===
+                    dayKey,
                 );
 
                 return (
@@ -1405,7 +1439,10 @@ export default function ScheduleListPage() {
                         isAdmin &&
                         coverageGaps.some(
                           (coverage) =>
-                            getScheduleCalendarDayKey(coverage) === dayKey,
+                            getScheduleCalendarDayKey(
+                              coverage,
+                              displayTimeZone,
+                            ) === dayKey,
                         )
                       ) ? (
                         <Text style={styles.calendarEmptyText}>No shifts</Text>
@@ -1427,8 +1464,11 @@ export default function ScheduleListPage() {
                                 {getRoleDisplayName(shift.role)} •{" "}
                                 {formatScheduleTimeRange(shift, {
                                   withNextDayHint: false,
+                                  timeZone: displayTimeZone,
                                 })}
-                                {isOvernightShift(shift) ? " (+1 day)" : ""}
+                                {isOvernightShift(shift, displayTimeZone)
+                                  ? " (+1 day)"
+                                  : ""}
                               </Text>
                             </View>
                           ))}
@@ -1436,8 +1476,10 @@ export default function ScheduleListPage() {
                             ? coverageGaps
                                 .filter(
                                   (coverage) =>
-                                    getScheduleCalendarDayKey(coverage) ===
-                                    dayKey,
+                                    getScheduleCalendarDayKey(
+                                      coverage,
+                                      displayTimeZone,
+                                    ) === dayKey,
                                 )
                                 .map((coverage, index) => (
                                   <View
@@ -1545,8 +1587,8 @@ export default function ScheduleListPage() {
                         Needs Coverage: {getRoleDisplayName(coverage.role)}
                       </Text>
                       <Text style={styles.dayEntryMeta}>
-                        {formatLocal(coverage.startTime)} -{" "}
-                        {formatLocal(coverage.endTime)}
+                        {formatLocal(coverage.startTime, displayTimeZone)} -{" "}
+                        {formatLocal(coverage.endTime, displayTimeZone)}
                       </Text>
                       <Text style={styles.dayEntryMeta}>
                         {coverage.remaining ?? coverage.requiredCount ?? 0} open
@@ -1586,18 +1628,19 @@ export default function ScheduleListPage() {
                         {getRoleDisplayName(entry.role)}
                       </Text>
                       <Text style={styles.dayEntryMeta}>
-                        Start: {formatLocal(entry.startTime)}
+                        Start: {formatLocal(entry.startTime, displayTimeZone)}
                       </Text>
                       <Text style={styles.dayEntryMeta}>
-                        End: {formatLocal(entry.endTime)}
+                        End: {formatLocal(entry.endTime, displayTimeZone)}
                       </Text>
-                      {isOvernightShift(entry) ? (
+                      {isOvernightShift(entry, displayTimeZone) ? (
                         <>
                           <Text style={styles.overnightText}>
                             Overnight shift
                           </Text>
                           <Text style={styles.dayEntrySpanMeta}>
-                            Spans: {formatScheduleDateRange(entry)}
+                            Spans:{" "}
+                            {formatScheduleDateRange(entry, displayTimeZone)}
                           </Text>
                         </>
                       ) : null}
@@ -1649,14 +1692,19 @@ export default function ScheduleListPage() {
                   <View style={styles.detailGroup}>
                     <Text style={styles.detailLabel}>Date</Text>
                     <Text style={styles.detailValue}>
-                      {formatScheduleDateRange(selectedSchedule)}
+                      {formatScheduleDateRange(
+                        selectedSchedule,
+                        displayTimeZone,
+                      )}
                     </Text>
                   </View>
 
                   <View style={styles.detailGroup}>
                     <Text style={styles.detailLabel}>Time</Text>
                     <Text style={styles.detailValue}>
-                      {formatScheduleTimeRange(selectedSchedule)}
+                      {formatScheduleTimeRange(selectedSchedule, {
+                        timeZone: displayTimeZone,
+                      })}
                     </Text>
                   </View>
 
@@ -1706,7 +1754,7 @@ export default function ScheduleListPage() {
                   </Text>
                 </View>
 
-                {isOvernightShift(selectedSchedule) ? (
+                {isOvernightShift(selectedSchedule, displayTimeZone) ? (
                   <Text style={styles.overnightText}>Overnight shift</Text>
                 ) : null}
 

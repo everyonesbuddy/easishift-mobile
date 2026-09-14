@@ -126,7 +126,7 @@ export function getRoleDisplayName(role?: string) {
   return ROLE_LABELS[role] || `${role.charAt(0).toUpperCase()}${role.slice(1)}`;
 }
 
-export function formatLocal(date?: string) {
+export function formatLocal(date?: string, timeZone?: string) {
   if (!date) {
     return "-";
   }
@@ -143,14 +143,19 @@ export function formatLocal(date?: string) {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 
-export function formatWindow(startTime?: string, endTime?: string) {
-  return `${formatLocal(startTime)} - ${formatLocal(endTime)}`;
+export function formatWindow(
+  startTime?: string,
+  endTime?: string,
+  timeZone?: string,
+) {
+  return `${formatLocal(startTime, timeZone)} - ${formatLocal(endTime, timeZone)}`;
 }
 
-export function getScheduleDayKey(schedule: ScheduleItem) {
+export function getScheduleDayKey(schedule: ScheduleItem, timeZone?: string) {
   const source = schedule.startTime || schedule.createdAt;
   if (!source) {
     return "Unknown date";
@@ -165,6 +170,7 @@ export function getScheduleDayKey(schedule: ScheduleItem) {
     year: "numeric",
     month: "short",
     day: "numeric",
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 

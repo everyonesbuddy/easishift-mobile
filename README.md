@@ -15,9 +15,11 @@ Admins can manage coverage, schedules, staff, time off, messages, and subscripti
 5. [Authentication and Roles](#authentication-and-roles)
 6. [Routing and Billing Guard](#routing-and-billing-guard)
 7. [Feature Areas](#feature-areas)
-8. [Guided Tours](#guided-tours)
-9. [Key Developer Patterns](#key-developer-patterns)
-10. [Deployment](#deployment)
+8. [Facility Timezone Display](#facility-timezone-display)
+9. [Push Notifications](#push-notifications)
+10. [Guided Tours](#guided-tours)
+11. [Key Developer Patterns](#key-developer-patterns)
+12. [Deployment](#deployment)
 
 ---
 
@@ -224,6 +226,35 @@ All staff can create personal time-off requests, swap requests, and tenant-scope
 ### Billing
 
 `/paywall` and `/billing` display the current subscription, seat limit, billing contact, and plan reference. The native app does not initiate checkout or modify subscriptions.
+
+---
+
+## Facility Timezone Display
+
+Facility administrators confirm an IANA facility timezone (`facilityTimezone` + `facilityTimezoneConfirmed`) in Facility Preferences. [config/timezone.ts](config/timezone.ts) exposes the shared helpers used across the app:
+
+- `getDisplayTimeZone(facilityPreferences)` returns the confirmed facility timezone, or `undefined` to fall back to the device's local timezone.
+- `formatInTimeZone(date, options, timeZone)` formats a date/time using the resolved timezone.
+- `getTimeZoneDayKey(date, timeZone)` produces a stable `YYYY-MM-DD` day key for calendar grouping.
+- `getTimeZoneAbbreviation(date, timeZone)` returns the DST-aware zone abbreviation (e.g. `EDT`).
+
+All visible dates, times, day groupings, and timezone labels across schedules, coverage planning, shift swaps, time-off, time tracking, dashboard charts, and push notifications use these helpers, so every screen agrees on the same instant when a facility timezone is confirmed. Unconfirmed facilities fall back to the viewing device's local timezone, matching prior behavior. Creation and storage are unaffected: schedules and coverage still store UTC instants, and coverage created from shift slots continues to convert facility-local slot times to UTC on the backend.
+
+---
+
+## Push Notifications
+
+Local, on-device notifications are scheduled from data the app already fetches; there is no remote push server. See [services/notifications/notification-service.ts](services/notifications/notification-service.ts) and [services/notifications/notification-matcher.ts](services/notifications/notification-matcher.ts).
+
+Notification types, gated by permission and role:
+
+- Upcoming shift reminder, 1 hour before a shift assigned to the current user
+- Open shift alerts matching the user's facility roles, allowed areas, and certification tags
+- Inbound shift swap requests, and swap approvals pending for schedulers/admins
+- Pending time-off requests for reviewers
+- Understaffed coverage alerts for schedulers/admins within the next 48 hours
+
+[hooks/use-notifications-sync.ts](hooks/use-notifications-sync.ts) resyncs on login and app-foreground, using `getDisplayTimeZone` so notification text matches the confirmed facility timezone shown elsewhere in the app. Notification permissions, Android channels, and deep-link routing back into protected screens are handled in the notification service. All scheduled notifications and hashes are cleared on logout via `cancelAllUserNotifications`.
 
 ---
 

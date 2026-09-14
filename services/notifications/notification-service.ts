@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
-import { Router } from "expo-router";
+import { ImperativeRouter } from "expo-router";
 import { Platform } from "react-native";
 
 import {
@@ -14,6 +14,8 @@ if (Platform.OS !== "web") {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
     }),
@@ -212,7 +214,7 @@ export async function scheduleNotification(
   }
 }
 
-export function subscribeToNotificationClicks(router: Router) {
+export function subscribeToNotificationClicks(router: ImperativeRouter) {
   if (Platform.OS === "web") {
     return () => {};
   }

@@ -8,6 +8,7 @@ import {
   TimeOffRequest,
   getStaffName,
 } from "@/components/staff-portal/timeoff/timeoff-shared";
+import { formatInTimeZone } from "@/config/timezone";
 import {
   getFacilityRolesFromUser,
   isRoleCompatible,
@@ -45,28 +46,28 @@ export function parseBackendDate(
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatTimeWithTimezone(date: Date, timezone?: string): string {
-  try {
-    return date.toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: timezone || undefined,
-    });
-  } catch {
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+// Shift documents default to a literal "UTC" timezone field; prefer the
+// facility's confirmed IANA timezone unless the shift has a real override.
+function resolveDisplayTimezone(
+  shiftTimezone?: string,
+  facilityTimezone?: string,
+): string | undefined {
+  if (shiftTimezone && shiftTimezone.toUpperCase() !== "UTC") {
+    return shiftTimezone;
   }
+  return facilityTimezone || shiftTimezone;
+}
+
+function formatTimeWithTimezone(date: Date, timezone?: string): string {
+  return formatInTimeZone(
+    date,
+    { hour: "numeric", minute: "2-digit", timeZoneName: "short" },
+    timezone,
+  );
 }
 
 function formatDateWithTimezone(date: Date, timezone?: string): string {
-  try {
-    return date.toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-      timeZone: timezone || undefined,
-    });
-  } catch {
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
+  return formatInTimeZone(date, { month: "short", day: "numeric" }, timezone);
 }
 
 export function matchPersonalShiftReminders(
@@ -83,11 +84,7 @@ export function matchPersonalShiftReminders(
   const notifications: NotificationPayload[] = [];
 
   for (const shift of schedules) {
-    if (
-      !shift._id ||
-      shift.status === "cancelled" ||
-      shift.status === "completed"
-    ) {
+    if (!shift._id || shift.status === "completed") {
       continue;
     }
 
@@ -106,7 +103,7 @@ export function matchPersonalShiftReminders(
     // Shift alarm: 60 minutes before start (in absolute epoch time)
     const alarmTime = new Date(startDate.getTime() - 60 * 60 * 1000);
     if (alarmTime.getTime() > now) {
-      const tz = shift.timezone || facilityTimezone;
+      const tz = resolveDisplayTimezone(shift.timezone, facilityTimezone);
       const timeDisplay = formatTimeWithTimezone(startDate, tz);
       const roleDisplay = shift.role || "Scheduled";
       const areaDisplay = shift.unitArea ? ` in ${shift.unitArea}` : "";
@@ -131,6 +128,7 @@ export function matchOpenShifts(
   user: StaffUser,
   facilityPreferences: { roleFamilies?: unknown[] } | null | undefined,
   settings: NotificationSettings,
+  facilityTimezone?: string,
 ): NotificationPayload[] {
   if (!settings.openShiftsEnabled || !user) {
     return [];
@@ -200,11 +198,7 @@ export function matchOpenShifts(
       if (!hasAllCerts) continue;
     }
 
-    const tz =
-      shift.timezone ||
-      ((facilityPreferences as Record<string, unknown>)?.facilityTimezone as
-        | string
-        | undefined);
+    const tz = resolveDisplayTimezone(shift.timezone, facilityTimezone);
     const dateDisplay = formatDateWithTimezone(startDate, tz);
     const timeDisplay = formatTimeWithTimezone(startDate, tz);
     const roleDisplay = shift.role || "Open";

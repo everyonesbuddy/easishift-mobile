@@ -11,6 +11,7 @@ import {
   normalizeTimeOffPayload,
 } from "@/components/staff-portal/timeoff/timeoff-shared";
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
 import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 import {
@@ -114,12 +115,12 @@ export function useNotificationsSync() {
         ? (covRes.data as CoverageItem[])
         : [];
 
-      const facilityTz =
-        typeof (facilityPreferences as Record<string, unknown>)
-          ?.facilityTimezone === "string"
-          ? ((facilityPreferences as Record<string, unknown>)
-              .facilityTimezone as string)
-          : undefined;
+      const facilityTz = getDisplayTimeZone(
+        facilityPreferences as {
+          facilityTimezone?: string;
+          facilityTimezoneConfirmed?: boolean;
+        } | null,
+      );
 
       // Generate notification payloads
       const payloads: NotificationPayload[] = [
@@ -129,6 +130,7 @@ export function useNotificationsSync() {
           user as never,
           facilityPreferences,
           settings,
+          facilityTz,
         ),
         ...matchSwapRequests(swaps, userId, canManageSchedules, settings),
         ...matchTimeOffRequests(timeoffs, canReviewTimeoff, settings),

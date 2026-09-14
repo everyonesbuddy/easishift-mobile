@@ -19,6 +19,7 @@ import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-crea
 import CoverageEditCountForm from "@/components/staff-portal/coverage/coverage-edit-count-form";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getCertificationTagDisplayName,
   getRoleColor,
@@ -81,6 +82,8 @@ type CoverageItem = {
 type FacilityPreferences = {
   roleFamilies?: string[];
   unitAreas?: string[];
+  facilityTimezone?: string;
+  facilityTimezoneConfirmed?: boolean;
 };
 
 type CoverageFilters = {
@@ -90,13 +93,13 @@ type CoverageFilters = {
   searchQuery: string;
 };
 
-function getCoverageDayKey(coverageDate?: string) {
+function getCoverageDayKey(coverageDate?: string, timeZone?: string) {
   if (!coverageDate) {
     return "";
   }
 
   const match = coverageDate.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (match?.[1]) {
+  if (match?.[1] && !coverageDate.includes("T")) {
     return match[1];
   }
 
@@ -105,14 +108,11 @@ function getCoverageDayKey(coverageDate?: string) {
     return "";
   }
 
-  const year = d.getFullYear();
-  const month = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return timeZone ? getTimeZoneDayKey(d, timeZone) : toDayKey(d);
 }
 
-function parseCoverageDateAsLocal(coverageDate?: string) {
-  const dayKey = getCoverageDayKey(coverageDate);
+function parseCoverageDateAsLocal(coverageDate?: string, timeZone?: string) {
+  const dayKey = getCoverageDayKey(coverageDate, timeZone);
   if (!dayKey) {
     return null;
   }
@@ -140,7 +140,7 @@ function toDayKey(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
-function spansOvernight(coverage: CoverageItem) {
+function spansOvernight(coverage: CoverageItem, timeZone?: string) {
   const start = toLocal(coverage.startTime);
   const end = toLocal(coverage.endTime);
 
@@ -148,11 +148,20 @@ function spansOvernight(coverage: CoverageItem) {
     return false;
   }
 
+  if (timeZone) {
+    return (
+      getTimeZoneDayKey(start, timeZone) !== getTimeZoneDayKey(end, timeZone)
+    );
+  }
+
   return start.toDateString() !== end.toDateString();
 }
 
-function getCoverageCalendarDayKeys(coverage: CoverageItem) {
-  const primaryKey = getCoverageDayKey(coverage.date || coverage.startTime);
+function getCoverageCalendarDayKeys(coverage: CoverageItem, timeZone?: string) {
+  const primaryKey = getCoverageDayKey(
+    coverage.date || coverage.startTime,
+    timeZone,
+  );
   if (!primaryKey) {
     return [];
   }
@@ -161,8 +170,8 @@ function getCoverageCalendarDayKeys(coverage: CoverageItem) {
   const start = toLocal(coverage.startTime);
   const end = toLocal(coverage.endTime);
 
-  if (start && end && start.toDateString() !== end.toDateString()) {
-    const endKey = toDayKey(end);
+  if (start && end && spansOvernight(coverage, timeZone)) {
+    const endKey = timeZone ? getTimeZoneDayKey(end, timeZone) : toDayKey(end);
     if (endKey && endKey !== primaryKey) {
       keys.push(endKey);
     }
@@ -171,40 +180,39 @@ function getCoverageCalendarDayKeys(coverage: CoverageItem) {
   return keys;
 }
 
-function formatCoverageDateLabel(coverage: CoverageItem) {
+function formatCoverageDateLabel(coverage: CoverageItem, timeZone?: string) {
   const start = toLocal(coverage.startTime);
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    ...(timeZone ? { timeZone } : {}),
+  };
 
   if (!start) {
     return (
       parseCoverageDateAsLocal(
         coverage.date || coverage.startTime,
-      )?.toLocaleDateString() || "-"
+        timeZone,
+      )?.toLocaleDateString([], dateOptions) || "-"
     );
   }
 
-  const startLabel = start.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const startLabel = start.toLocaleDateString([], dateOptions);
 
-  if (!spansOvernight(coverage)) {
+  if (!spansOvernight(coverage, timeZone)) {
     return startLabel;
   }
 
   const nextDay = new Date(start);
   nextDay.setDate(nextDay.getDate() + 1);
 
-  const endLabel = nextDay.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const endLabel = nextDay.toLocaleDateString([], dateOptions);
 
   return `${startLabel} - ${endLabel}`;
 }
 
-function formatCoverageTimeLabel(coverage: CoverageItem) {
+function formatCoverageTimeLabel(coverage: CoverageItem, timeZone?: string) {
   const start = toLocal(coverage.startTime);
   const end = toLocal(coverage.endTime);
 
@@ -212,24 +220,22 @@ function formatCoverageTimeLabel(coverage: CoverageItem) {
     return "";
   }
 
-  const startDateLabel = start.toLocaleDateString([], {
+  const dateOptions: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     year: "numeric",
-  });
-  const endDateLabel = end.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const startLabel = start.toLocaleTimeString([], {
+    ...(timeZone ? { timeZone } : {}),
+  };
+  const timeOptions: Intl.DateTimeFormatOptions = {
     hour: "numeric",
     minute: "2-digit",
-  });
-  const endLabel = end.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+    ...(timeZone ? { timeZone } : {}),
+  };
+
+  const startDateLabel = start.toLocaleDateString([], dateOptions);
+  const endDateLabel = end.toLocaleDateString([], dateOptions);
+  const startLabel = start.toLocaleTimeString([], timeOptions);
+  const endLabel = end.toLocaleTimeString([], timeOptions);
 
   return `${startDateLabel} ${startLabel} - ${endDateLabel} ${endLabel}`;
 }
@@ -285,6 +291,7 @@ export default function CoveragePlanningPage() {
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
   const [facilityPreferences, setFacilityPreferences] =
     useState<FacilityPreferences | null>(null);
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"table" | "calendar">("table");
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
@@ -545,8 +552,8 @@ export default function CoveragePlanningPage() {
     });
 
     return filtered.sort((a, b) => {
-      const da = getCoverageDayKey(a.date || a.startTime);
-      const db = getCoverageDayKey(b.date || b.startTime);
+      const da = getCoverageDayKey(a.date || a.startTime, displayTimeZone);
+      const db = getCoverageDayKey(b.date || b.startTime, displayTimeZone);
       if (db !== da) {
         return db.localeCompare(da);
       }
@@ -558,6 +565,7 @@ export default function CoveragePlanningPage() {
     });
   }, [
     coverages,
+    displayTimeZone,
     searchQuery,
     selectedFillStatuses,
     selectedRoles,
@@ -627,7 +635,7 @@ export default function CoveragePlanningPage() {
     const meta: Record<string, { count: number; color: string }> = {};
 
     displayedCoverages.forEach((item) => {
-      const dayKeys = getCoverageCalendarDayKeys(item);
+      const dayKeys = getCoverageCalendarDayKeys(item, displayTimeZone);
       if (dayKeys.length === 0) {
         return;
       }
@@ -642,14 +650,14 @@ export default function CoveragePlanningPage() {
     });
 
     return meta;
-  }, [displayedCoverages]);
+  }, [displayedCoverages, displayTimeZone]);
 
   const selectedDayItems = useMemo(
     () =>
       displayedCoverages.filter((item) =>
-        getCoverageCalendarDayKeys(item).includes(selectedDay),
+        getCoverageCalendarDayKeys(item, displayTimeZone).includes(selectedDay),
       ),
-    [displayedCoverages, selectedDay],
+    [displayedCoverages, displayTimeZone, selectedDay],
   );
 
   const selectedDayLabel = useMemo(() => {
@@ -891,8 +899,8 @@ export default function CoveragePlanningPage() {
                       </View>
 
                       <Text style={styles.rowMeta}>
-                        {formatCoverageDateLabel(c)} •{" "}
-                        {formatCoverageTimeLabel(c)}
+                        {formatCoverageDateLabel(c, displayTimeZone)} •{" "}
+                        {formatCoverageTimeLabel(c, displayTimeZone)}
                       </Text>
                       <Text style={styles.rowMeta}>
                         Unit Area: {getUnitAreaDisplayName(c.unitArea)}
@@ -906,7 +914,7 @@ export default function CoveragePlanningPage() {
                       <Text style={styles.rowMeta}>
                         Cert Tags: {formatRequiredCertTags(c)}
                       </Text>
-                      {spansOvernight(c) ? (
+                      {spansOvernight(c, displayTimeZone) ? (
                         <Text style={styles.overnightText}>
                           Overnight shift
                         </Text>
@@ -1072,14 +1080,20 @@ export default function CoveragePlanningPage() {
                           {start?.toLocaleTimeString([], {
                             hour: "numeric",
                             minute: "2-digit",
+                            ...(displayTimeZone
+                              ? { timeZone: displayTimeZone }
+                              : {}),
                           }) || "-"}{" "}
                           -{" "}
                           {end?.toLocaleTimeString([], {
                             hour: "numeric",
                             minute: "2-digit",
+                            ...(displayTimeZone
+                              ? { timeZone: displayTimeZone }
+                              : {}),
                           }) || "-"}
                         </Text>
-                        {spansOvernight(item) ? (
+                        {spansOvernight(item, displayTimeZone) ? (
                           <Text style={styles.calendarOvernightTag}>
                             Overnight shift
                           </Text>
@@ -1137,11 +1151,17 @@ export default function CoveragePlanningPage() {
                 <View style={styles.detailGrid}>
                   <DetailRow
                     label="Date"
-                    value={formatCoverageDateLabel(selectedCoverage)}
+                    value={formatCoverageDateLabel(
+                      selectedCoverage,
+                      displayTimeZone,
+                    )}
                   />
                   <DetailRow
                     label="Time"
-                    value={formatCoverageTimeLabel(selectedCoverage)}
+                    value={formatCoverageTimeLabel(
+                      selectedCoverage,
+                      displayTimeZone,
+                    )}
                   />
                   <DetailRow
                     label="Required Staff"
@@ -1183,7 +1203,7 @@ export default function CoveragePlanningPage() {
                   </Text>
                 </View>
 
-                {spansOvernight(selectedCoverage) ? (
+                {spansOvernight(selectedCoverage, displayTimeZone) ? (
                   <Text style={styles.overnightText}>Overnight shift</Text>
                 ) : null}
 

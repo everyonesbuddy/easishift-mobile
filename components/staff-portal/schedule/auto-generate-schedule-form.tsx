@@ -16,6 +16,7 @@ import {
 
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getRoleDisplayName,
   getShiftTagDisplayName,
@@ -222,7 +223,7 @@ function getDraftStateMeta(state?: string) {
   );
 }
 
-function formatDatePart(value?: string) {
+function formatDatePart(value?: string, timeZone?: string) {
   if (!value) return "Unknown date";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Unknown date";
@@ -230,18 +231,27 @@ function formatDatePart(value?: string) {
     month: "short",
     day: "numeric",
     year: "numeric",
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 
-function formatTimePart(value?: string) {
+function formatTimePart(value?: string, timeZone?: string) {
   if (!value) return "--:--";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "--:--";
-  return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return parsed.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  });
 }
 
-function formatDateTimeWindow(startTime?: string, endTime?: string) {
-  return `${formatDatePart(startTime)} | ${formatTimePart(startTime)} - ${formatTimePart(endTime)}`;
+function formatDateTimeWindow(
+  startTime?: string,
+  endTime?: string,
+  timeZone?: string,
+) {
+  return `${formatDatePart(startTime, timeZone)} | ${formatTimePart(startTime, timeZone)} - ${formatTimePart(endTime, timeZone)}`;
 }
 
 function toDateTimeLocalInput(value?: string) {
@@ -265,9 +275,12 @@ function toFiniteNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function getLocalDayKey(value: string | Date) {
+function getLocalDayKey(value: string | Date, timeZone?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
+  if (timeZone) {
+    return getTimeZoneDayKey(date, timeZone);
+  }
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -642,7 +655,8 @@ export default function AutoGenerateScheduleForm({
   onClose,
   schedules = [],
 }: Props) {
-  const { can } = useAuth();
+  const { can, facilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const { startTourIfUnseen } = useGuideTour();
   const canManageSchedules = can("schedule.manage");
   const [coverages, setCoverages] = useState<CoverageItem[]>([]);
@@ -675,7 +689,7 @@ export default function AutoGenerateScheduleForm({
   );
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedDay, setSelectedDay] = useState<string>(
-    getLocalDayKey(new Date()),
+    getLocalDayKey(new Date(), displayTimeZone),
   );
   const [dayDetailsOpen, setDayDetailsOpen] = useState(false);
   const [editForm, setEditForm] = useState<EditForm>({
@@ -802,6 +816,7 @@ export default function AutoGenerateScheduleForm({
             month: "short",
             day: "numeric",
             year: "numeric",
+            ...(displayTimeZone ? { timeZone: displayTimeZone } : {}),
           });
 
       if (!grouped.has(dayLabel)) {
@@ -815,7 +830,7 @@ export default function AutoGenerateScheduleForm({
       dayLabel,
       assignments,
     }));
-  }, [workspaceAssignments]);
+  }, [displayTimeZone, workspaceAssignments]);
 
   const proposedCountByCoverageKey = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1017,7 +1032,7 @@ export default function AutoGenerateScheduleForm({
         return doesCoverageMatchStaffTags(staff, coverage);
       }).length;
 
-      const dayKey = getLocalDayKey(coverage.start);
+      const dayKey = getLocalDayKey(coverage.start, displayTimeZone);
       if (!dayKey) return;
 
       if (!detailsByDay.has(dayKey)) {
@@ -1038,13 +1053,21 @@ export default function AutoGenerateScheduleForm({
     });
 
     return detailsByDay;
-  }, [draftCoverageCandidates, proposedCountByCoverageKey, staffList]);
+  }, [
+    displayTimeZone,
+    draftCoverageCandidates,
+    proposedCountByCoverageKey,
+    staffList,
+  ]);
 
   const openCoverageByDay = useMemo(() => {
     const grouped = new Map<string, typeof openCoverageItems>();
 
     openCoverageItems.forEach((item) => {
-      const dayKey = getLocalDayKey(item.coverage.startTime || "");
+      const dayKey = getLocalDayKey(
+        item.coverage.startTime || "",
+        displayTimeZone,
+      );
       if (!dayKey) return;
       if (!grouped.has(dayKey)) {
         grouped.set(dayKey, []);
@@ -1053,7 +1076,7 @@ export default function AutoGenerateScheduleForm({
     });
 
     return grouped;
-  }, [openCoverageItems]);
+  }, [displayTimeZone, openCoverageItems]);
 
   const activitySummaryByDay = useMemo(() => {
     const activity = new Map<
@@ -1085,13 +1108,17 @@ export default function AutoGenerateScheduleForm({
     };
 
     liveSchedules.forEach((schedule) => {
-      const row = ensureDay(getLocalDayKey(schedule.startTime || ""));
+      const row = ensureDay(
+        getLocalDayKey(schedule.startTime || "", displayTimeZone),
+      );
       if (!row) return;
       row.liveCount += 1;
     });
 
     calendarAssignments.forEach((assignment) => {
-      const row = ensureDay(getLocalDayKey(assignment.startTime || ""));
+      const row = ensureDay(
+        getLocalDayKey(assignment.startTime || "", displayTimeZone),
+      );
       if (!row) return;
 
       const state = String(assignment.state || "").toLowerCase();
@@ -1105,14 +1132,16 @@ export default function AutoGenerateScheduleForm({
     });
 
     openCoverageItems.forEach((item) => {
-      const row = ensureDay(getLocalDayKey(item.coverage.startTime || ""));
+      const row = ensureDay(
+        getLocalDayKey(item.coverage.startTime || "", displayTimeZone),
+      );
       if (!row) return;
       row.openCoverageCount += 1;
       row.openCoverageSlots += item.openCount;
     });
 
     return activity;
-  }, [calendarAssignments, liveSchedules, openCoverageItems]);
+  }, [calendarAssignments, displayTimeZone, liveSchedules, openCoverageItems]);
 
   const calendarDayMeta = useMemo(() => {
     const entries: Record<string, { count: number; color: string }> = {};
@@ -1159,14 +1188,17 @@ export default function AutoGenerateScheduleForm({
   const selectedDayAssignments = useMemo(() => {
     return workspaceAssignments.filter(
       (assignment) =>
-        getLocalDayKey(assignment.startTime || "") === selectedDay,
+        getLocalDayKey(assignment.startTime || "", displayTimeZone) ===
+        selectedDay,
     );
-  }, [selectedDay, workspaceAssignments]);
+  }, [displayTimeZone, selectedDay, workspaceAssignments]);
   const selectedDayLiveSchedules = useMemo(() => {
     return liveSchedules.filter(
-      (schedule) => getLocalDayKey(schedule.startTime || "") === selectedDay,
+      (schedule) =>
+        getLocalDayKey(schedule.startTime || "", displayTimeZone) ===
+        selectedDay,
     );
-  }, [liveSchedules, selectedDay]);
+  }, [displayTimeZone, liveSchedules, selectedDay]);
 
   const handleCalendarDaySelect = (dayKey: string) => {
     setSelectedDay(dayKey);
@@ -1175,10 +1207,13 @@ export default function AutoGenerateScheduleForm({
       Boolean(activitySummaryByDay.get(dayKey)) ||
       (openCoverageByDay.get(dayKey) || []).length > 0 ||
       liveSchedules.some(
-        (schedule) => getLocalDayKey(schedule.startTime || "") === dayKey,
+        (schedule) =>
+          getLocalDayKey(schedule.startTime || "", displayTimeZone) === dayKey,
       ) ||
       workspaceAssignments.some(
-        (assignment) => getLocalDayKey(assignment.startTime || "") === dayKey,
+        (assignment) =>
+          getLocalDayKey(assignment.startTime || "", displayTimeZone) ===
+          dayKey,
       );
 
     setDayDetailsOpen(hasData);
@@ -2193,6 +2228,7 @@ export default function AutoGenerateScheduleForm({
                                 {formatDateTimeWindow(
                                   assignment.startTime,
                                   assignment.endTime,
+                                  displayTimeZone,
                                 )}
                                 {assignment.unitArea
                                   ? ` · ${getUnitAreaDisplayName(assignment.unitArea)}`
@@ -2529,8 +2565,12 @@ export default function AutoGenerateScheduleForm({
                           </Text>
                           <Text style={styles.liveScheduleMeta}>
                             {getRoleDisplayName(schedule?.role)} ·{" "}
-                            {formatTimePart(schedule?.startTime)} -{" "}
-                            {formatTimePart(schedule?.endTime)}
+                            {formatTimePart(
+                              schedule?.startTime,
+                              displayTimeZone,
+                            )}{" "}
+                            -{" "}
+                            {formatTimePart(schedule?.endTime, displayTimeZone)}
                           </Text>
                           {schedule?.unitArea ? (
                             <Text style={styles.liveScheduleMetaMuted}>
@@ -2568,6 +2608,7 @@ export default function AutoGenerateScheduleForm({
                             {formatDateTimeWindow(
                               item.coverage.startTime,
                               item.coverage.endTime,
+                              displayTimeZone,
                             )}
                           </Text>
                           <Text style={styles.coverageMetaMuted}>
@@ -2640,8 +2681,15 @@ export default function AutoGenerateScheduleForm({
                           </Text>
                           <Text style={styles.assignmentMeta}>
                             {getRoleDisplayName(assignment.role)} ·{" "}
-                            {formatTimePart(assignment.startTime)} -{" "}
-                            {formatTimePart(assignment.endTime)}
+                            {formatTimePart(
+                              assignment.startTime,
+                              displayTimeZone,
+                            )}{" "}
+                            -{" "}
+                            {formatTimePart(
+                              assignment.endTime,
+                              displayTimeZone,
+                            )}
                           </Text>
                           {String(assignment.state || "") === "unfilled" ? (
                             <Pressable

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
 import {
   getFacilityRolesFromUser,
   getUserRoles,
@@ -113,6 +114,7 @@ export default function ShiftSwapRequestModal({
   staffList = [],
 }: Props) {
   const { user, can, facilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const canUseShiftSwap = can("shift_swap.use");
 
   const [mySchedules, setMySchedules] = useState<ScheduleItem[]>([]);
@@ -255,6 +257,7 @@ export default function ShiftSwapRequestModal({
     ? `${getRoleDisplayName(activeSchedule.role)} | ${formatWindow(
         activeSchedule.startTime,
         activeSchedule.endTime,
+        displayTimeZone,
       )}`
     : "";
 
@@ -301,6 +304,7 @@ export default function ShiftSwapRequestModal({
                   label: `${getRoleDisplayName(item.role)} | ${formatWindow(
                     item.startTime,
                     item.endTime,
+                    displayTimeZone,
                   )}`,
                 }))}
               />
@@ -312,7 +316,11 @@ export default function ShiftSwapRequestModal({
               <Text style={styles.selectedLabel}>Selected Shift</Text>
               <Text style={styles.selectedText}>
                 {getRoleDisplayName(activeSchedule.role)} |{" "}
-                {formatWindow(activeSchedule.startTime, activeSchedule.endTime)}
+                {formatWindow(
+                  activeSchedule.startTime,
+                  activeSchedule.endTime,
+                  displayTimeZone,
+                )}
               </Text>
             </View>
           ) : (

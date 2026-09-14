@@ -14,6 +14,8 @@ import {
 
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import api from "@/config/api";
+import { getDisplayTimeZone } from "@/config/timezone";
+import { useAuth } from "@/context/auth-context";
 import { useGuideTour } from "@/context/guide-tour-context";
 
 const TIMEOFF_DECISION_TOUR_STEPS = [
@@ -43,6 +45,8 @@ import {
 } from "./timeoff-shared";
 
 export default function TimeOffDecisionPage() {
+  const { facilityPreferences } = useAuth();
+  const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const { startTourIfUnseen } = useGuideTour();
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -246,8 +250,8 @@ export default function TimeOffDecisionPage() {
                     </View>
 
                     <Text style={styles.dateText}>
-                      {formatDate(getStartValue(request))} -{" "}
-                      {formatDate(getEndValue(request))}
+                      {formatDate(getStartValue(request), displayTimeZone)} -{" "}
+                      {formatDate(getEndValue(request), displayTimeZone)}
                     </Text>
 
                     {request.reason ? (
@@ -257,7 +261,10 @@ export default function TimeOffDecisionPage() {
                     ) : null}
 
                     <Text style={styles.captionText}>
-                      {formatDateTime(request.requestedAt || request.createdAt)}
+                      {formatDateTime(
+                        request.requestedAt || request.createdAt,
+                        displayTimeZone,
+                      )}
                       {request.reviewedBy ? " • Reviewed" : ""}
                     </Text>
                   </View>
@@ -307,8 +314,8 @@ export default function TimeOffDecisionPage() {
                       {getStaffName(selected)}
                     </Text>
                     <Text style={styles.modalMeta}>
-                      {formatDateTime(getStartValue(selected))} -{" "}
-                      {formatDateTime(getEndValue(selected))}
+                      {formatDateTime(getStartValue(selected), displayTimeZone)}{" "}
+                      - {formatDateTime(getEndValue(selected), displayTimeZone)}
                     </Text>
                   </View>
                 </View>
