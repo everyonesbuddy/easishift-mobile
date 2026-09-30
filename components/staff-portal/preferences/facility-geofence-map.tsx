@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import MapView, { Circle, Marker, MapPressEvent } from "react-native-maps";
+import MapView, { Circle, MapPressEvent, Marker } from "react-native-maps";
 
 export type FacilityGeofence = {
   address?: string;

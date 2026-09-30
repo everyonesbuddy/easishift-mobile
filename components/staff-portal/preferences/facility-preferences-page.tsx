@@ -190,8 +190,8 @@ function normalizeTimeTrackingPrefs(
         | "open"
         | "geofence")
     : String((safe as TimeTrackingPrefs).mode || "") === "manual"
-        ? "open"
-        : TIME_TRACKING_DEFAULTS.mode;
+      ? "open"
+      : TIME_TRACKING_DEFAULTS.mode;
 
   const roundedValue = Number((safe as TimeTrackingPrefs).roundingMinutes);
   const normalizedRounding = [0, 5, 6, 10, 15].includes(roundedValue)

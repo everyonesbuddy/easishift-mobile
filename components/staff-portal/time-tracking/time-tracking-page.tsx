@@ -307,11 +307,7 @@ export default function TimeTrackingPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [
-    fetchFacilityPreferences,
-    loadAdminEntries,
-    loadStaffEntries,
-  ]);
+  }, [fetchFacilityPreferences, loadAdminEntries, loadStaffEntries]);
 
   useEffect(() => {
     let mounted = true;
@@ -340,12 +336,7 @@ export default function TimeTrackingPage() {
     return () => {
       mounted = false;
     };
-  }, [
-    fetchFacilityPreferences,
-    isAdmin,
-    loadAdminEntries,
-    loadStaffEntries,
-  ]);
+  }, [fetchFacilityPreferences, isAdmin, loadAdminEntries, loadStaffEntries]);
 
   const submitClockIn = async () => {
     setSubmitting(true);
@@ -771,7 +762,6 @@ export default function TimeTrackingPage() {
           </View>
         ) : null}
       </ScrollView>
-
     </SafeAreaView>
   );
 }
