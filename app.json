@@ -44,9 +44,9 @@
         }
       ],
       [
-        "expo-camera",
+        "expo-location",
         {
-          "cameraPermission": "Allow WiserShifts to use your camera for attendance QR scanning."
+          "locationWhenInUsePermission": "Allow WiserShifts to use your location when you clock in or out and when an administrator configures the facility geofence."
         }
       ],
       [

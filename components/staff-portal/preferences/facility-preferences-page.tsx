@@ -15,6 +15,9 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
+import FacilityGeofenceMap, {
+  FacilityGeofence,
+} from "@/components/staff-portal/preferences/facility-geofence-map";
 import api from "@/config/api";
 import { useAuth } from "@/context/auth-context";
 import {
@@ -38,7 +41,8 @@ type ShiftTypeDefinition = {
 
 type TimeTrackingPrefs = {
   enabled?: boolean;
-  mode?: "open" | "qr";
+  mode?: "open" | "geofence";
+  geofence?: FacilityGeofence;
   requireScheduleMatch?: boolean;
   clockInGraceMinutes?: number;
   clockOutGraceMinutes?: number;
@@ -88,6 +92,12 @@ const TAXONOMY_FIELDS = [
 const TIME_TRACKING_DEFAULTS: Required<TimeTrackingPrefs> = {
   enabled: false,
   mode: "open",
+  geofence: {
+    address: "",
+    latitude: null,
+    longitude: null,
+    radiusMeters: 150,
+  },
   requireScheduleMatch: true,
   clockInGraceMinutes: 15,
   clockOutGraceMinutes: 30,
@@ -168,13 +178,18 @@ function normalizeTimeTrackingPrefs(
   input: unknown,
 ): Required<TimeTrackingPrefs> {
   const safe = input && typeof input === "object" ? input : {};
-  const normalizedMode = ["open", "qr"].includes(
+  const rawGeofence =
+    (safe as TimeTrackingPrefs).geofence &&
+    typeof (safe as TimeTrackingPrefs).geofence === "object"
+      ? (safe as TimeTrackingPrefs).geofence
+      : {};
+  const normalizedMode = ["open", "geofence"].includes(
     String((safe as TimeTrackingPrefs).mode || ""),
   )
-    ? (String((safe as TimeTrackingPrefs).mode || "open") as "open" | "qr")
-    : String((safe as TimeTrackingPrefs).mode || "") === "geofence"
-      ? "qr"
-      : String((safe as TimeTrackingPrefs).mode || "") === "manual"
+    ? (String((safe as TimeTrackingPrefs).mode || "open") as
+        | "open"
+        | "geofence")
+    : String((safe as TimeTrackingPrefs).mode || "") === "manual"
         ? "open"
         : TIME_TRACKING_DEFAULTS.mode;
 
@@ -186,6 +201,27 @@ function normalizeTimeTrackingPrefs(
   return {
     enabled: Boolean((safe as TimeTrackingPrefs).enabled),
     mode: normalizedMode,
+    geofence: {
+      address: String(rawGeofence?.address || ""),
+      latitude:
+        rawGeofence?.latitude === null ||
+        rawGeofence?.latitude === undefined ||
+        !Number.isFinite(Number(rawGeofence.latitude))
+          ? null
+          : Number(rawGeofence.latitude),
+      longitude:
+        rawGeofence?.longitude === null ||
+        rawGeofence?.longitude === undefined ||
+        !Number.isFinite(Number(rawGeofence.longitude))
+          ? null
+          : Number(rawGeofence.longitude),
+      radiusMeters: Math.max(
+        25,
+        Number(rawGeofence?.radiusMeters) ||
+          TIME_TRACKING_DEFAULTS.geofence.radiusMeters ||
+          150,
+      ),
+    },
     requireScheduleMatch:
       typeof (safe as TimeTrackingPrefs).requireScheduleMatch === "boolean"
         ? Boolean((safe as TimeTrackingPrefs).requireScheduleMatch)
@@ -356,6 +392,27 @@ export default function FacilityPreferencesPage() {
         timeTracking: {
           ...current,
           [field]: value,
+        },
+      };
+    });
+  };
+
+  const handleGeofenceChange = <K extends keyof FacilityGeofence>(
+    field: K,
+    value: FacilityGeofence[K],
+  ) => {
+    setPrefs((prev) => {
+      const source = prev || safePrefs;
+      const current = normalizeTimeTrackingPrefs(source.timeTracking);
+
+      return {
+        ...source,
+        timeTracking: {
+          ...current,
+          geofence: {
+            ...current.geofence,
+            [field]: value,
+          },
         },
       };
     });
@@ -550,6 +607,21 @@ export default function FacilityPreferencesPage() {
   };
 
   const handleSave = async () => {
+    const geofence = safePrefs.timeTracking?.geofence;
+    if (
+      safePrefs.timeTracking?.enabled &&
+      safePrefs.timeTracking.mode === "geofence" &&
+      (geofence?.latitude === null ||
+        geofence?.latitude === undefined ||
+        geofence?.longitude === null ||
+        geofence?.longitude === undefined ||
+        !Number.isFinite(Number(geofence.latitude)) ||
+        !Number.isFinite(Number(geofence?.longitude)))
+    ) {
+      setError("Select a facility location before saving geofence mode.");
+      return;
+    }
+
     setSaving(true);
     setError("");
     setSuccess("");
@@ -926,7 +998,7 @@ export default function FacilityPreferencesPage() {
           <View style={styles.fieldWrap}>
             <Text style={styles.fieldLabel}>Tracking Mode</Text>
             <View style={styles.segmentRow}>
-              {(["open", "qr"] as const).map((mode) => {
+              {(["open", "geofence"] as const).map((mode) => {
                 const selected =
                   (safePrefs.timeTracking?.mode || "open") === mode;
                 return (
@@ -945,7 +1017,7 @@ export default function FacilityPreferencesPage() {
                         selected ? styles.segmentBtnTextActive : null,
                       ]}
                     >
-                      {mode === "open" ? "Open" : "QR"}
+                      {mode === "open" ? "Open" : "Geofence"}
                     </Text>
                   </Pressable>
                 );
@@ -1011,11 +1083,12 @@ export default function FacilityPreferencesPage() {
             }
           />
 
-          {(safePrefs.timeTracking?.mode || "open") === "qr" ? (
-            <Text style={styles.hintText}>
-              QR mode is active. Staff must scan a valid facility QR token to
-              clock in and clock out.
-            </Text>
+          {(safePrefs.timeTracking?.mode || "open") === "geofence" ? (
+            <FacilityGeofenceMap
+              geofence={safePrefs.timeTracking?.geofence}
+              onChange={handleGeofenceChange}
+              disabled={!canManageFacilityPreferences}
+            />
           ) : null}
 
           <SwitchRow
