@@ -1,4 +1,5 @@
 import ChangePasswordModal from "@/components/auth/change-password-modal";
+import { getBrandColors } from "@/config/branding-colors";
 import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 import { Feather } from "@expo/vector-icons";
@@ -99,7 +100,8 @@ type Props = {
 };
 
 export default function Sidebar({ visible, onClose }: Props) {
-  const { user, can, facilityPreferences } = useAuth();
+  const { user, can, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const router = useRouter();
   const pathname = usePathname();
   const [userMenuVisible, setUserMenuVisible] = useState(false);
@@ -132,6 +134,16 @@ export default function Sidebar({ visible, onClose }: Props) {
             icon: "settings" as const,
             label: "Facility Preferences",
             to: "/facility-preferences",
+          },
+        ]
+      : []),
+    ...(can("tenant.settings")
+      ? [
+          {
+            id: "tenant-branding",
+            icon: "droplet" as const,
+            label: "Tenant Branding",
+            to: "/tenant-branding",
           },
         ]
       : []),
@@ -180,15 +192,22 @@ export default function Sidebar({ visible, onClose }: Props) {
         />
 
         {/* Drawer panel */}
-        <View style={styles.drawer}>
+        <View style={[styles.drawer, { backgroundColor: brand.secondary }]}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.logoText}>WiserShifts</Text>
+            <Text
+              style={[styles.logoText, { color: brand.onSecondary }]}
+              numberOfLines={1}
+            >
+              {typeof publicBranding?.displayName === "string"
+                ? publicBranding.displayName
+                : "WiserShifts"}
+            </Text>
             <TouchableOpacity
               onPress={onClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="x" size={22} color="#d1d5db" />
+              <Feather name="x" size={22} color={brand.onSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -199,17 +218,24 @@ export default function Sidebar({ visible, onClose }: Props) {
               return (
                 <TouchableOpacity
                   key={item.id}
-                  style={[styles.navItem, isActive && styles.navItemActive]}
+                  style={[
+                    styles.navItem,
+                    isActive && { backgroundColor: brand.primary },
+                  ]}
                   onPress={() => handleNavigate(item.to)}
                   activeOpacity={0.7}
                 >
                   <Feather
                     name={item.icon}
                     size={20}
-                    color={isActive ? "#ffffff" : "#d1d5db"}
+                    color={isActive ? brand.onPrimary : brand.onSecondary}
                   />
                   <Text
-                    style={[styles.navLabel, isActive && styles.navLabelActive]}
+                    style={[
+                      styles.navLabel,
+                      { color: isActive ? brand.onPrimary : brand.onSecondary },
+                      isActive && styles.navLabelActive,
+                    ]}
                   >
                     {item.label}
                   </Text>
@@ -221,16 +247,25 @@ export default function Sidebar({ visible, onClose }: Props) {
           {/* User Footer */}
           <View style={styles.footer}>
             <View style={styles.userRow}>
-              <View style={styles.avatar}>
-                <Feather name="user" size={20} color="#ffffff" />
+              <View style={[styles.avatar, { backgroundColor: brand.primary }]}>
+                <Feather name="user" size={20} color={brand.onPrimary} />
               </View>
               <View style={styles.userInfo}>
-                <Text style={styles.userName} numberOfLines={1}>
+                <Text
+                  style={[styles.userName, { color: brand.onSecondary }]}
+                  numberOfLines={1}
+                >
                   {typeof user?.name === "string" && user.name
                     ? user.name
                     : "Staff User"}
                 </Text>
-                <Text style={styles.userEmail} numberOfLines={1}>
+                <Text
+                  style={[
+                    styles.userEmail,
+                    { color: brand.onSecondary, opacity: 0.72 },
+                  ]}
+                  numberOfLines={1}
+                >
                   {typeof user?.email === "string" ? user.email : ""}
                 </Text>
               </View>
@@ -238,20 +273,28 @@ export default function Sidebar({ visible, onClose }: Props) {
                 onPress={() => setUserMenuVisible((v) => !v)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Feather name="more-vertical" size={18} color="#9ca3af" />
+                <Feather
+                  name="more-vertical"
+                  size={18}
+                  color={brand.onSecondary}
+                />
               </TouchableOpacity>
             </View>
 
             {userMenuVisible && (
               <TouchableOpacity
-                style={styles.menuOption}
+                style={[styles.menuOption, { backgroundColor: brand.primary }]}
                 onPress={() => {
                   setUserMenuVisible(false);
                   setChangePasswordOpen(true);
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.menuOptionText}>Change Password</Text>
+                <Text
+                  style={[styles.menuOptionText, { color: brand.onPrimary }]}
+                >
+                  Change Password
+                </Text>
               </TouchableOpacity>
             )}
           </View>

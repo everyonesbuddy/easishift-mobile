@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import {
   getCertificationTagDisplayName,
   getRoleDisplayName,
@@ -151,6 +152,8 @@ function PickerModal({
   onSelect: (value: string) => void;
   onClose: () => void;
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <Modal
       visible={open}
@@ -181,7 +184,7 @@ function PickerModal({
               >
                 <Text style={styles.pickerItemText}>{option.label}</Text>
                 {option.value === value ? (
-                  <Feather name="check" size={16} color="#2563eb" />
+                  <Feather name="check" size={16} color={brand.primary} />
                 ) : null}
               </Pressable>
             ))}
@@ -207,6 +210,8 @@ function MultiSelectModal({
   onChange: (values: string[]) => void;
   onClose: () => void;
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const selectedValues = normalizeStringArray(values);
 
   return (
@@ -246,14 +251,19 @@ function MultiSelectModal({
                 >
                   <Text style={styles.pickerItemText}>{option.label}</Text>
                   {selected ? (
-                    <Feather name="check" size={16} color="#2563eb" />
+                    <Feather name="check" size={16} color={brand.primary} />
                   ) : null}
                 </Pressable>
               );
             })}
           </ScrollView>
-          <Pressable style={styles.doneButton} onPress={onClose}>
-            <Text style={styles.doneButtonText}>Done</Text>
+          <Pressable
+            style={[styles.doneButton, { backgroundColor: brand.primary }]}
+            onPress={onClose}
+          >
+            <Text style={[styles.doneButtonText, { color: brand.onPrimary }]}>
+              Done
+            </Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -266,7 +276,8 @@ export default function CoverageEditCountForm({
   onClose,
   onSuccess,
 }: Props) {
-  const { can, facilityPreferences } = useAuth();
+  const { can, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const [requiredCount, setRequiredCount] = useState(0);
   const [role, setRole] = useState("");
   const [unitArea, setUnitArea] = useState("");
@@ -556,14 +567,20 @@ export default function CoverageEditCountForm({
           <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
         <Pressable
-          style={[styles.actionBtn, styles.saveBtn]}
+          style={[
+            styles.actionBtn,
+            styles.saveBtn,
+            { backgroundColor: brand.primary },
+          ]}
           onPress={handleSubmit}
           disabled={!canManageCoverage || loading || lockChecking}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={brand.onPrimary} size="small" />
           ) : (
-            <Text style={styles.saveText}>Save Coverage</Text>
+            <Text style={[styles.saveText, { color: brand.onPrimary }]}>
+              Save Coverage
+            </Text>
           )}
         </Pressable>
       </View>

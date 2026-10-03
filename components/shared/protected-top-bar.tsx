@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/auth-context";
 
 export default function ProtectedTopBar() {
-  const { logout } = useAuth();
+  const { logout, publicBranding } = useAuth();
   const insets = useSafeAreaInsets();
 
   const handleLogout = async () => {
@@ -24,7 +24,11 @@ export default function ProtectedTopBar() {
     >
       <View style={styles.logoSlot}>
         <Image
-          source={require("@/assets/logos/wiserShifts-icon-light.svg")}
+          source={
+            publicBranding?.logoUrl
+              ? { uri: publicBranding.logoUrl }
+              : require("@/assets/logos/wiserShifts-icon-light.svg")
+          }
           style={styles.logo}
           contentFit="contain"
         />

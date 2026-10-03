@@ -1,8 +1,12 @@
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 import { useRouter } from "expo-router";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 export default function BillingCancelPage() {
   const router = useRouter();
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
 
   return (
     <SafeAreaView style={styles.page}>
@@ -13,10 +17,12 @@ export default function BillingCancelPage() {
           billing.
         </Text>
         <Pressable
-          style={styles.button}
+          style={[styles.button, { backgroundColor: brand.primary }]}
           onPress={() => router.push("/billing")}
         >
-          <Text style={styles.buttonText}>Back to billing</Text>
+          <Text style={[styles.buttonText, { color: brand.onPrimary }]}>
+            Back to billing
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>

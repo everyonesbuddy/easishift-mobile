@@ -13,6 +13,8 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 
 type Props = {
   open: boolean;
@@ -49,6 +51,8 @@ export default function TimeOffRequestModal({
   onClose,
   onSuccess,
 }: Props) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const [startDateTime, setStartDateTime] = useState<Date | null>(null);
   const [endDateTime, setEndDateTime] = useState<Date | null>(null);
   const [reason, setReason] = useState("");
@@ -237,15 +241,18 @@ export default function TimeOffRequestModal({
                 style={[
                   styles.actionBtn,
                   styles.submitBtn,
+                  { backgroundColor: brand.primary },
                   submitting ? styles.submitDisabled : null,
                 ]}
                 onPress={handleSubmit}
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color={brand.onPrimary} />
                 ) : (
-                  <Text style={styles.submitText}>Request</Text>
+                  <Text style={[styles.submitText, { color: brand.onPrimary }]}>
+                    Request
+                  </Text>
                 )}
               </Pressable>
             </View>
@@ -302,10 +309,16 @@ export default function TimeOffRequestModal({
                 <Text style={styles.cancelText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.actionBtn, styles.submitBtn]}
+                style={[
+                  styles.actionBtn,
+                  styles.submitBtn,
+                  { backgroundColor: brand.primary },
+                ]}
                 onPress={applyPicker}
               >
-                <Text style={styles.submitText}>Apply</Text>
+                <Text style={[styles.submitText, { color: brand.onPrimary }]}>
+                  Apply
+                </Text>
               </Pressable>
             </View>
           </Pressable>

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getBrandColors } from "@/config/branding-colors";
 import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -66,6 +67,12 @@ const ADMIN_MORE_ITEMS: NavItem[] = [
     label: "Facility Preferences",
     icon: "sliders",
     to: "/facility-preferences",
+  },
+  {
+    id: "tenant-branding",
+    label: "Tenant Branding",
+    icon: "droplet",
+    to: "/tenant-branding",
   },
   { id: "staff", label: "Staff Management", icon: "users", to: "/staffs" },
   {
@@ -152,7 +159,8 @@ function isActive(pathname: string, to?: string) {
 }
 
 export default function ProtectedBottomNav() {
-  const { can, facilityPreferences, user } = useAuth();
+  const { can, facilityPreferences, user, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -196,6 +204,7 @@ export default function ProtectedBottomNav() {
           can("facility_preferences.view") || can("facility_preferences.manage")
         );
       }
+      if (item.id === "tenant-branding") return can("tenant.settings");
       if (item.id === "timeoff-decisions") return can("timeoff.review");
       if (item.id === "timeoff-requests") return can("timeoff.request");
       if (item.id === "swaps") return can("shift_swap.use");
@@ -243,10 +252,13 @@ export default function ProtectedBottomNav() {
               <Feather
                 name={item.icon}
                 size={19}
-                color={active ? "#1d4ed8" : "#6b7280"}
+                color={active ? brand.primary : "#6b7280"}
               />
               <Text
-                style={[styles.tabLabel, active ? styles.tabLabelActive : null]}
+                style={[
+                  styles.tabLabel,
+                  active ? { color: brand.primary } : null,
+                ]}
               >
                 {item.label}
               </Text>

@@ -16,6 +16,7 @@ import {
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import {
   getCertificationTagDisplayName,
   getRoleColor,
@@ -39,7 +40,8 @@ import {
 const ROWS_PER_PAGE = 10;
 
 export default function StaffListPage() {
-  const { can, tenant } = useAuth();
+  const { can, tenant, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [open, setOpen] = useState(false);
@@ -284,14 +286,16 @@ export default function StaffListPage() {
                 <Text style={styles.bulkBtnText}>Bulk Add Staff</Text>
               </Pressable>
               <Pressable
-                style={styles.addBtn}
+                style={[styles.addBtn, { backgroundColor: brand.primary }]}
                 onPress={() => {
                   setEditingStaff(null);
                   setOpen(true);
                 }}
               >
-                <Feather name="users" size={14} color="#ffffff" />
-                <Text style={styles.addBtnText}>Add Staff Member</Text>
+                <Feather name="users" size={14} color={brand.onPrimary} />
+                <Text style={[styles.addBtnText, { color: brand.onPrimary }]}>
+                  Add Staff Member
+                </Text>
               </Pressable>
             </View>
           ) : null}

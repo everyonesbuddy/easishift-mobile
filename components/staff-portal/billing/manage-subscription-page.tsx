@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { getBrandColors } from "@/config/branding-colors";
 import { useAuth } from "@/context/auth-context";
 import {
   type BillingInterval,
@@ -20,7 +21,8 @@ import {
 } from "./billing-plans";
 
 export default function ManageSubscriptionPage() {
-  const { tenant } = useAuth();
+  const { tenant, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const [billingInterval, setBillingInterval] =
     useState<BillingInterval>("year");
   const plans = useBillingPlans(billingInterval);
@@ -45,7 +47,7 @@ export default function ManageSubscriptionPage() {
     return (
       <SafeAreaView style={styles.page}>
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="small" color="#2563eb" />
+          <ActivityIndicator size="small" color={brand.primary} />
           <Text style={styles.loadingText}>Loading tenant...</Text>
         </View>
       </SafeAreaView>
@@ -132,7 +134,7 @@ export default function ManageSubscriptionPage() {
                 style={[
                   styles.intervalButton,
                   billingInterval === interval
-                    ? styles.intervalButtonActive
+                    ? { backgroundColor: brand.primary }
                     : null,
                 ]}
               >
@@ -140,7 +142,7 @@ export default function ManageSubscriptionPage() {
                   style={[
                     styles.intervalButtonText,
                     billingInterval === interval
-                      ? styles.intervalButtonTextActive
+                      ? { color: brand.onPrimary }
                       : null,
                   ]}
                 >

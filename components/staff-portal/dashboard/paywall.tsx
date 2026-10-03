@@ -8,6 +8,8 @@ import {
   SHARED_FEATURE_LIST,
   useBillingPlans,
 } from "@/components/staff-portal/billing/billing-plans";
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 
 type TenantLike = {
   _id?: string;
@@ -18,6 +20,8 @@ type Props = {
 };
 
 export default function Paywall({ tenant }: Props) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const [billingInterval, setBillingInterval] =
     useState<BillingInterval>("year");
   const plans = useBillingPlans(billingInterval);
@@ -47,7 +51,7 @@ export default function Paywall({ tenant }: Props) {
               style={[
                 styles.intervalButton,
                 billingInterval === interval
-                  ? styles.intervalButtonActive
+                  ? { backgroundColor: brand.primary }
                   : null,
               ]}
             >
@@ -55,7 +59,7 @@ export default function Paywall({ tenant }: Props) {
                 style={[
                   styles.intervalButtonText,
                   billingInterval === interval
-                    ? styles.intervalButtonTextActive
+                    ? { color: brand.onPrimary }
                     : null,
                 ]}
               >

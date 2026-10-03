@@ -12,7 +12,9 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone } from "@/config/timezone";
+import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
 type TimeBreak = {
@@ -33,13 +35,23 @@ type TimeEntry = {
     workedMinutes?: number;
   };
   breaks?: TimeBreak[];
-  scheduleId?: string | null;
+  scheduleId?: string | { startTime?: string; endTime?: string } | null;
   createdAt?: string;
+  attendanceOutcome?: string;
+};
+
+type StaffSchedule = {
+  status?: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 type TimeTrackingPrefs = {
   enabled?: boolean;
   mode?: "open" | "geofence" | string;
+  requireScheduleMatch?: boolean;
+  clockInGraceMinutes?: number;
+  clockOutGraceMinutes?: number;
 };
 
 const STATUS_COLORS: Record<
@@ -61,6 +73,9 @@ const STATUS_COLORS: Record<
     bg: "#dbeafe",
     border: "#93c5fd",
   },
+  left_early: { text: "#92400e", bg: "#fef3c7", border: "#fcd34d" },
+  no_show: { text: "#334155", bg: "#f1f5f9", border: "#cbd5e1" },
+  call_out: { text: "#991b1b", bg: "#fee2e2", border: "#fca5a5" },
 };
 
 const SOURCE = "mobile";
@@ -74,7 +89,9 @@ function formatDateTime(value: unknown, timeZone?: string) {
     return "-";
   }
 
-  const parsed = new Date(String(value));
+  const parsed = new Date(
+    typeof value === "number" || value instanceof Date ? value : String(value),
+  );
   if (Number.isNaN(parsed.getTime())) {
     return "-";
   }
@@ -99,6 +116,26 @@ function formatMinutes(value: unknown) {
   }
 
   return `${hours}h ${minutes}m`;
+}
+
+function formatElapsedFromNow(startAt: string | undefined, now: number) {
+  if (!startAt) return "-";
+  const start = new Date(startAt).getTime();
+  if (!Number.isFinite(start)) return "-";
+  return formatMinutes(Math.max(0, Math.floor((now - start) / 60_000)));
+}
+
+function getDisplayAttendanceStatus(entry: TimeEntry) {
+  return (
+    String(entry.attendanceOutcome || entry.status || "unknown").trim() ||
+    "unknown"
+  );
+}
+
+function formatStatusLabel(status: string) {
+  return status
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function getWorkedMinutes(entry: TimeEntry | null) {
@@ -147,6 +184,17 @@ function normalizeEntriesFromResponse(data: unknown): TimeEntry[] {
   }
 
   return [];
+}
+
+function normalizeSchedulesFromResponse(data: unknown): StaffSchedule[] {
+  if (Array.isArray(data)) return data as StaffSchedule[];
+  if (!data || typeof data !== "object") return [];
+  const response = data as { schedules?: unknown; items?: unknown };
+  if (Array.isArray(response.schedules))
+    return response.schedules as StaffSchedule[];
+  return Array.isArray(response.items)
+    ? (response.items as StaffSchedule[])
+    : [];
 }
 
 function getActiveEntryFromResponse(data: unknown, entries: TimeEntry[]) {
@@ -240,6 +288,20 @@ function getOpenBreak(entry: TimeEntry | null) {
   return entry.breaks.find((item) => item && !item.endAt) || null;
 }
 
+function getBreakSummary(entry: TimeEntry, timeZone?: string) {
+  const breaks = Array.isArray(entry.breaks) ? entry.breaks : [];
+  if (!breaks.length) return "No breaks yet";
+  const open = breaks.find((item) => item && !item.endAt);
+  return open
+    ? `On break since ${formatDateTime(open.startAt, timeZone)}`
+    : `${breaks.length} break${breaks.length === 1 ? "" : "s"} logged`;
+}
+
+function formatSessionWindow(schedule: StaffSchedule, timeZone?: string) {
+  if (!schedule.startTime || !schedule.endTime) return "Time not available";
+  return `${formatDateTime(schedule.startTime, timeZone)} to ${formatDateTime(schedule.endTime, timeZone)}`;
+}
+
 function getStatusStyle(status: string) {
   return (
     STATUS_COLORS[status] || {
@@ -251,36 +313,116 @@ function getStatusStyle(status: string) {
 }
 
 export default function TimeTrackingPage() {
-  const { can, facilityPreferences, fetchFacilityPreferences } = useAuth();
+  const {
+    user,
+    can,
+    facilityPreferences,
+    fetchFacilityPreferences,
+    publicBranding,
+  } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isAdmin = can("staff.view");
+  const hasFacilityRole =
+    getFacilityRolesFromUser(user, facilityPreferences).length > 0;
+  const showPersonalTracking = !isAdmin || hasFacilityRole;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [windowNow, setWindowNow] = useState(() => Date.now());
 
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [activeEntry, setActiveEntry] = useState<TimeEntry | null>(null);
+  const [staffSchedules, setStaffSchedules] = useState<StaffSchedule[]>([]);
   const [adminEntries, setAdminEntries] = useState<TimeEntry[]>([]);
 
-  const trackingConfig = (facilityPreferences?.timeTracking ||
-    {}) as TimeTrackingPrefs;
+  const trackingConfig = useMemo(
+    () => (facilityPreferences?.timeTracking || {}) as TimeTrackingPrefs,
+    [facilityPreferences?.timeTracking],
+  );
   const trackingEnabled = Boolean(trackingConfig.enabled);
   const trackingMode = normalizeTrackingMode(trackingConfig.mode);
   const requiresLocation = trackingMode === "geofence";
 
   const openBreak = useMemo(() => getOpenBreak(activeEntry), [activeEntry]);
 
+  const clockInWindowState = useMemo(() => {
+    if (isAdmin || !trackingConfig.requireScheduleMatch) {
+      return {
+        available: true,
+        reason: "",
+        nextAvailableAt: null as number | null,
+        nextSchedule: null as StaffSchedule | null,
+      };
+    }
+
+    const windows = staffSchedules
+      .filter((schedule) =>
+        ["scheduled", "in_progress"].includes(
+          String(schedule.status || "").toLowerCase(),
+        ),
+      )
+      .map((schedule) => ({
+        schedule,
+        start:
+          new Date(schedule.startTime || "").getTime() -
+          Number(trackingConfig.clockOutGraceMinutes || 0) * 60_000,
+        end:
+          new Date(schedule.endTime || "").getTime() +
+          Number(trackingConfig.clockInGraceMinutes || 0) * 60_000,
+      }))
+      .filter(
+        (window) =>
+          Number.isFinite(window.start) && Number.isFinite(window.end),
+      )
+      .sort((left, right) => left.start - right.start);
+    const active = windows.find(
+      (window) => windowNow >= window.start && windowNow <= window.end,
+    );
+    if (active)
+      return {
+        available: true,
+        reason: "",
+        nextAvailableAt: null,
+        nextSchedule: active.schedule,
+      };
+
+    const next = windows.find((window) => window.start > windowNow);
+    return {
+      available: false,
+      reason: next ? "outside_window" : "no_upcoming_schedule",
+      nextAvailableAt: next?.start ?? null,
+      nextSchedule: next?.schedule ?? null,
+    };
+  }, [isAdmin, staffSchedules, trackingConfig, windowNow]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setWindowNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const loadStaffEntries = useCallback(async () => {
+    if (!showPersonalTracking) return;
     const res = await api.get("/time-tracking/me");
     const normalizedEntries = safeSortByClockInDesc(
       normalizeEntriesFromResponse(res.data),
     );
     setEntries(normalizedEntries);
     setActiveEntry(getActiveEntryFromResponse(res.data, normalizedEntries));
-  }, []);
+  }, [showPersonalTracking]);
+
+  const loadStaffSchedules = useCallback(async () => {
+    if (!showPersonalTracking) return;
+    try {
+      const res = await api.get("/schedules");
+      setStaffSchedules(normalizeSchedulesFromResponse(res.data));
+    } catch {
+      setStaffSchedules([]);
+    }
+  }, [showPersonalTracking]);
 
   const loadAdminEntries = useCallback(async () => {
     if (!isAdmin) {
@@ -301,13 +443,19 @@ export default function TimeTrackingPage() {
     try {
       await fetchFacilityPreferences();
       await loadStaffEntries();
+      await loadStaffSchedules();
       await loadAdminEntries();
     } catch (requestError) {
       setError(extractMessage(requestError, "Failed to refresh time tracking"));
     } finally {
       setRefreshing(false);
     }
-  }, [fetchFacilityPreferences, loadAdminEntries, loadStaffEntries]);
+  }, [
+    fetchFacilityPreferences,
+    loadAdminEntries,
+    loadStaffEntries,
+    loadStaffSchedules,
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -317,6 +465,7 @@ export default function TimeTrackingPage() {
         await fetchFacilityPreferences();
 
         await loadStaffEntries();
+        await loadStaffSchedules();
         await loadAdminEntries();
       } catch (requestError) {
         if (mounted) {
@@ -336,7 +485,12 @@ export default function TimeTrackingPage() {
     return () => {
       mounted = false;
     };
-  }, [fetchFacilityPreferences, isAdmin, loadAdminEntries, loadStaffEntries]);
+  }, [
+    fetchFacilityPreferences,
+    loadAdminEntries,
+    loadStaffEntries,
+    loadStaffSchedules,
+  ]);
 
   const submitClockIn = async () => {
     setSubmitting(true);
@@ -348,7 +502,6 @@ export default function TimeTrackingPage() {
         ? await getAttendanceLocation()
         : undefined;
       await api.post("/time-tracking/clock-in", {
-        at: toIsoNow(),
         source: SOURCE,
         ...(location ? { location } : {}),
       });
@@ -410,11 +563,17 @@ export default function TimeTrackingPage() {
     setSuccess("");
 
     try {
-      const location = requiresLocation
-        ? await getAttendanceLocation()
-        : undefined;
+      let location:
+        | Awaited<ReturnType<typeof getAttendanceLocation>>
+        | undefined;
+      if (requiresLocation) {
+        try {
+          location = await getAttendanceLocation();
+        } catch {
+          location = undefined;
+        }
+      }
       await api.post("/time-tracking/clock-out", {
-        at: toIsoNow(),
         source: SOURCE,
         ...(location ? { location } : {}),
       });
@@ -431,7 +590,7 @@ export default function TimeTrackingPage() {
     await submitClockOut();
   };
 
-  const canClockIn = !activeEntry;
+  const canClockIn = !activeEntry && clockInWindowState.available;
   const canStartBreak = Boolean(activeEntry) && !openBreak;
   const canEndBreak = Boolean(activeEntry) && Boolean(openBreak);
   const canClockOut = Boolean(activeEntry) && !openBreak;
@@ -526,8 +685,9 @@ export default function TimeTrackingPage() {
         {requiresLocation ? (
           <View style={styles.infoBanner}>
             <Text style={styles.infoBannerText}>
-              Geofence mode is active. Your current location is checked against
-              the facility boundary when you clock in or out.
+              Geofence mode is active. Clock In requires a location inside the
+              facility boundary. Clock Out continues if location is unavailable
+              or outside the boundary.
             </Text>
           </View>
         ) : (
@@ -539,26 +699,70 @@ export default function TimeTrackingPage() {
           </View>
         )}
 
-        {!isAdmin ? (
+        {showPersonalTracking ? (
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
               <Feather name="clock" size={16} color="#0f172a" />
               <Text style={styles.cardTitle}>My Active Session</Text>
             </View>
 
-            <Text style={styles.metaText}>
-              Clock In:{" "}
-              {formatDateTime(activeEntry?.clockInAt, displayTimeZone)}
-            </Text>
-            <Text style={styles.metaText}>
-              Open Break:{" "}
-              {openBreak
-                ? `Started ${formatDateTime(openBreak.startAt, displayTimeZone)}`
-                : "No"}
-            </Text>
-            <Text style={styles.metaText}>
-              Linked Schedule: {activeEntry?.scheduleId ? "Yes" : "No"}
-            </Text>
+            {activeEntry ? (
+              <>
+                <Text style={styles.metaText}>
+                  Started:{" "}
+                  {formatDateTime(activeEntry.clockInAt, displayTimeZone)}
+                </Text>
+                <Text style={styles.metaText}>
+                  Elapsed:{" "}
+                  {formatElapsedFromNow(activeEntry.clockInAt, windowNow)}
+                </Text>
+                <Text style={styles.metaText}>
+                  Breaks: {getBreakSummary(activeEntry, displayTimeZone)}
+                </Text>
+                {activeEntry.scheduleId &&
+                typeof activeEntry.scheduleId === "object" &&
+                activeEntry.scheduleId.startTime &&
+                activeEntry.scheduleId.endTime ? (
+                  <Text style={styles.metaText}>
+                    Shift Window:{" "}
+                    {formatSessionWindow(
+                      activeEntry.scheduleId,
+                      displayTimeZone,
+                    )}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.metaText}>
+                  No active session right now.
+                </Text>
+                <Text style={styles.metaText}>
+                  {clockInWindowState.nextSchedule
+                    ? `Next session: ${formatSessionWindow(clockInWindowState.nextSchedule, displayTimeZone)}`
+                    : "No upcoming schedule."}
+                </Text>
+                {!clockInWindowState.available ? (
+                  <Text style={styles.metaText}>
+                    {clockInWindowState.reason === "no_upcoming_schedule"
+                      ? "Clock In is unavailable because there is no upcoming schedule in your allowed window."
+                      : clockInWindowState.nextAvailableAt
+                        ? `Clock In will be available at ${formatDateTime(clockInWindowState.nextAvailableAt, displayTimeZone)} based on your shift window.`
+                        : "Clock In is unavailable outside your allowed shift window."}
+                  </Text>
+                ) : (
+                  <Text style={styles.metaText}>
+                    Clock In is available now.
+                  </Text>
+                )}
+                {entries[0]?.clockOutAt ? (
+                  <Text style={styles.metaText}>
+                    Last clock-out:{" "}
+                    {formatDateTime(entries[0].clockOutAt, displayTimeZone)}
+                  </Text>
+                ) : null}
+              </>
+            )}
 
             {requiresLocation ? (
               <View style={styles.infoBannerAlt}>
@@ -574,12 +778,19 @@ export default function TimeTrackingPage() {
                   styles.actionBtn,
                   !canClockIn || submitting
                     ? styles.btnDisabled
-                    : styles.btnPrimary,
+                    : { backgroundColor: brand.primary },
                 ]}
                 disabled={!canClockIn || submitting}
                 onPress={handleClockIn}
               >
-                <Text style={styles.actionBtnTextPrimary}>
+                <Text
+                  style={[
+                    styles.actionBtnTextPrimary,
+                    canClockIn && !submitting
+                      ? { color: brand.onPrimary }
+                      : null,
+                  ]}
+                >
                   {requiresLocation ? "Locate & Clock In" : "Clock In"}
                 </Text>
               </Pressable>
@@ -628,7 +839,7 @@ export default function TimeTrackingPage() {
           </View>
         ) : null}
 
-        {!isAdmin ? (
+        {showPersonalTracking ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>My Time Entries</Text>
 
@@ -640,9 +851,8 @@ export default function TimeTrackingPage() {
                   const breakCount = Array.isArray(entry?.breaks)
                     ? entry.breaks.length
                     : 0;
-                  const statusStyle = getStatusStyle(
-                    String(entry.status || ""),
-                  );
+                  const displayStatus = getDisplayAttendanceStatus(entry);
+                  const statusStyle = getStatusStyle(displayStatus);
 
                   return (
                     <View
@@ -676,10 +886,7 @@ export default function TimeTrackingPage() {
                               { color: statusStyle.text },
                             ]}
                           >
-                            {String(entry.status || "unknown").replace(
-                              "_",
-                              " ",
-                            )}
+                            {formatStatusLabel(displayStatus)}
                           </Text>
                         </View>
                       </View>
@@ -702,9 +909,8 @@ export default function TimeTrackingPage() {
             ) : (
               <View style={styles.entryList}>
                 {adminEntries.slice(0, 20).map((entry, index) => {
-                  const statusStyle = getStatusStyle(
-                    String(entry.status || ""),
-                  );
+                  const displayStatus = getDisplayAttendanceStatus(entry);
+                  const statusStyle = getStatusStyle(displayStatus);
                   const staffName =
                     (typeof entry.staffId === "object" &&
                       entry.staffId?.name) ||
@@ -747,10 +953,7 @@ export default function TimeTrackingPage() {
                               { color: statusStyle.text },
                             ]}
                           >
-                            {String(entry.status || "unknown").replace(
-                              "_",
-                              " ",
-                            )}
+                            {formatStatusLabel(displayStatus)}
                           </Text>
                         </View>
                       </View>

@@ -16,6 +16,7 @@ import {
 
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getRoleDisplayName,
@@ -655,7 +656,8 @@ export default function AutoGenerateScheduleForm({
   onClose,
   schedules = [],
 }: Props) {
-  const { can, facilityPreferences } = useAuth();
+  const { can, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const { startTourIfUnseen } = useGuideTour();
   const canManageSchedules = can("schedule.manage");
@@ -1971,13 +1973,18 @@ export default function AutoGenerateScheduleForm({
             )}
 
             <Pressable
-              style={styles.primaryActionSmall}
+              style={[
+                styles.primaryActionSmall,
+                { backgroundColor: brand.primary },
+              ]}
               onPress={() => void handlePublishAll()}
               disabled={
                 Boolean(actionLoading) || publishableAssignments.length <= 0
               }
             >
-              <Text style={styles.primaryActionText}>
+              <Text
+                style={[styles.primaryActionText, { color: brand.onPrimary }]}
+              >
                 {actionLoading === "publish:all"
                   ? "Publishing..."
                   : "Publish all AI proposed to live schedule"}
@@ -2020,7 +2027,7 @@ export default function AutoGenerateScheduleForm({
                   style={[
                     styles.toggleBtn,
                     draftViewMode === "calendar"
-                      ? styles.toggleBtnActive
+                      ? { backgroundColor: brand.primary }
                       : null,
                   ]}
                   onPress={() => setDraftViewMode("calendar")}
@@ -2028,13 +2035,15 @@ export default function AutoGenerateScheduleForm({
                   <Feather
                     name="calendar"
                     size={13}
-                    color={draftViewMode === "calendar" ? "#1e3a8a" : "#64748b"}
+                    color={
+                      draftViewMode === "calendar" ? brand.onPrimary : "#64748b"
+                    }
                   />
                   <Text
                     style={[
                       styles.toggleText,
                       draftViewMode === "calendar"
-                        ? styles.toggleTextActive
+                        ? { color: brand.onPrimary }
                         : null,
                     ]}
                   >
@@ -2044,19 +2053,25 @@ export default function AutoGenerateScheduleForm({
                 <Pressable
                   style={[
                     styles.toggleBtn,
-                    draftViewMode === "list" ? styles.toggleBtnActive : null,
+                    draftViewMode === "list"
+                      ? { backgroundColor: brand.primary }
+                      : null,
                   ]}
                   onPress={() => setDraftViewMode("list")}
                 >
                   <Feather
                     name="list"
                     size={13}
-                    color={draftViewMode === "list" ? "#1e3a8a" : "#64748b"}
+                    color={
+                      draftViewMode === "list" ? brand.onPrimary : "#64748b"
+                    }
                   />
                   <Text
                     style={[
                       styles.toggleText,
-                      draftViewMode === "list" ? styles.toggleTextActive : null,
+                      draftViewMode === "list"
+                        ? { color: brand.onPrimary }
+                        : null,
                     ]}
                   >
                     List
@@ -2303,7 +2318,10 @@ export default function AutoGenerateScheduleForm({
 
                             {String(assignment.state || "") === "unfilled" ? (
                               <Pressable
-                                style={styles.primaryActionSmall}
+                                style={[
+                                  styles.primaryActionSmall,
+                                  { backgroundColor: brand.primary },
+                                ]}
                                 onPress={() =>
                                   void handleFillAssignmentWithAI({
                                     draftId: assignmentDraftId,
@@ -2314,7 +2332,12 @@ export default function AutoGenerateScheduleForm({
                                   assignmentActionLoadingId === fillAiKey
                                 }
                               >
-                                <Text style={styles.primaryActionText}>
+                                <Text
+                                  style={[
+                                    styles.primaryActionText,
+                                    { color: brand.onPrimary },
+                                  ]}
+                                >
                                   {assignmentActionLoadingId === fillAiKey
                                     ? "Filling..."
                                     : "Fill with AI"}
@@ -2452,6 +2475,13 @@ export default function AutoGenerateScheduleForm({
                               </Text>
                               <Switch
                                 value={editForm.force}
+                                trackColor={{
+                                  false: "#d1d5db",
+                                  true: brand.primary,
+                                }}
+                                thumbColor={
+                                  editForm.force ? brand.onPrimary : "#ffffff"
+                                }
                                 onValueChange={(value) =>
                                   setEditForm((prev) => ({
                                     ...prev,
@@ -2463,14 +2493,22 @@ export default function AutoGenerateScheduleForm({
 
                             <View style={styles.editActions}>
                               <Pressable
-                                style={styles.primaryActionSmall}
+                                style={[
+                                  styles.primaryActionSmall,
+                                  { backgroundColor: brand.primary },
+                                ]}
                                 disabled={
                                   actionLoading ===
                                   `save:${editingAssignmentId}`
                                 }
                                 onPress={() => void handleSaveAssignment()}
                               >
-                                <Text style={styles.primaryActionText}>
+                                <Text
+                                  style={[
+                                    styles.primaryActionText,
+                                    { color: brand.onPrimary },
+                                  ]}
+                                >
                                   {actionLoading ===
                                   `save:${editingAssignmentId}`
                                     ? "Saving..."
@@ -2693,7 +2731,10 @@ export default function AutoGenerateScheduleForm({
                           </Text>
                           {String(assignment.state || "") === "unfilled" ? (
                             <Pressable
-                              style={styles.primaryActionSmall}
+                              style={[
+                                styles.primaryActionSmall,
+                                { backgroundColor: brand.primary },
+                              ]}
                               onPress={() =>
                                 void handleFillAssignmentWithAI({
                                   draftId,
@@ -2702,7 +2743,12 @@ export default function AutoGenerateScheduleForm({
                               }
                               disabled={isFilling}
                             >
-                              <Text style={styles.primaryActionText}>
+                              <Text
+                                style={[
+                                  styles.primaryActionText,
+                                  { color: brand.onPrimary },
+                                ]}
+                              >
                                 {isFilling ? "Filling..." : "Fill with AI"}
                               </Text>
                             </Pressable>

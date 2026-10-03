@@ -16,6 +16,7 @@ import {
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import {
   getRoleDisplayName,
   getRoleOptionsForIndustry,
@@ -283,7 +284,8 @@ export default function CoverageCreateForm({
   onSuccess,
   onClose,
 }: Props) {
-  const { tenant, can } = useAuth();
+  const { tenant, can, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const router = useRouter();
   const { startTourIfUnseen } = useGuideTour();
   const [facilityPreferences, setFacilityPreferences] =
@@ -1590,7 +1592,11 @@ export default function CoverageCreateForm({
         </Pressable>
 
         <Pressable
-          style={[styles.actionBtn, styles.primaryBtn]}
+          style={[
+            styles.actionBtn,
+            styles.primaryBtn,
+            { backgroundColor: brand.primary },
+          ]}
           onPress={() => {
             setSubmitMode("generate");
             void handleSubmit("generate");
@@ -1598,9 +1604,9 @@ export default function CoverageCreateForm({
           disabled={loading}
         >
           {loading && loadingMode === "ai" ? (
-            <ActivityIndicator size="small" color="#ffffff" />
+            <ActivityIndicator size="small" color={brand.onPrimary} />
           ) : (
-            <Text style={styles.primaryBtnText}>
+            <Text style={[styles.primaryBtnText, { color: brand.onPrimary }]}>
               Save Requirements and Generate Draft Schedule
             </Text>
           )}
@@ -1713,6 +1719,8 @@ function PickerModal({
   searchPlaceholder?: string;
 }) {
   const [query, setQuery] = useState("");
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
 
   useEffect(() => {
     if (!open) {
@@ -1772,13 +1780,13 @@ function PickerModal({
                   <Text
                     style={[
                       styles.pickerItemText,
-                      selected ? styles.pickerItemTextActive : null,
+                      selected ? { color: brand.primary } : null,
                     ]}
                   >
                     {option.label}
                   </Text>
                   {selected ? (
-                    <Feather name="check" size={16} color="#2563eb" />
+                    <Feather name="check" size={16} color={brand.primary} />
                   ) : null}
                 </Pressable>
               );

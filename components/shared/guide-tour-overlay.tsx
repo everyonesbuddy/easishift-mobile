@@ -1,9 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 import { useGuideTour } from "@/context/guide-tour-context";
 
 export default function GuideTourOverlay() {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const { activeTour, endTour, nextStep, prevStep, stepIndex } = useGuideTour();
   const step = activeTour?.steps[stepIndex];
 
@@ -42,8 +46,13 @@ export default function GuideTourOverlay() {
                   <Text style={styles.backButtonLabel}>Back</Text>
                 </Pressable>
               ) : null}
-              <Pressable onPress={nextStep} style={styles.nextButton}>
-                <Text style={styles.nextButtonLabel}>
+              <Pressable
+                onPress={nextStep}
+                style={[styles.nextButton, { backgroundColor: brand.primary }]}
+              >
+                <Text
+                  style={[styles.nextButtonLabel, { color: brand.onPrimary }]}
+                >
                   {isLastStep ? "Done" : "Next"}
                 </Text>
               </Pressable>

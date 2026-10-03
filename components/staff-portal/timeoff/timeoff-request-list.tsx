@@ -12,6 +12,7 @@ import {
 
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone } from "@/config/timezone";
 import { useAuth } from "@/context/auth-context";
 import { useGuideTour } from "@/context/guide-tour-context";
@@ -45,7 +46,8 @@ const TIMEOFF_LIST_TOUR_STEPS = [
 ];
 
 export default function TimeOffRequestListPage() {
-  const { user, can, facilityPreferences } = useAuth();
+  const { user, can, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const { startTourIfUnseen } = useGuideTour();
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
@@ -127,9 +129,14 @@ export default function TimeOffRequestListPage() {
         />
         <View style={styles.headerRow}>
           <Text style={styles.title}>Time Off Requests</Text>
-          <Pressable style={styles.newBtn} onPress={() => setOpenModal(true)}>
-            <Feather name="plus" size={14} color="#ffffff" />
-            <Text style={styles.newBtnText}>Request Time Off</Text>
+          <Pressable
+            style={[styles.newBtn, { backgroundColor: brand.primary }]}
+            onPress={() => setOpenModal(true)}
+          >
+            <Feather name="plus" size={14} color={brand.onPrimary} />
+            <Text style={[styles.newBtnText, { color: brand.onPrimary }]}>
+              Request Time Off
+            </Text>
           </Pressable>
         </View>
 
@@ -148,7 +155,7 @@ export default function TimeOffRequestListPage() {
 
         {loading ? (
           <View style={styles.centerCard}>
-            <ActivityIndicator size="small" color="#2563eb" />
+            <ActivityIndicator size="small" color={brand.primary} />
           </View>
         ) : myRequests.length === 0 ? (
           <View style={styles.centerCard}>

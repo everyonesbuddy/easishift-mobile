@@ -15,6 +15,7 @@ import {
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import { getInitials } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getRoleColor } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 import { useGuideTour } from "@/context/guide-tour-context";
@@ -83,7 +84,8 @@ function formatReplySubject(subject?: string) {
 }
 
 export default function MessageListPage() {
-  const { user } = useAuth();
+  const { user, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const { startTourIfUnseen } = useGuideTour();
   const [inboxMessages, setInboxMessages] = useState<MessageItem[]>([]);
   const [sentMessages, setSentMessages] = useState<MessageItem[]>([]);
@@ -244,9 +246,14 @@ export default function MessageListPage() {
             <Text style={styles.subtitle}>Internal team communication</Text>
           </View>
 
-          <Pressable style={styles.newBtn} onPress={handleNewMessage}>
-            <Feather name="plus" size={14} color="#ffffff" />
-            <Text style={styles.newBtnText}>New Message</Text>
+          <Pressable
+            style={[styles.newBtn, { backgroundColor: brand.primary }]}
+            onPress={handleNewMessage}
+          >
+            <Feather name="plus" size={14} color={brand.onPrimary} />
+            <Text style={[styles.newBtnText, { color: brand.onPrimary }]}>
+              New Message
+            </Text>
           </Pressable>
         </View>
 
@@ -278,14 +285,16 @@ export default function MessageListPage() {
               <Pressable
                 style={[
                   styles.tabBtn,
-                  mainTab === "inbox" ? styles.tabBtnActive : null,
+                  mainTab === "inbox"
+                    ? { backgroundColor: brand.primary }
+                    : null,
                 ]}
                 onPress={() => setMainTab("inbox")}
               >
                 <Text
                   style={[
                     styles.tabText,
-                    mainTab === "inbox" ? styles.tabTextActive : null,
+                    mainTab === "inbox" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   Inbox ({inboxMessages.length})
@@ -294,14 +303,16 @@ export default function MessageListPage() {
               <Pressable
                 style={[
                   styles.tabBtn,
-                  mainTab === "sent" ? styles.tabBtnActive : null,
+                  mainTab === "sent"
+                    ? { backgroundColor: brand.primary }
+                    : null,
                 ]}
                 onPress={() => setMainTab("sent")}
               >
                 <Text
                   style={[
                     styles.tabText,
-                    mainTab === "sent" ? styles.tabTextActive : null,
+                    mainTab === "sent" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   Sent ({sentMessages.length})
@@ -323,7 +334,7 @@ export default function MessageListPage() {
 
             {loading ? (
               <View style={styles.centerCard}>
-                <ActivityIndicator size="small" color="#2563eb" />
+                <ActivityIndicator size="small" color={brand.primary} />
               </View>
             ) : activeFiltered.length === 0 ? (
               <View style={styles.emptyCard}>
@@ -428,9 +439,14 @@ export default function MessageListPage() {
                   <Text style={styles.bodyText}>{selectedMessage.body}</Text>
                 </View>
 
-                <Pressable style={styles.replyBtn} onPress={handleReply}>
-                  <Feather name="send" size={14} color="#ffffff" />
-                  <Text style={styles.replyText}>Reply</Text>
+                <Pressable
+                  style={[styles.replyBtn, { backgroundColor: brand.primary }]}
+                  onPress={handleReply}
+                >
+                  <Feather name="send" size={14} color={brand.onPrimary} />
+                  <Text style={[styles.replyText, { color: brand.onPrimary }]}>
+                    Reply
+                  </Text>
                 </Pressable>
               </>
             ) : (

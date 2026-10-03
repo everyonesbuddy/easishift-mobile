@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getRoleDisplayName } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -43,7 +44,8 @@ export default function MessageComposer({
   lockRecipient = false,
   initialSubject = "",
 }: Props) {
-  const { user } = useAuth();
+  const { user, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
 
   const [form, setForm] = useState({
     recipientSelection: initialRecipientId ? `user:${initialRecipientId}` : "",
@@ -284,15 +286,18 @@ export default function MessageComposer({
           style={[
             styles.actionBtn,
             styles.submitBtn,
+            { backgroundColor: brand.primary },
             sending ? styles.submitDisabled : null,
           ]}
           onPress={handleSubmit}
           disabled={sending}
         >
           {sending ? (
-            <ActivityIndicator size="small" color="#ffffff" />
+            <ActivityIndicator size="small" color={brand.onPrimary} />
           ) : (
-            <Text style={styles.submitText}>Send</Text>
+            <Text style={[styles.submitText, { color: brand.onPrimary }]}>
+              Send
+            </Text>
           )}
         </Pressable>
       </View>

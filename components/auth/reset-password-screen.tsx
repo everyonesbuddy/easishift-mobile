@@ -12,6 +12,8 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 
 function getErrorMessage(error: unknown) {
   if (
@@ -36,6 +38,8 @@ function getErrorMessage(error: unknown) {
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const params = useLocalSearchParams<{ token?: string | string[] }>();
 
   const token = useMemo(() => {
@@ -118,10 +122,15 @@ export default function ResetPasswordScreen() {
               onPress={() => router.replace("/login")}
               style={({ pressed }) => [
                 styles.primaryButton,
+                { backgroundColor: brand.primary },
                 pressed ? styles.pressed : null,
               ]}
             >
-              <Text style={styles.primaryButtonText}>Back to Login</Text>
+              <Text
+                style={[styles.primaryButtonText, { color: brand.onPrimary }]}
+              >
+                Back to Login
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -172,14 +181,19 @@ export default function ResetPasswordScreen() {
             disabled={loading || success}
             style={({ pressed }) => [
               styles.primaryButton,
+              { backgroundColor: brand.primary },
               pressed ? styles.pressed : null,
               loading || success ? styles.disabled : null,
             ]}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={brand.onPrimary} />
             ) : (
-              <Text style={styles.primaryButtonText}>Reset Password</Text>
+              <Text
+                style={[styles.primaryButtonText, { color: brand.onPrimary }]}
+              >
+                Reset Password
+              </Text>
             )}
           </Pressable>
 

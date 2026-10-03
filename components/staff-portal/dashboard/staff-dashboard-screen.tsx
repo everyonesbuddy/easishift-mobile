@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,6 +17,7 @@ import GuideHelpButton from "@/components/shared/guide-help-button";
 import ScheduleAndCoverageCharts from "@/components/staff-portal/dashboard/schedule-and-coverage-charts";
 import type { StaffMember } from "@/components/staff-portal/staff/staff-shared";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 import { useGuideTour } from "@/context/guide-tour-context";
@@ -78,8 +80,15 @@ function normalizeTenant(input: TenantPayload | null) {
 }
 
 export default function StaffDashboardScreen() {
-  const { user, roles, can, facilityPreferences, updateCurrentUser } =
-    useAuth();
+  const {
+    user,
+    roles,
+    can,
+    facilityPreferences,
+    updateCurrentUser,
+    publicBranding,
+  } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const canViewOperations = can("schedule.view");
   const canUsePersonalSchedule =
     getFacilityRolesFromUser(user, facilityPreferences).length > 0;
@@ -390,8 +399,13 @@ export default function StaffDashboardScreen() {
     return (
       <View style={styles.errorWrap}>
         <Text style={styles.errorTitle}>Error loading dashboard.</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={loadDashboardData}>
-          <Text style={styles.retryText}>Retry</Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: brand.primary }]}
+          onPress={loadDashboardData}
+        >
+          <Text style={[styles.retryText, { color: brand.onPrimary }]}>
+            Retry
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -407,22 +421,49 @@ export default function StaffDashboardScreen() {
           tourId="staff-dashboard"
           tourSteps={DASHBOARD_TOUR_STEPS}
         />
-        <View style={styles.banner}>
+        <LinearGradient
+          colors={[brand.secondary, brand.primary]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.banner}
+        >
           <View style={styles.bannerLeft}>
-            <Text style={styles.bannerTitle}>Welcome back, {firstName}!</Text>
-            <Text style={styles.bannerSub}>
+            <Text style={[styles.bannerTitle, { color: brand.onSecondary }]}>
+              Welcome back, {firstName}!
+            </Text>
+            <Text style={[styles.bannerSub, { color: brand.onSecondary }]}>
               {roles.length ? roles.join(" / ") : "Staff"}
               {tenant?.name ? ` • ${tenant.name}` : ""}
             </Text>
-            <View style={styles.emailPill}>
-              <Text style={styles.emailText}>
+            <View
+              style={[
+                styles.emailPill,
+                {
+                  backgroundColor:
+                    brand.onSecondary === "#ffffff"
+                      ? "rgba(255,255,255,0.2)"
+                      : "rgba(0,0,0,0.08)",
+                },
+              ]}
+            >
+              <Text style={[styles.emailText, { color: brand.onSecondary }]}>
                 {typeof user?.email === "string" ? user.email : ""}
               </Text>
             </View>
           </View>
 
           <View style={styles.avatarSection}>
-            <View style={styles.avatarWrap}>
+            <View
+              style={[
+                styles.avatarWrap,
+                {
+                  backgroundColor:
+                    brand.onSecondary === "#ffffff"
+                      ? "rgba(255,255,255,0.2)"
+                      : "rgba(0,0,0,0.08)",
+                },
+              ]}
+            >
               {typeof user?.profilePicture === "string" &&
               user.profilePicture ? (
                 <Image
@@ -431,17 +472,27 @@ export default function StaffDashboardScreen() {
                   contentFit="cover"
                 />
               ) : (
-                <Text style={styles.avatarText}>{initials}</Text>
+                <Text style={[styles.avatarText, { color: brand.onPrimary }]}>
+                  {initials}
+                </Text>
               )}
             </View>
             <TouchableOpacity
-              style={styles.profileUploadBtn}
+              style={[
+                styles.profileUploadBtn,
+                { backgroundColor: brand.primary, borderColor: brand.primary },
+              ]}
               onPress={handlePickAndUploadProfile}
               disabled={uploadingProfile}
               activeOpacity={0.85}
             >
-              <Feather name="upload" size={12} color="#ffffff" />
-              <Text style={styles.profileUploadBtnText}>
+              <Feather name="upload" size={12} color={brand.onPrimary} />
+              <Text
+                style={[
+                  styles.profileUploadBtnText,
+                  { color: brand.onPrimary },
+                ]}
+              >
                 {uploadingProfile
                   ? "Uploading..."
                   : typeof user?.profilePicture === "string" &&
@@ -451,7 +502,7 @@ export default function StaffDashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* <View style={styles.cardsWrap}>
           {(isAdmin ? adminCards : staffCards).map((card) => (

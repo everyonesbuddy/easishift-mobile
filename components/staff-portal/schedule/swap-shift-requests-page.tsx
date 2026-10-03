@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone } from "@/config/timezone";
 import { useAuth } from "@/context/auth-context";
 
@@ -45,7 +46,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function SwapShiftRequestsPage() {
-  const { user, can, facilityPreferences } = useAuth();
+  const { user, can, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isAdmin = can("schedule.manage");
   const canUseShiftSwap = can("shift_swap.use");
@@ -231,11 +233,13 @@ export default function SwapShiftRequestsPage() {
 
             {canUseShiftSwap && !isAdmin ? (
               <Pressable
-                style={styles.newBtn}
+                style={[styles.newBtn, { backgroundColor: brand.primary }]}
                 onPress={() => setRequestModalOpen(true)}
               >
-                <Feather name="send" size={14} color="#ffffff" />
-                <Text style={styles.newText}>New Swap Request</Text>
+                <Feather name="send" size={14} color={brand.onPrimary} />
+                <Text style={[styles.newText, { color: brand.onPrimary }]}>
+                  New Swap Request
+                </Text>
               </Pressable>
             ) : null}
           </View>
@@ -245,14 +249,14 @@ export default function SwapShiftRequestsPage() {
           <Pressable
             style={[
               styles.tabBtn,
-              activeTab === "inbox" ? styles.tabBtnActive : null,
+              activeTab === "inbox" ? { backgroundColor: brand.primary } : null,
             ]}
             onPress={() => setActiveTab("inbox")}
           >
             <Text
               style={[
                 styles.tabText,
-                activeTab === "inbox" ? styles.tabTextActive : null,
+                activeTab === "inbox" ? { color: brand.onPrimary } : null,
               ]}
             >
               Inbox ({inboxRequests.length})
@@ -263,14 +267,16 @@ export default function SwapShiftRequestsPage() {
             <Pressable
               style={[
                 styles.tabBtn,
-                activeTab === "sent" ? styles.tabBtnActive : null,
+                activeTab === "sent"
+                  ? { backgroundColor: brand.primary }
+                  : null,
               ]}
               onPress={() => setActiveTab("sent")}
             >
               <Text
                 style={[
                   styles.tabText,
-                  activeTab === "sent" ? styles.tabTextActive : null,
+                  activeTab === "sent" ? { color: brand.onPrimary } : null,
                 ]}
               >
                 Sent ({sentRequests.length})

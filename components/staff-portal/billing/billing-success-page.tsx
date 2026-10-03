@@ -2,10 +2,12 @@ import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
+import { getBrandColors } from "@/config/branding-colors";
 import { useAuth } from "@/context/auth-context";
 
 export default function BillingSuccessPage() {
-  const { refreshTenant } = useAuth();
+  const { refreshTenant, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const router = useRouter();
 
   useEffect(() => {
@@ -21,10 +23,12 @@ export default function BillingSuccessPage() {
           your account automatically.
         </Text>
         <Pressable
-          style={styles.button}
+          style={[styles.button, { backgroundColor: brand.primary }]}
           onPress={() => router.push("/dashboard")}
         >
-          <Text style={styles.buttonText}>Go to dashboard</Text>
+          <Text style={[styles.buttonText, { color: brand.onPrimary }]}>
+            Go to dashboard
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>

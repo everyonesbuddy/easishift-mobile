@@ -19,6 +19,7 @@ import CoverageCreateForm from "@/components/staff-portal/coverage/coverage-crea
 import CoverageEditCountForm from "@/components/staff-portal/coverage/coverage-edit-count-form";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getCertificationTagDisplayName,
@@ -283,7 +284,8 @@ function getFillStatusLabel(status: string) {
 }
 
 export default function CoveragePlanningPage() {
-  const { user, can } = useAuth();
+  const { user, can, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const canViewCoverage = can("coverage.view") || can("coverage.manage");
   const canManageCoverage = can("coverage.manage");
   const canViewOnlyCoverage = canViewCoverage && !canManageCoverage;
@@ -711,19 +713,19 @@ export default function CoveragePlanningPage() {
               <Pressable
                 style={[
                   styles.toggleBtn,
-                  view === "table" ? styles.toggleBtnActive : null,
+                  view === "table" ? { backgroundColor: brand.primary } : null,
                 ]}
                 onPress={() => setView("table")}
               >
                 <Feather
                   name="list"
                   size={14}
-                  color={view === "table" ? "#fff" : "#374151"}
+                  color={view === "table" ? brand.onPrimary : "#374151"}
                 />
                 <Text
                   style={[
                     styles.toggleText,
-                    view === "table" ? styles.toggleTextActive : null,
+                    view === "table" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   List
@@ -732,19 +734,21 @@ export default function CoveragePlanningPage() {
               <Pressable
                 style={[
                   styles.toggleBtn,
-                  view === "calendar" ? styles.toggleBtnActive : null,
+                  view === "calendar"
+                    ? { backgroundColor: brand.primary }
+                    : null,
                 ]}
                 onPress={() => setView("calendar")}
               >
                 <Feather
                   name="calendar"
                   size={14}
-                  color={view === "calendar" ? "#fff" : "#374151"}
+                  color={view === "calendar" ? brand.onPrimary : "#374151"}
                 />
                 <Text
                   style={[
                     styles.toggleText,
-                    view === "calendar" ? styles.toggleTextActive : null,
+                    view === "calendar" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   Calendar
@@ -772,11 +776,13 @@ export default function CoveragePlanningPage() {
                 ) : null}
 
                 <Pressable
-                  style={styles.addBtn}
+                  style={[styles.addBtn, { backgroundColor: brand.primary }]}
                   onPress={() => setOpenAdd(true)}
                 >
-                  <Feather name="plus" size={14} color="#fff" />
-                  <Text style={styles.addBtnText}>Add Coverage</Text>
+                  <Feather name="plus" size={14} color={brand.onPrimary} />
+                  <Text style={[styles.addBtnText, { color: brand.onPrimary }]}>
+                    Add Coverage
+                  </Text>
                 </Pressable>
               </View>
             ) : null}
@@ -952,11 +958,21 @@ export default function CoveragePlanningPage() {
                         <Text style={styles.viewBtnText}>View</Text>
                       </Pressable>
                       <Pressable
-                        style={styles.editBtn}
+                        style={[
+                          styles.editBtn,
+                          { backgroundColor: brand.primary },
+                        ]}
                         onPress={() => openEdit(c)}
                       >
                         <Feather name="edit-2" size={13} color="#fff" />
-                        <Text style={styles.editBtnText}>Edit</Text>
+                        <Text
+                          style={[
+                            styles.editBtnText,
+                            { color: brand.onPrimary },
+                          ]}
+                        >
+                          Edit
+                        </Text>
                       </Pressable>
                       <Pressable
                         style={styles.deleteBtn}
@@ -1210,14 +1226,21 @@ export default function CoveragePlanningPage() {
                 {canManageCoverage ? (
                   <View style={styles.detailActionRow}>
                     <Pressable
-                      style={styles.editBtn}
+                      style={[
+                        styles.editBtn,
+                        { backgroundColor: brand.primary },
+                      ]}
                       onPress={() => {
                         closeDetails();
                         openEdit(selectedCoverage);
                       }}
                     >
                       <Feather name="edit-2" size={13} color="#fff" />
-                      <Text style={styles.editBtnText}>Edit</Text>
+                      <Text
+                        style={[styles.editBtnText, { color: brand.onPrimary }]}
+                      >
+                        Edit
+                      </Text>
                     </Pressable>
                     <Pressable
                       style={styles.deleteBtn}
@@ -1358,6 +1381,8 @@ function MultiSelectPickerModal({
   onChange: (values: string[]) => void;
   options: { value: string; label: string }[];
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <Modal
       visible={open}
@@ -1401,14 +1426,21 @@ function MultiSelectPickerModal({
                     {option.label}
                   </Text>
                   {selected ? (
-                    <Feather name="check" size={16} color="#2563eb" />
+                    <Feather name="check" size={16} color={brand.primary} />
                   ) : null}
                 </Pressable>
               );
             })}
           </ScrollView>
-          <Pressable style={styles.filterDoneBtn} onPress={onClose}>
-            <Text style={styles.filterDoneBtnText}>Done</Text>
+          <Pressable
+            style={[styles.filterDoneBtn, { backgroundColor: brand.primary }]}
+            onPress={onClose}
+          >
+            <Text
+              style={[styles.filterDoneBtnText, { color: brand.onPrimary }]}
+            >
+              Done
+            </Text>
           </Pressable>
         </Pressable>
       </Pressable>

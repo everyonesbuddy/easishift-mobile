@@ -14,6 +14,7 @@ import {
 
 import ConfirmDialog from "@/components/shared/confirm-dialog";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getFacilityRolesFromUser } from "@/constants/industry-roles";
 import { useAuth } from "@/context/auth-context";
 
@@ -68,7 +69,8 @@ function sanitizePrefs(value: unknown): PreferencesData {
 
 export default function PreferencesPage() {
   const router = useRouter();
-  const { facilityPreferences, logout, user } = useAuth();
+  const { facilityPreferences, logout, user, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const hasSchedulableRole =
     getFacilityRolesFromUser(user, facilityPreferences).length > 0;
   const [prefs, setPrefs] = useState<PreferencesData>({ ...defaultPrefs });
@@ -378,12 +380,16 @@ export default function PreferencesPage() {
         </SectionCard>
 
         <Pressable
-          style={[styles.saveBtn, saving ? styles.saveBtnDisabled : null]}
+          style={[
+            styles.saveBtn,
+            { backgroundColor: brand.primary },
+            saving ? styles.saveBtnDisabled : null,
+          ]}
           onPress={handleSave}
           disabled={saving}
         >
-          <Feather name="save" size={16} color="#ffffff" />
-          <Text style={styles.saveBtnText}>
+          <Feather name="save" size={16} color={brand.onPrimary} />
+          <Text style={[styles.saveBtnText, { color: brand.onPrimary }]}>
             {saving ? "Saving..." : "Save Preferences"}
           </Text>
         </Pressable>
@@ -452,13 +458,20 @@ function SwitchRow({
   value: boolean;
   onValueChange: (value: boolean) => void;
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <View style={styles.switchRow}>
       <View style={styles.switchBody}>
         <Text style={styles.switchTitle}>{title}</Text>
         <Text style={styles.switchDescription}>{description}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: "#d1d5db", true: brand.primary }}
+        thumbColor={value ? brand.onPrimary : "#ffffff"}
+      />
     </View>
   );
 }

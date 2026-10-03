@@ -18,6 +18,7 @@ import ConfirmDialog from "@/components/shared/confirm-dialog";
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import MonthCalendar from "@/components/staff-portal/shared/month-calendar";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getCertificationTagDisplayName,
@@ -287,7 +288,8 @@ function getStatusLabel(status: string) {
 export default function ScheduleListPage() {
   const router = useRouter();
   const { draftReview } = useLocalSearchParams<{ draftReview?: string }>();
-  const { user, can, tenant, facilityPreferences } = useAuth();
+  const { user, can, tenant, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const { startTourIfUnseen } = useGuideTour();
   const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isAdmin = can("schedule.manage");
@@ -916,19 +918,19 @@ export default function ScheduleListPage() {
               <Pressable
                 style={[
                   styles.toggleBtn,
-                  view === "list" ? styles.toggleBtnActive : null,
+                  view === "list" ? { backgroundColor: brand.primary } : null,
                 ]}
                 onPress={() => setView("list")}
               >
                 <Feather
                   name="list"
                   size={14}
-                  color={view === "list" ? "#ffffff" : "#374151"}
+                  color={view === "list" ? brand.onPrimary : "#374151"}
                 />
                 <Text
                   style={[
                     styles.toggleText,
-                    view === "list" ? styles.toggleTextActive : null,
+                    view === "list" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   List
@@ -937,19 +939,21 @@ export default function ScheduleListPage() {
               <Pressable
                 style={[
                   styles.toggleBtn,
-                  view === "calendar" ? styles.toggleBtnActive : null,
+                  view === "calendar"
+                    ? { backgroundColor: brand.primary }
+                    : null,
                 ]}
                 onPress={() => setView("calendar")}
               >
                 <Feather
                   name="calendar"
                   size={14}
-                  color={view === "calendar" ? "#ffffff" : "#374151"}
+                  color={view === "calendar" ? brand.onPrimary : "#374151"}
                 />
                 <Text
                   style={[
                     styles.toggleText,
-                    view === "calendar" ? styles.toggleTextActive : null,
+                    view === "calendar" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   Calendar
@@ -958,19 +962,19 @@ export default function ScheduleListPage() {
               <Pressable
                 style={[
                   styles.toggleBtn,
-                  view === "roster" ? styles.toggleBtnActive : null,
+                  view === "roster" ? { backgroundColor: brand.primary } : null,
                 ]}
                 onPress={() => setView("roster")}
               >
                 <Feather
                   name="printer"
                   size={14}
-                  color={view === "roster" ? "#ffffff" : "#374151"}
+                  color={view === "roster" ? brand.onPrimary : "#374151"}
                 />
                 <Text
                   style={[
                     styles.toggleText,
-                    view === "roster" ? styles.toggleTextActive : null,
+                    view === "roster" ? { color: brand.onPrimary } : null,
                   ]}
                 >
                   Roster
@@ -980,11 +984,17 @@ export default function ScheduleListPage() {
 
             {isAdmin ? (
               <Pressable
-                style={[styles.actionBtn, styles.aiBtn]}
+                style={[
+                  styles.actionBtn,
+                  styles.aiBtn,
+                  { backgroundColor: brand.primary },
+                ]}
                 onPress={() => setOpenAutoModal(true)}
               >
-                <Feather name="cpu" size={14} color="#ffffff" />
-                <Text style={styles.actionText}>Review AI Draft Schedules</Text>
+                <Feather name="cpu" size={14} color={brand.onPrimary} />
+                <Text style={[styles.actionText, { color: brand.onPrimary }]}>
+                  Review AI Draft Schedules
+                </Text>
               </Pressable>
             ) : null}
 
@@ -1028,6 +1038,7 @@ export default function ScheduleListPage() {
                 style={[
                   styles.actionBtn,
                   isAdmin ? styles.manualBtn : styles.pickupBtn,
+                  { backgroundColor: brand.primary },
                 ]}
                 onPress={() => {
                   if (isAdmin) {
@@ -1038,8 +1049,8 @@ export default function ScheduleListPage() {
                   }
                 }}
               >
-                <Feather name="plus" size={14} color="#ffffff" />
-                <Text style={styles.actionText}>
+                <Feather name="plus" size={14} color={brand.onPrimary} />
+                <Text style={[styles.actionText, { color: brand.onPrimary }]}>
                   {isAdmin ? "Manual Schedule" : "Pick Up Shift"}
                 </Text>
               </Pressable>
@@ -2018,6 +2029,8 @@ function MultiSelectPickerModal({
   onChange: (values: string[]) => void;
   options: { value: string; label: string }[];
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <Modal
       visible={open}
@@ -2059,8 +2072,15 @@ function MultiSelectPickerModal({
               );
             })}
           </ScrollView>
-          <Pressable style={styles.filterDoneBtn} onPress={onClose}>
-            <Text style={styles.filterDoneBtnText}>Done</Text>
+          <Pressable
+            style={[styles.filterDoneBtn, { backgroundColor: brand.primary }]}
+            onPress={onClose}
+          >
+            <Text
+              style={[styles.filterDoneBtnText, { color: brand.onPrimary }]}
+            >
+              Done
+            </Text>
           </Pressable>
         </Pressable>
       </Pressable>

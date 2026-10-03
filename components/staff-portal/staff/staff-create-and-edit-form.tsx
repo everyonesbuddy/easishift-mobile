@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import {
   getRoleDisplayName,
   getRoleOptionsFromFacilityPreferences,
@@ -190,7 +191,8 @@ export default function StaffCreateAndEditForm({
   onClose,
   staffList = [],
 }: Props) {
-  const { user, can, tenant } = useAuth();
+  const { user, can, tenant, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const canAssignAdminRole = can("roles.manage");
 
   const [facilityPreferences, setFacilityPreferences] =
@@ -1133,6 +1135,8 @@ export default function StaffCreateAndEditForm({
             </View>
             <Switch
               value={!!form.wantsOvertime}
+              trackColor={{ false: "#d1d5db", true: brand.primary }}
+              thumbColor={form.wantsOvertime ? brand.onPrimary : "#ffffff"}
               onValueChange={(value) =>
                 setForm((prev) => ({ ...prev, wantsOvertime: value }))
               }
@@ -1188,6 +1192,10 @@ export default function StaffCreateAndEditForm({
             </View>
             <Switch
               value={!!form.worksEveryOtherWeek}
+              trackColor={{ false: "#d1d5db", true: brand.primary }}
+              thumbColor={
+                form.worksEveryOtherWeek ? brand.onPrimary : "#ffffff"
+              }
               onValueChange={(value) =>
                 setForm((prev) => ({
                   ...prev,
@@ -1225,6 +1233,10 @@ export default function StaffCreateAndEditForm({
             <Text style={styles.switchLabel}>Email Notifications</Text>
             <Switch
               value={!!form.emailNotificationsEnabled}
+              trackColor={{ false: "#d1d5db", true: brand.primary }}
+              thumbColor={
+                form.emailNotificationsEnabled ? brand.onPrimary : "#ffffff"
+              }
               onValueChange={(value) =>
                 setForm((prev) => ({
                   ...prev,
@@ -1237,6 +1249,10 @@ export default function StaffCreateAndEditForm({
             <Text style={styles.switchLabel}>SMS Notifications</Text>
             <Switch
               value={!!form.smsNotificationsEnabled}
+              trackColor={{ false: "#d1d5db", true: brand.primary }}
+              thumbColor={
+                form.smsNotificationsEnabled ? brand.onPrimary : "#ffffff"
+              }
               onValueChange={(value) =>
                 setForm((prev) => ({ ...prev, smsNotificationsEnabled: value }))
               }
@@ -1256,12 +1272,13 @@ export default function StaffCreateAndEditForm({
           style={[
             styles.actionBtn,
             styles.submitBtn,
+            { backgroundColor: brand.primary },
             loading ? styles.submitDisabled : null,
           ]}
           onPress={handleSubmit}
           disabled={loading}
         >
-          <Text style={styles.submitText}>
+          <Text style={[styles.submitText, { color: brand.onPrimary }]}>
             {loading ? "Saving..." : staff ? "Save Changes" : "Create Staff"}
           </Text>
         </Pressable>

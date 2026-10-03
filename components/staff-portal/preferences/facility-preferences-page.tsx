@@ -19,6 +19,7 @@ import FacilityGeofenceMap, {
   FacilityGeofence,
 } from "@/components/staff-portal/preferences/facility-geofence-map";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { useAuth } from "@/context/auth-context";
 import {
   getDeviceTimeZone,
@@ -322,7 +323,8 @@ function normalizeTaxonomyPrefs(inputPrefs: FacilityPreferences | null) {
 
 export default function FacilityPreferencesPage() {
   const router = useRouter();
-  const { tenant, logout, can } = useAuth();
+  const { tenant, logout, can, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const canManageFacilityPreferences = can("facility_preferences.manage");
   const canViewOnlyFacilityPreferences =
     can("facility_preferences.view") && !canManageFacilityPreferences;
@@ -926,12 +928,26 @@ export default function FacilityPreferencesPage() {
                         editable={canManageFacilityPreferences}
                       />
                       <Pressable
-                        style={styles.smallBtn}
+                        style={[
+                          styles.smallBtn,
+                          { backgroundColor: brand.primary },
+                        ]}
                         onPress={() => handleAddShiftSlot(shiftTypeKey)}
                         disabled={!canManageFacilityPreferences}
                       >
-                        <Feather name="plus" size={13} color="#ffffff" />
-                        <Text style={styles.smallBtnText}>Add</Text>
+                        <Feather
+                          name="plus"
+                          size={13}
+                          color={brand.onPrimary}
+                        />
+                        <Text
+                          style={[
+                            styles.smallBtnText,
+                            { color: brand.onPrimary },
+                          ]}
+                        >
+                          Add
+                        </Text>
                       </Pressable>
                     </View>
                   </View>
@@ -1006,7 +1022,7 @@ export default function FacilityPreferencesPage() {
                     key={mode}
                     style={[
                       styles.segmentBtn,
-                      selected ? styles.segmentBtnActive : null,
+                      selected ? { backgroundColor: brand.primary } : null,
                     ]}
                     onPress={() => handleTimeTrackingChange("mode", mode)}
                     disabled={!canManageFacilityPreferences}
@@ -1014,7 +1030,7 @@ export default function FacilityPreferencesPage() {
                     <Text
                       style={[
                         styles.segmentBtnText,
-                        selected ? styles.segmentBtnTextActive : null,
+                        selected ? { color: brand.onPrimary } : null,
                       ]}
                     >
                       {mode === "open" ? "Open" : "Geofence"}
@@ -1038,7 +1054,7 @@ export default function FacilityPreferencesPage() {
                     key={String(minutes)}
                     style={[
                       styles.segmentBtn,
-                      selected ? styles.segmentBtnActive : null,
+                      selected ? { backgroundColor: brand.primary } : null,
                     ]}
                     onPress={() =>
                       handleTimeTrackingChange("roundingMinutes", minutes)
@@ -1048,7 +1064,7 @@ export default function FacilityPreferencesPage() {
                     <Text
                       style={[
                         styles.segmentBtnText,
-                        selected ? styles.segmentBtnTextActive : null,
+                        selected ? { color: brand.onPrimary } : null,
                       ]}
                     >
                       {minutes === 0 ? "No rounding" : `${minutes} min`}
@@ -1160,16 +1176,22 @@ export default function FacilityPreferencesPage() {
 
         {canManageFacilityPreferences ? (
           <Pressable
-            style={[styles.saveBtn, saving ? styles.saveBtnDisabled : null]}
+            style={[
+              styles.saveBtn,
+              { backgroundColor: brand.primary },
+              saving ? styles.saveBtnDisabled : null,
+            ]}
             disabled={saving}
             onPress={handleSave}
           >
             {saving ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={brand.onPrimary} />
             ) : (
               <>
-                <Feather name="save" size={15} color="#ffffff" />
-                <Text style={styles.saveBtnText}>Save Preferences</Text>
+                <Feather name="save" size={15} color={brand.onPrimary} />
+                <Text style={[styles.saveBtnText, { color: brand.onPrimary }]}>
+                  Save Preferences
+                </Text>
               </>
             )}
           </Pressable>
@@ -1315,6 +1337,8 @@ function SwitchRow({
   onValueChange: (value: boolean) => void;
   disabled?: boolean;
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <View style={styles.switchRow}>
       <View style={styles.switchTextWrap}>
@@ -1323,7 +1347,13 @@ function SwitchRow({
           <Text style={styles.switchDescription}>{description}</Text>
         ) : null}
       </View>
-      <Switch value={value} onValueChange={onValueChange} disabled={disabled} />
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        trackColor={{ false: "#d1d5db", true: brand.primary }}
+        thumbColor={value ? brand.onPrimary : "#ffffff"}
+      />
     </View>
   );
 }
@@ -1357,6 +1387,8 @@ function ArrayField({
   placeholder: string;
   editable?: boolean;
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <View style={styles.subSection}>
       <Text style={styles.subTitle}>{title}</Text>
@@ -1384,12 +1416,18 @@ function ArrayField({
           editable={editable}
         />
         <Pressable
-          style={[styles.smallBtn, !editable ? styles.disabledControl : null]}
+          style={[
+            styles.smallBtn,
+            { backgroundColor: brand.primary },
+            !editable ? styles.disabledControl : null,
+          ]}
           onPress={() => onAdd(fieldKey)}
           disabled={!editable}
         >
-          <Feather name="plus" size={13} color="#ffffff" />
-          <Text style={styles.smallBtnText}>Add</Text>
+          <Feather name="plus" size={13} color={brand.onPrimary} />
+          <Text style={[styles.smallBtnText, { color: brand.onPrimary }]}>
+            Add
+          </Text>
         </Pressable>
       </View>
     </View>

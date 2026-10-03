@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone, getTimeZoneDayKey } from "@/config/timezone";
 import {
   getRoleColor,
@@ -1212,6 +1213,8 @@ function DatePickerModal({
   onChange: (nextDate: Date) => void;
   onApply: () => void;
 }) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   return (
     <Modal
       visible={Boolean(state)}
@@ -1247,8 +1250,18 @@ function DatePickerModal({
             <Pressable style={styles.secondaryAction} onPress={onClose}>
               <Text style={styles.secondaryActionText}>Cancel</Text>
             </Pressable>
-            <Pressable style={styles.primaryActionSmall} onPress={onApply}>
-              <Text style={styles.primaryActionText}>Apply</Text>
+            <Pressable
+              style={[
+                styles.primaryActionSmall,
+                { backgroundColor: brand.primary },
+              ]}
+              onPress={onApply}
+            >
+              <Text
+                style={[styles.primaryActionText, { color: brand.onPrimary }]}
+              >
+                Apply
+              </Text>
             </Pressable>
           </View>
         </Pressable>

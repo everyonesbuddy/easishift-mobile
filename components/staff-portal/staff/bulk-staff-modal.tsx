@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { useAuth } from "@/context/auth-context";
 
 import { MAX_ROWS, SAMPLE_CSV, StaffMember, statusLabel } from "./staff-shared";
@@ -38,7 +39,8 @@ export default function BulkStaffModal({
   onSuccess,
   staffList = [],
 }: Props) {
-  const { tenant } = useAuth();
+  const { tenant, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
 
   const [csvInput, setCsvInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -258,12 +260,13 @@ export default function BulkStaffModal({
             style={[
               styles.footerBtn,
               styles.submitBtn,
+              { backgroundColor: brand.primary },
               loading ? styles.submitDisabled : null,
             ]}
             onPress={handleSubmit}
             disabled={loading}
           >
-            <Text style={styles.submitText}>
+            <Text style={[styles.submitText, { color: brand.onPrimary }]}>
               {loading ? "Importing Staff..." : "Import Staff"}
             </Text>
           </Pressable>

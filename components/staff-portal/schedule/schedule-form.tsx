@@ -15,6 +15,7 @@ import {
 import GuideHelpButton from "@/components/shared/guide-help-button";
 import GuideTourOverlay from "@/components/shared/guide-tour-overlay";
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
 import { getDisplayTimeZone } from "@/config/timezone";
 import {
   getFacilityRolesFromUser,
@@ -362,7 +363,8 @@ export default function ScheduleForm({
   mode = "manual",
 }: Props) {
   const isEditing = Boolean(schedule);
-  const { user, can, facilityPreferences } = useAuth();
+  const { user, can, facilityPreferences, publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const displayTimeZone = getDisplayTimeZone(facilityPreferences);
   const isPickup = mode === "pickup";
   const canManageSchedules = can("schedule.manage");
@@ -1016,6 +1018,8 @@ export default function ScheduleForm({
               <Text style={styles.label}>Include draft-flow coverages</Text>
               <Switch
                 value={includeDraftCoverages}
+                trackColor={{ false: "#d1d5db", true: brand.primary }}
+                thumbColor={includeDraftCoverages ? brand.onPrimary : "#ffffff"}
                 onValueChange={setIncludeDraftCoverages}
               />
             </View>
@@ -1160,14 +1164,18 @@ export default function ScheduleForm({
           <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
         <Pressable
-          style={[styles.actionBtn, styles.submitBtn]}
+          style={[
+            styles.actionBtn,
+            styles.submitBtn,
+            { backgroundColor: brand.primary },
+          ]}
           onPress={submit}
           disabled={submitting}
         >
           {submitting ? (
-            <ActivityIndicator size="small" color="#ffffff" />
+            <ActivityIndicator size="small" color={brand.onPrimary} />
           ) : (
-            <Text style={styles.submitText}>
+            <Text style={[styles.submitText, { color: brand.onPrimary }]}>
               {isEditing
                 ? "Update Schedule"
                 : isPickup

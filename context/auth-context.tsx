@@ -7,8 +7,10 @@ import {
   useMemo,
   useState,
 } from "react";
+import { Platform } from "react-native";
 
-import api from "@/config/api";
+import api, { API_BASE } from "@/config/api";
+import { getTenantSubdomain } from "@/config/tenant-workspace";
 import {
   getEffectivePermissions,
   getUserRoles,
@@ -32,6 +34,12 @@ type AuthUser = {
 type Tenant = {
   subscriptionStatus?: string;
   seatLimit?: number | null;
+  subdomain?: string;
+  [key: string]: unknown;
+};
+
+type PublicBranding = {
+  logoUrl?: string;
   [key: string]: unknown;
 };
 
@@ -53,12 +61,18 @@ type AuthContextValue = {
   roles: string[];
   permissions: string[];
   tenant: Tenant | null;
+  workspaceSubdomain: string | null;
+  selectWorkspace: (subdomain: string, branding: PublicBranding) => void;
+  publicBranding: PublicBranding | null;
+  publicBrandingLoading: boolean;
+  updatePublicBranding: (branding: PublicBranding | null) => void;
   facilityPreferences: FacilityPreferencesState | null;
   fetchFacilityPreferences: () => Promise<FacilityPreferencesState>;
   loading: boolean;
   isPatient: boolean;
   isStaff: boolean;
   isAdmin: boolean;
+  isOwner: boolean;
   hasRole: (targetRole: string) => boolean;
   can: (permission: string) => boolean;
   login: (data: LoginData) => Promise<void>;
@@ -68,6 +82,24 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const publicBrandingRequests = new Map<
+  string,
+  Promise<PublicBranding | null>
+>();
+
+function fetchPublicBranding(subdomain: string) {
+  if (!publicBrandingRequests.has(subdomain)) {
+    const request = api
+      .get("/public/tenant-branding", { params: { subdomain } })
+      .then((res) => (res.data?.branding || null) as PublicBranding | null)
+      .catch((error) => {
+        publicBrandingRequests.delete(subdomain);
+        throw error;
+      });
+    publicBrandingRequests.set(subdomain, request);
+  }
+  return publicBrandingRequests.get(subdomain)!;
+}
 
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -119,9 +151,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [role, setRole] = useState("");
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
+    null,
+  );
+  const [brandingResult, setBrandingResult] = useState<{
+    subdomain: string;
+    branding: PublicBranding | null;
+  } | null>(null);
   const [facilityPreferences, setFacilityPreferences] =
     useState<FacilityPreferencesState | null>(null);
   const [loading, setLoading] = useState(true);
+  const subdomain =
+    selectedWorkspace || getTenantSubdomain() || tenant?.subdomain || null;
+  const publicBranding =
+    brandingResult?.subdomain === (subdomain || "")
+      ? brandingResult.branding
+      : null;
+  const publicBrandingLoading = Boolean(
+    subdomain && brandingResult?.subdomain !== subdomain,
+  );
+
+  const updatePublicBranding = useCallback(
+    (branding: PublicBranding | null) => {
+      if (!branding) return;
+      const nextSubdomain =
+        Platform.OS !== "web" && typeof branding.subdomain === "string"
+          ? branding.subdomain
+          : subdomain || "";
+      if (
+        Platform.OS !== "web" &&
+        nextSubdomain &&
+        nextSubdomain !== subdomain
+      ) {
+        setSelectedWorkspace(nextSubdomain);
+      }
+      setBrandingResult({
+        subdomain: nextSubdomain,
+        branding: {
+          ...branding,
+          logoUrl: branding.logoUrl?.startsWith("/")
+            ? `${API_BASE}${branding.logoUrl}`
+            : branding.logoUrl,
+        },
+      });
+    },
+    [subdomain],
+  );
+
+  const selectWorkspace = (nextSubdomain: string, branding: PublicBranding) => {
+    setSelectedWorkspace(nextSubdomain);
+    setBrandingResult({
+      subdomain: nextSubdomain,
+      branding: {
+        ...branding,
+        logoUrl: branding.logoUrl?.startsWith("/")
+          ? `${API_BASE}${branding.logoUrl}`
+          : branding.logoUrl,
+      },
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!subdomain) return;
+
+    fetchPublicBranding(subdomain)
+      .then((branding) => {
+        if (cancelled) return;
+        if (branding) updatePublicBranding(branding);
+        else setBrandingResult({ subdomain, branding: null });
+      })
+      .catch(() => {
+        if (!cancelled) setBrandingResult({ subdomain, branding: null });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subdomain, updatePublicBranding]);
 
   const fetchFacilityPreferences = useCallback(async () => {
     try {
@@ -228,9 +335,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const token = extractToken(data);
     userData = normalizeUser(userData) || userData;
+    const nextRole = userData.role || userData.roles?.[0] || detectedRole;
 
     setUser(userData);
-    setRole(detectedRole);
+    setRole(nextRole);
+    setTenant(null);
 
     if (token) {
       api.defaults.headers.common.Authorization = `Bearer ${token}`;
@@ -238,7 +347,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     await AsyncStorage.multiSet([
       [USER_KEY, JSON.stringify(userData)],
-      [ROLE_KEY, detectedRole],
+      [ROLE_KEY, nextRole],
       ...(token ? ([[TOKEN_KEY, token]] as [string, string][]) : []),
     ]);
 
@@ -276,6 +385,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setRole("");
     setTenant(null);
+    setSelectedWorkspace(null);
+    if (!getTenantSubdomain()) setBrandingResult(null);
     setFacilityPreferences(null);
     delete api.defaults.headers.common.Authorization;
 
@@ -313,7 +424,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasRole = (targetRole: string) =>
     roles.includes(normalizeRole(targetRole));
   const can = (permission: string) => permissions.includes(permission);
-  const isAdmin = hasRole("admin") || hasRole("owner");
+  const isOwner = hasRole("owner");
+  const isAdmin = hasRole("admin") || isOwner;
   const isStaff = Boolean(user) && !isPatient;
 
   const value = useMemo<AuthContextValue>(
@@ -323,12 +435,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roles,
       permissions,
       tenant,
+      workspaceSubdomain: subdomain,
+      selectWorkspace,
+      publicBranding,
+      publicBrandingLoading,
+      updatePublicBranding,
       facilityPreferences,
       fetchFacilityPreferences,
       refreshTenant,
       isPatient,
       isStaff,
       isAdmin,
+      isOwner,
       hasRole,
       can,
       login,
@@ -338,6 +456,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       isAdmin,
+      isOwner,
       isPatient,
       isStaff,
       loading,
@@ -345,6 +464,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       roles,
       permissions,
       tenant,
+      subdomain,
+      publicBranding,
+      publicBrandingLoading,
+      updatePublicBranding,
       facilityPreferences,
       fetchFacilityPreferences,
       updateCurrentUser,

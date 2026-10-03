@@ -10,6 +10,8 @@ import {
 } from "react-native";
 
 import api from "@/config/api";
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 
 type ForgotPasswordModalProps = {
   open: boolean;
@@ -41,6 +43,8 @@ export default function ForgotPasswordModal({
   open,
   onClose,
 }: ForgotPasswordModalProps) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -153,14 +157,22 @@ export default function ForgotPasswordModal({
                 style={({ pressed }) => [
                   styles.button,
                   styles.primaryButton,
+                  { backgroundColor: brand.primary },
                   pressed ? styles.pressed : null,
                   loading || !email.trim() ? styles.disabled : null,
                 ]}
               >
                 {loading ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
+                  <ActivityIndicator color={brand.onPrimary} size="small" />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Send Reset Link</Text>
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      { color: brand.onPrimary },
+                    ]}
+                  >
+                    Send Reset Link
+                  </Text>
                 )}
               </Pressable>
             ) : null}

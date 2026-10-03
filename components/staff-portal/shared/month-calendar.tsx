@@ -1,3 +1,5 @@
+import { getBrandColors } from "@/config/branding-colors";
+import { useAuth } from "@/context/auth-context";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 type DayMeta = {
@@ -37,6 +39,8 @@ export default function MonthCalendar({
   onSelectDay,
   onChangeMonth,
 }: Props) {
+  const { publicBranding } = useAuth();
+  const brand = getBrandColors(publicBranding);
   const firstDay = startOfMonth(month);
   const firstWeekday = firstDay.getDay();
   const gridStart = new Date(firstDay);
@@ -91,7 +95,7 @@ export default function MonthCalendar({
             key={cell.key}
             style={[
               styles.dayCell,
-              cell.selected ? styles.dayCellSelected : null,
+              cell.selected ? { backgroundColor: brand.primary } : null,
               !cell.inMonth ? styles.dayCellMuted : null,
             ]}
             onPress={() => onSelectDay(cell.key)}
@@ -99,7 +103,7 @@ export default function MonthCalendar({
             <Text
               style={[
                 styles.dayText,
-                cell.selected ? styles.dayTextSelected : null,
+                cell.selected ? { color: brand.onPrimary } : null,
                 !cell.inMonth ? styles.dayTextMuted : null,
               ]}
             >
