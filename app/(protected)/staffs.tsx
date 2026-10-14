@@ -1,5 +1,5 @@
-import StaffListPage from "@/components/staff-portal/staff/staff-list";
+import StaffScreen from "@/components/scheduler/staff-screen";
 
 export default function StaffsScreen() {
-  return <StaffListPage />;
+  return <StaffScreen />;
 }

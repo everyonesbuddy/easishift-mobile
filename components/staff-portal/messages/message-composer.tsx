@@ -61,7 +61,8 @@ export default function MessageComposer({
   useEffect(() => {
     async function loadStaff() {
       try {
-        const res = await api.get("/auth/users");
+        // Messages go to staff (they read them on their link / in the app).
+        const res = await api.get("/staff");
         const users = Array.isArray(res.data)
           ? (res.data as MessageStaff[])
           : [];
