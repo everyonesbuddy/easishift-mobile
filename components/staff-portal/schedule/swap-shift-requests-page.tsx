@@ -73,15 +73,14 @@ export default function SwapShiftRequestsPage() {
 
   const loadStaff = useCallback(async () => {
     try {
-      const res = await api.get(
-        can("staff.view") ? "/auth/users" : "/auth/users/directory",
-      );
+      // Staff (no login) are under /staff now.
+      const res = await api.get("/staff", { params: { status: "all" } });
       setStaffList(Array.isArray(res.data) ? (res.data as StaffUser[]) : []);
     } catch (loadError) {
       console.warn("Failed to fetch staff list", loadError);
       setStaffList([]);
     }
-  }, [can]);
+  }, []);
 
   const loadSwapRequests = useCallback(async () => {
     if (!canViewSwapRequests) {

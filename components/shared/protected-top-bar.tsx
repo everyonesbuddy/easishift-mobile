@@ -1,86 +1,23 @@
-import { Feather } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { IOS } from "@/constants/ios";
 import { useAuth } from "@/context/auth-context";
 
+/** Facility name above the scheduler screens. */
 export default function ProtectedTopBar() {
-  const { logout, publicBranding } = useAuth();
+  const { tenant } = useAuth();
   const insets = useSafeAreaInsets();
-
-  const handleLogout = async () => {
-    await logout();
-  };
-
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          paddingTop: Math.max(insets.top, 8),
-        },
-      ]}
-    >
-      <View style={styles.logoSlot}>
-        <Image
-          source={
-            publicBranding?.logoUrl
-              ? { uri: publicBranding.logoUrl }
-              : require("@/assets/logos/wiserShifts-icon-light.svg")
-          }
-          style={styles.logo}
-          contentFit="contain"
-        />
-      </View>
-
-      <TouchableOpacity
-        style={styles.logoutBtn}
-        onPress={handleLogout}
-        activeOpacity={0.85}
-      >
-        <Feather name="log-out" size={16} color="#6b7280" />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+    <View style={[styles.bar, { paddingTop: Math.max(insets.top, 8) + 4 }]}>
+      <Text style={styles.name} numberOfLines={1}>
+        {tenant?.name || "WiserShifts"}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    minHeight: 58,
-    paddingHorizontal: 6,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-    backgroundColor: "#ffffff",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  logoSlot: {
-    width: "20%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logo: {
-    width: 30,
-    height: 30,
-  },
-  logoutBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: "#ffffff",
-  },
-  logoutText: {
-    color: "#6b7280",
-    fontSize: 13,
-    fontWeight: "700",
-  },
+  bar: { paddingHorizontal: 16, paddingBottom: 6, backgroundColor: IOS.canvas },
+  name: { fontSize: 15, fontWeight: "600", color: IOS.secondary },
 });
