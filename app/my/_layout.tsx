@@ -17,7 +17,8 @@ export default function MyScheduleLayout() {
   const router = useRouter();
 
   if (!ready) return <Centered />;
-  if (!token) return <Redirect href="/staff-start" />;
+  // Signed out (or never opened a link): back to the start screen.
+  if (!token) return <Redirect href="/" />;
 
   if (loadError) {
     return (

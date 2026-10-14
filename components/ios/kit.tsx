@@ -66,7 +66,7 @@ export function Button({
         : kind === "gray"
           ? IOS.fill
           : "transparent";
-  const fg = kind === "filled" || kind === "destructive" ? "#fff" : kind === "gray" ? IOS.ink : accent;
+  const fg = kind === "filled" || kind === "destructive" ? "#fff" : kind === "gray" ? color || IOS.ink : accent;
   const off = disabled || busy;
   return (
     <Pressable

@@ -78,42 +78,52 @@ export function StaffHeader({ title }: { title?: string }) {
             <Feather name="message-square" size={18} color={IOS.ink} />
           </Pressable>
         )}
-        <Pressable style={styles.iconBtn} onPress={() => setMenuOpen(true)} accessibilityLabel="Menu">
-          <Feather name="more-horizontal" size={18} color={IOS.ink} />
+        <Pressable style={styles.iconBtn} onPress={() => setMenuOpen(true)} accessibilityLabel="Account">
+          <Feather name="user" size={18} color={IOS.ink} />
         </Pressable>
       </View>
 
-      <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title={me?.staff?.name || "Your schedule"} subtitle={me?.facility?.name}>
+      <Sheet open={menuOpen} onClose={() => {
+          setMenuOpen(false);
+          setConfirmForget(false);
+        }}
+        title={me?.staff?.name || "Your schedule"} subtitle={me?.facility?.name}>
         <View style={{ gap: 10 }}>
-          <Text style={kit.muted}>
-            This app keeps your personal schedule link. On a new phone, tap your link there or use Send me my link.
-          </Text>
-          {me?.pin?.required && (
-            <Button
-              kind="gray"
-              title="Sign out on this phone"
-              icon="log-out"
-              onPress={async () => {
-                setMenuOpen(false);
-                await clearShiftReminders();
-                await signOutDevice();
-              }}
-            />
-          )}
           {confirmForget ? (
-            <Button
-              kind="destructive"
-              title="Remove my schedule from this phone"
-              onPress={async () => {
-                setMenuOpen(false);
-                setConfirmForget(false);
-                await clearShiftReminders();
-                await forget();
-                router.replace("/");
-              }}
-            />
+            <>
+              <Text style={kit.body}>
+                You&apos;ll go back to the start screen. To get back in, tap your link again or use Send me my link.
+              </Text>
+              <Button
+                kind="destructive"
+                title="Sign out"
+                icon="log-out"
+                onPress={async () => {
+                  setMenuOpen(false);
+                  setConfirmForget(false);
+                  await clearShiftReminders();
+                  await forget();
+                  router.replace("/");
+                }}
+              />
+              <Button kind="gray" title="Cancel" onPress={() => setConfirmForget(false)} />
+            </>
           ) : (
-            <Button kind="gray" title="Use a different link" icon="link" onPress={() => setConfirmForget(true)} />
+            <>
+              <Text style={kit.muted}>This app keeps your personal schedule link so you don&apos;t have to tap it each time.</Text>
+              <Button kind="gray" color={IOS.redText} title="Sign out" icon="log-out" onPress={() => setConfirmForget(true)} />
+              {me?.pin?.required && (
+                <Button
+                  kind="plain"
+                  title="Lock with my PIN instead"
+                  onPress={async () => {
+                    setMenuOpen(false);
+                    await clearShiftReminders();
+                    await signOutDevice();
+                  }}
+                />
+              )}
+            </>
           )}
         </View>
       </Sheet>
