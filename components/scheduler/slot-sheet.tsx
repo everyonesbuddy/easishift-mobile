@@ -291,8 +291,8 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
                   first={i === 0}
                   name={staffName(s)}
                   color={color}
-                  detail={s.state === "draft" ? "Not sent yet" : toLabel(s.status)}
-                  warn={s.state === "draft"}
+                  detail={s.status === "no_show" ? "No-show (didn't clock in)" : s.state === "draft" ? "Not sent yet" : toLabel(s.status)}
+                  warn={s.state === "draft" || s.status === "no_show"}
                   action={
                     canEdit && !isPast ? (
                       <View style={{ flexDirection: "row", gap: 2 }}>

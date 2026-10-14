@@ -29,6 +29,9 @@ import {
 
 const SOON_MS = 48 * 60 * 60 * 1000;
 
+// A spot that has ended can't be filled any more ("short", not "open").
+const hasEnded = (row: CoverageRow) => row.isPast ?? new Date(row.endTime).getTime() <= Date.now();
+
 const formatWeek = (weekStart: string) => {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
   return `${keyToDate(weekStart).toLocaleDateString(undefined, opts)} – ${keyToDate(addDaysToKey(weekStart, 6)).toLocaleDateString(undefined, opts)}`;
@@ -152,7 +155,7 @@ export default function WeekScreen() {
   const canPublish = !isPublished || changes > 0;
   const today = todayKey();
   const fillableOpen = days.reduce(
-    (sum, d) => sum + (d >= today ? (rowsByDay.get(d) || []).reduce((n, r) => n + Math.max(0, r.requiredCount - r.assignedCount), 0) : 0),
+    (sum, d) => sum + (rowsByDay.get(d) || []).reduce((n, r) => n + (hasEnded(r) ? 0 : Math.max(0, r.requiredCount - r.assignedCount)), 0),
     0,
   );
   const openRow = (data?.coverage || []).find((r) => r._id === openRowId) || null;
@@ -167,7 +170,7 @@ export default function WeekScreen() {
       .map((x) => String(typeof x.staffId === "object" && x.staffId ? x.staffId._id : x.staffId)),
   ).size;
   const sectionOpen = (data?.coverage || [])
-    .filter((row) => row.dateKey >= today && inSection(row, fillSection))
+    .filter((row) => !hasEnded(row) && inSection(row, fillSection))
     .reduce((n, row) => n + Math.max(0, row.requiredCount - row.assignedCount), 0);
 
   const publish = async () => {
@@ -333,7 +336,7 @@ export default function WeekScreen() {
             {days.map((d) => {
               const rows = rowsByDay.get(d) || [];
               const needed = rows.reduce((n, r) => n + r.requiredCount, 0);
-              const open = rows.reduce((n, r) => n + Math.max(0, r.requiredCount - r.assignedCount), 0);
+              const open = rows.reduce((n, r) => n + (hasEnded(r) ? 0 : Math.max(0, r.requiredCount - r.assignedCount)), 0);
               const active = d === day;
               const date = keyToDate(d);
               return (
@@ -373,6 +376,8 @@ export default function WeekScreen() {
             const outs = outsByCoverage.get(row._id) || 0;
             const label = slotLabel(facilityPreferences, row);
             const short = row.requiredCount - row.assignedCount;
+            const ended = hasEnded(row);
+            const noShows = people.filter((x) => x.status === "no_show").length;
             const color = roleColor(row.role, roleFamilies);
             return (
               <Pressable key={row._id} onPress={() => setOpenRowId(row._id)} style={({ pressed }) => [pressed && { opacity: 0.75 }]}>
@@ -386,23 +391,32 @@ export default function WeekScreen() {
                       </Text>
                       <Chip
                         label={`${row.assignedCount}/${row.requiredCount}`}
-                        color={short > 0 ? IOS.orange : short < 0 ? IOS.purple : IOS.green}
-                        textColor={short > 0 ? IOS.orangeText : short < 0 ? IOS.purple : IOS.greenText}
+                        color={short > 0 ? (ended ? IOS.secondary : IOS.orange) : short < 0 ? IOS.purple : IOS.green}
+                        textColor={short > 0 ? (ended ? IOS.secondary : IOS.orangeText) : short < 0 ? IOS.purple : IOS.greenText}
                       />
                     </View>
                     <Text style={kit.muted}>
                       {label.name} · {label.time}
                       {outs ? <Text style={{ color: IOS.redText }}>{` · ${outs} called out`}</Text> : null}
+                      {noShows ? <Text style={{ color: IOS.redText }}>{` · ${noShows} no-show`}</Text> : null}
+                      {ended && short > 0 ? <Text>{` · ${short} short`}</Text> : null}
                     </Text>
                     <View style={styles.names}>
                       {people.map((s) => (
-                        <View key={s._id} style={[styles.name, s.state === "draft" && styles.nameDraft]}>
-                          <Text style={[styles.nameText, s.state === "draft" && { color: IOS.orangeText }]} numberOfLines={1}>
+                        <View key={s._id} style={[styles.name, s.state === "draft" && styles.nameDraft, s.status === "no_show" && styles.nameNoShow]}>
+                          <Text
+                            style={[
+                              styles.nameText,
+                              s.state === "draft" && { color: IOS.orangeText },
+                              s.status === "no_show" && { color: IOS.redText, textDecorationLine: "line-through" },
+                            ]}
+                            numberOfLines={1}
+                          >
                             {staffName(s)}
                           </Text>
                         </View>
                       ))}
-                      {Array.from({ length: Math.max(0, short) }).map((_, i) => (
+                      {Array.from({ length: ended ? 0 : Math.max(0, short) }).map((_, i) => (
                         <View key={`open-${i}`} style={styles.openSlot}>
                           <Text style={[styles.nameText, { color: IOS.orangeText }]}>Open</Text>
                         </View>
@@ -580,6 +594,7 @@ const styles = StyleSheet.create({
   slotBar: { width: 4, borderRadius: 2 },
   names: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   name: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: IOS.fill, maxWidth: "100%" },
+  nameNoShow: { backgroundColor: tint(IOS.red, 0.1) },
   nameDraft: { backgroundColor: tint(IOS.orange, 0.1), borderWidth: 1, borderStyle: "dashed", borderColor: tint(IOS.orange, 0.6) },
   openSlot: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1, borderStyle: "dashed", borderColor: tint(IOS.orange, 0.6) },
   nameText: { fontSize: 13, fontWeight: "600", color: IOS.ink },

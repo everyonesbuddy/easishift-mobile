@@ -15,6 +15,10 @@ export type CoverageRow = {
   remaining: number;
   overridden?: boolean;
   requiredCertificationTags?: string[];
+  // From the backend: the spot has ended (can't be filled), how short it is, no-shows on it.
+  isPast?: boolean;
+  short?: number;
+  noShows?: number;
 };
 
 export type WeekSchedule = {
