@@ -2,6 +2,7 @@ export const SYSTEM_ROLE_OPTIONS = [
   "staff",
   "scheduler",
   "admin",
+  "administrator",
   "owner",
 ] as const;
 export const COMMON_STAFF_ROLES = ["staff"] as const;
@@ -90,7 +91,8 @@ export const isRoleCompatible = (staffRole: unknown, coverageRole: unknown) => {
 
 export const ROLE_LABEL_MAP: Record<string, string> = {
   scheduler: "Scheduler",
-  admin: "Admin",
+  admin: "Scheduler",
+  administrator: "Admin",
   staff: "Staff",
   owner: "Owner",
 };

@@ -114,8 +114,10 @@ const SCHEDULER_PERMISSIONS = [
 const FALLBACK: Record<string, string[]> = {
   scheduler: SCHEDULER_PERMISSIONS,
   admin: SCHEDULER_PERMISSIONS,
+  // Admin: owner powers except deleting the facility / transferring ownership.
+  administrator: [...SCHEDULER_PERMISSIONS, "billing.view", "billing.manage", "tenant.settings", "roles.manage"],
   viewer: ["schedule.view", "coverage.view", "staff.view", "facility_preferences.view"],
-  owner: [...SCHEDULER_PERMISSIONS, "billing.view", "billing.manage", "tenant.settings", "tenant.delete", "roles.manage"],
+  owner: [...SCHEDULER_PERMISSIONS, "billing.view", "billing.manage", "tenant.settings", "tenant.delete", "roles.manage", "ownership.transfer"],
 };
 
 function permissionsFor(user: AuthUser | null) {
@@ -302,7 +304,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fetchFacilityPreferences,
       loading,
       isStaff: false,
-      isAdmin: isOwner || hasRole("admin") || hasRole("scheduler"),
+      isAdmin: isOwner || hasRole("administrator") || hasRole("admin") || hasRole("scheduler"),
       isOwner,
       hasRole,
       can: (p: string) => permissions.includes(p),

@@ -15,6 +15,10 @@ export type CoverageRow = {
   remaining: number;
   overridden?: boolean;
   requiredCertificationTags?: string[];
+  // From the backend: the spot has ended (can't be filled), how short it is, no-shows on it.
+  isPast?: boolean;
+  short?: number;
+  noShows?: number;
 };
 
 export type WeekSchedule = {
@@ -35,7 +39,14 @@ export type WeekData = {
   days: string[];
   coverage: CoverageRow[];
   schedules: WeekSchedule[];
-  counts: { openSlots?: number; shifts?: number; callOuts?: number; unpublishedChanges?: number; pendingPeople?: number };
+  counts: {
+    openSlots?: number;
+    shifts?: number;
+    callOuts?: number;
+    unpublishedChanges?: number;
+    pendingPeople?: number;
+    notSentSections?: { role: string | null; unitArea: string | null; shifts: number; people: number }[];
+  };
 };
 
 export type Candidate = {
@@ -101,3 +112,54 @@ const NOT_SENT: Record<string, string> = {
 export const notSentReason = (code: string) => NOT_SENT[code] || "couldn't be reached";
 
 export const staffName = (s: WeekSchedule) => (typeof s.staffId === "object" && s.staffId ? s.staffId.name : undefined) || "Someone";
+
+// --- Sections: some roles and/or unit areas (Publish / Auto-fill a section) ---
+
+export type SectionValue = { mode: "all" | "section"; roles: string[]; areas: string[] };
+export const emptySection: SectionValue = { mode: "all", roles: [], areas: [] };
+
+const tagKey = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "_");
+
+export type SectionOption = { key: string; label: string };
+
+/** Roles and areas that appear in this week. */
+export function sectionOptions(data: WeekData | null, roleLabel: (role: string) => string) {
+  const roles = new Map<string, string>();
+  const areas = new Map<string, string>();
+  for (const item of [...(data?.coverage || []), ...(data?.schedules || [])]) {
+    if (item.role) roles.set(tagKey(item.role), item.role);
+    if (item.unitArea) areas.set(tagKey(item.unitArea), item.unitArea);
+  }
+  const sorted = (m: Map<string, string>) => [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  return {
+    roles: sorted(roles).map(([key, raw]) => ({ key, label: roleLabel(raw) })),
+    areas: sorted(areas).map(([key, raw]) => ({ key, label: toLabel(raw) })),
+  };
+}
+
+export const inSection = (item: { role?: string | null; unitArea?: string | null }, value: SectionValue) => {
+  if (value.mode !== "section") return true;
+  if (value.roles.length && !value.roles.includes(tagKey(item.role))) return false;
+  if (value.areas.length && !value.areas.includes(tagKey(item.unitArea))) return false;
+  return true;
+};
+
+export const sectionBody = (value: SectionValue) =>
+  value.mode === "section" ? { roles: value.roles, areas: value.areas } : {};
+
+export const sectionChosen = (value: SectionValue) =>
+  value.mode !== "section" || value.roles.length > 0 || value.areas.length > 0;
+
+export function sectionLabel(value: SectionValue, options: { roles: SectionOption[]; areas: SectionOption[] }) {
+  if (value.mode !== "section") return "Everything";
+  const name = (list: SectionOption[], key: string) => list.find((o) => o.key === key)?.label || toLabel(key);
+  return (
+    [value.roles.map((k) => name(options.roles, k)).join(", "), value.areas.map((k) => name(options.areas, k)).join(", ")]
+      .filter(Boolean)
+      .join(" · ") || "Everything"
+  );
+}

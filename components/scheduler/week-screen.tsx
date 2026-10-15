@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
 import { Button, Card, Chip, Empty, Loading, Notice, type NoticeValue, Sheet, kit } from "@/components/ios/kit";
 import api from "@/config/api";
@@ -9,10 +9,28 @@ import { getRoleDisplayName } from "@/constants/industry-roles";
 import { IOS, addDaysToKey, apiError, apiStatus, keyToDate, plural, roleColor, tint, toLabel, todayKey } from "@/constants/ios";
 import { useAuth } from "@/context/auth-context";
 
+import SectionPicker from "./section-picker";
 import SlotSheet from "./slot-sheet";
-import { type CoverageRow, type WeekData, type WeekSchedule, notSentReason, slotLabel, staffName } from "./week-utils";
+import {
+  type CoverageRow,
+  type SectionValue,
+  type WeekData,
+  type WeekSchedule,
+  emptySection,
+  inSection,
+  notSentReason,
+  sectionBody,
+  sectionChosen,
+  sectionLabel,
+  sectionOptions,
+  slotLabel,
+  staffName,
+} from "./week-utils";
 
 const SOON_MS = 48 * 60 * 60 * 1000;
+
+// A spot that has ended can't be filled any more ("short", not "open").
+const hasEnded = (row: CoverageRow) => row.isPast ?? new Date(row.endTime).getTime() <= Date.now();
 
 const formatWeek = (weekStart: string) => {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
@@ -21,6 +39,7 @@ const formatWeek = (weekStart: string) => {
 
 type PublishResult = {
   error?: string;
+  sectionText?: string | null;
   messaged?: number;
   sent?: { sms?: number; email?: number };
   notReached?: { staffId: string; name: string; reason: string }[];
@@ -47,6 +66,10 @@ export default function WeekScreen() {
   const [result, setResult] = useState<PublishResult | null>(null);
   const [autoFillOpen, setAutoFillOpen] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
+  // Publish / Auto-fill a section (some roles or areas) and keep last week's people.
+  const [publishSection, setPublishSection] = useState<SectionValue>(emptySection);
+  const [fillSection, setFillSection] = useState<SectionValue>(emptySection);
+  const [keepLastWeek, setKeepLastWeek] = useState(true);
   const weekRef = useRef<string | null>(null);
 
   const load = useCallback(async (key: string | null) => {
@@ -132,18 +155,32 @@ export default function WeekScreen() {
   const canPublish = !isPublished || changes > 0;
   const today = todayKey();
   const fillableOpen = days.reduce(
-    (sum, d) => sum + (d >= today ? (rowsByDay.get(d) || []).reduce((n, r) => n + Math.max(0, r.requiredCount - r.assignedCount), 0) : 0),
+    (sum, d) => sum + (rowsByDay.get(d) || []).reduce((n, r) => n + (hasEnded(r) ? 0 : Math.max(0, r.requiredCount - r.assignedCount)), 0),
     0,
   );
   const openRow = (data?.coverage || []).find((r) => r._id === openRowId) || null;
+  const options = useMemo(() => sectionOptions(data, (role) => getRoleDisplayName(role)), [data]);
+  const showSections = options.roles.length > 1 || options.areas.length > 0;
+  const notSentText = (counts.notSentSections || [])
+    .map((g) => `${[g.role && getRoleDisplayName(g.role), g.unitArea && toLabel(g.unitArea)].filter(Boolean).join(", ") || "Other"} (${plural(g.people, "person", "people")})`)
+    .join(" · ");
+  const sectionPeople = new Set(
+    (data?.schedules || [])
+      .filter((x) => x.state === "draft" && x.status !== "call_out" && inSection(x, publishSection))
+      .map((x) => String(typeof x.staffId === "object" && x.staffId ? x.staffId._id : x.staffId)),
+  ).size;
+  const sectionOpen = (data?.coverage || [])
+    .filter((row) => !hasEnded(row) && inSection(row, fillSection))
+    .reduce((n, row) => n + Math.max(0, row.requiredCount - row.assignedCount), 0);
 
   const publish = async () => {
     if (!weekStart) return;
     setConfirmPublish(false);
     setPublishing(true);
     try {
-      const res = await api.post(`/weeks/${weekStart}/publish`);
-      setResult(res.data);
+      const res = await api.post(`/weeks/${weekStart}/publish`, sectionBody(publishSection));
+      setResult({ ...res.data, sectionText: publishSection.mode === "section" ? sectionLabel(publishSection, options) : null });
+      setPublishSection(emptySection);
       setSoon(null);
       setNotice(null);
       await reload();
@@ -188,12 +225,13 @@ export default function WeekScreen() {
     if (!weekStart) return;
     setAutoFilling(true);
     try {
-      const res = await api.post(`/weeks/${weekStart}/auto-fill`, {});
-      const { filled = 0, stillOpen = 0 } = res.data || {};
+      const res = await api.post(`/weeks/${weekStart}/auto-fill`, { ...sectionBody(fillSection), keepLastWeek });
+      const { filled = 0, stillOpen = 0, keptFromLastWeek = 0 } = res.data || {};
+      setFillSection(emptySection);
       if (!filled) {
         setNotice({ kind: "info", text: stillOpen ? "Nobody available for the open slots. Open a slot to see why." : "Nothing open to fill." });
       } else {
-        const parts = [`Filled ${plural(filled, "slot")}`, isPublished ? "not sent yet (press Send changes)" : "not sent yet"];
+        const parts = [`Filled ${plural(filled, "slot")}${keptFromLastWeek ? ` (${keptFromLastWeek} same as last week)` : ""}`, isPublished ? "not sent yet (press Send changes)" : "not sent yet"];
         if (stillOpen) parts.push(`${stillOpen} still open`);
         setNotice({ kind: "success", text: `${parts.join(", ")}.` });
       }
@@ -284,7 +322,7 @@ export default function WeekScreen() {
               <Text style={kit.caption}>
                 {isPublished
                   ? changes
-                    ? `${plural(changes, "person has", "people have")} changes not sent yet. Nobody is told until you press Send changes.`
+                    ? `${plural(changes, "person has", "people have")} changes not sent yet${notSentText ? `: ${notSentText}` : ""}. Nobody is told until you press Send changes.`
                     : "Published. Changes wait here until you send them."
                   : "Staff don't see this week yet. Fill the open slots, then publish: everyone gets one text or email with their shifts and their link."}
               </Text>
@@ -298,7 +336,7 @@ export default function WeekScreen() {
             {days.map((d) => {
               const rows = rowsByDay.get(d) || [];
               const needed = rows.reduce((n, r) => n + r.requiredCount, 0);
-              const open = rows.reduce((n, r) => n + Math.max(0, r.requiredCount - r.assignedCount), 0);
+              const open = rows.reduce((n, r) => n + (hasEnded(r) ? 0 : Math.max(0, r.requiredCount - r.assignedCount)), 0);
               const active = d === day;
               const date = keyToDate(d);
               return (
@@ -338,6 +376,8 @@ export default function WeekScreen() {
             const outs = outsByCoverage.get(row._id) || 0;
             const label = slotLabel(facilityPreferences, row);
             const short = row.requiredCount - row.assignedCount;
+            const ended = hasEnded(row);
+            const noShows = people.filter((x) => x.status === "no_show").length;
             const color = roleColor(row.role, roleFamilies);
             return (
               <Pressable key={row._id} onPress={() => setOpenRowId(row._id)} style={({ pressed }) => [pressed && { opacity: 0.75 }]}>
@@ -351,23 +391,32 @@ export default function WeekScreen() {
                       </Text>
                       <Chip
                         label={`${row.assignedCount}/${row.requiredCount}`}
-                        color={short > 0 ? IOS.orange : short < 0 ? IOS.purple : IOS.green}
-                        textColor={short > 0 ? IOS.orangeText : short < 0 ? IOS.purple : IOS.greenText}
+                        color={short > 0 ? (ended ? IOS.secondary : IOS.orange) : short < 0 ? IOS.purple : IOS.green}
+                        textColor={short > 0 ? (ended ? IOS.secondary : IOS.orangeText) : short < 0 ? IOS.purple : IOS.greenText}
                       />
                     </View>
                     <Text style={kit.muted}>
                       {label.name} · {label.time}
                       {outs ? <Text style={{ color: IOS.redText }}>{` · ${outs} called out`}</Text> : null}
+                      {noShows ? <Text style={{ color: IOS.redText }}>{` · ${noShows} no-show`}</Text> : null}
+                      {ended && short > 0 ? <Text>{` · ${short} short`}</Text> : null}
                     </Text>
                     <View style={styles.names}>
                       {people.map((s) => (
-                        <View key={s._id} style={[styles.name, s.state === "draft" && styles.nameDraft]}>
-                          <Text style={[styles.nameText, s.state === "draft" && { color: IOS.orangeText }]} numberOfLines={1}>
+                        <View key={s._id} style={[styles.name, s.state === "draft" && styles.nameDraft, s.status === "no_show" && styles.nameNoShow]}>
+                          <Text
+                            style={[
+                              styles.nameText,
+                              s.state === "draft" && { color: IOS.orangeText },
+                              s.status === "no_show" && { color: IOS.redText, textDecorationLine: "line-through" },
+                            ]}
+                            numberOfLines={1}
+                          >
                             {staffName(s)}
                           </Text>
                         </View>
                       ))}
-                      {Array.from({ length: Math.max(0, short) }).map((_, i) => (
+                      {Array.from({ length: ended ? 0 : Math.max(0, short) }).map((_, i) => (
                         <View key={`open-${i}`} style={styles.openSlot}>
                           <Text style={[styles.nameText, { color: IOS.orangeText }]}>Open</Text>
                         </View>
@@ -417,17 +466,33 @@ export default function WeekScreen() {
         footer={
           <>
             <Button kind="gray" title="Cancel" style={{ flex: 1 }} onPress={() => setConfirmPublish(false)} />
-            <Button title={isPublished ? "Send" : "Publish"} style={{ flex: 1 }} onPress={publish} />
+            <Button
+              title={publishSection.mode === "section" ? "Send section" : isPublished ? "Send" : "Publish"}
+              style={{ flex: 1 }}
+              disabled={!sectionChosen(publishSection)}
+              onPress={publish}
+            />
           </>
         }
       >
         <View style={{ gap: 12 }}>
+          {showSections && (
+            <SectionPicker value={publishSection} onChange={setPublishSection} options={options} allLabel={isPublished ? "All changes" : "Whole week"} />
+          )}
+          {publishSection.mode === "section" ? (
+            <Text style={kit.body}>
+              {sectionChosen(publishSection)
+                ? `Only ${sectionLabel(publishSection, options)} is sent: ${plural(sectionPeople, "person", "people")} with new shifts there${isPublished ? ", plus anyone whose shifts there changed," : ""} get one message with their week. Everything else stays Not sent yet.`
+                : "Pick the roles or areas to send."}
+            </Text>
+          ) : (
           <Text style={kit.body}>
             {isPublished
               ? `${changes === 1 ? "The 1 person whose shifts changed gets" : `The ${changes} people whose shifts changed each get`} one message with their updated week. Changes that cancel out aren't sent.`
               : "Everyone on this week gets one text or email with their shifts and a link to swap, pick up shifts or call out."}
           </Text>
-          {!isPublished && (counts.openSlots || 0) > 0 && (
+          )}
+          {!isPublished && publishSection.mode !== "section" && (counts.openSlots || 0) > 0 && (
             <Notice notice={{ kind: "warning", text: `${plural(counts.openSlots || 0, "slot is", "slots are")} still open. You can publish now and fill them later.` }} />
           )}
         </View>
@@ -436,27 +501,50 @@ export default function WeekScreen() {
       <Sheet
         open={autoFillOpen}
         onClose={() => setAutoFillOpen(false)}
-        title="Auto-fill open slots?"
+        title={
+          fillSection.mode === "section" && sectionChosen(fillSection)
+            ? `Auto-fill ${sectionLabel(fillSection, options)}?`
+            : "Auto-fill open slots?"
+        }
         footer={
           <>
             <Button kind="gray" title="Cancel" style={{ flex: 1 }} onPress={() => setAutoFillOpen(false)} />
-            <Button title={`Fill ${fillableOpen}`} icon="zap" style={{ flex: 1 }} busy={autoFilling} onPress={runAutoFill} />
+            <Button
+              title={`Fill ${fillSection.mode === "section" ? sectionOpen : fillableOpen}`}
+              icon="zap"
+              style={{ flex: 1 }}
+              busy={autoFilling}
+              disabled={!sectionChosen(fillSection) || (fillSection.mode === "section" ? sectionOpen : fillableOpen) === 0}
+              onPress={runAutoFill}
+            />
           </>
         }
       >
-        <Text style={kit.body}>
+        <View style={{ gap: 14 }}>
+        {showSections && <SectionPicker value={fillSection} onChange={setFillSection} options={options} allLabel="All open slots" />}
+        <View style={styles.keepRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[kit.body, { fontWeight: "600" }]}>Keep last week&apos;s people</Text>
+            <Text style={kit.caption}>
+              Whoever worked the same shift on the same day last week gets it again, if they still can. Everything else is filled fairly.
+            </Text>
+          </View>
+          <Switch value={keepLastWeek} onValueChange={setKeepLastWeek} accessibilityLabel="Keep last week's people" />
+        </View>
+        <Text style={kit.muted}>
           We&apos;ll put the best available people on each open slot: right role, area and certifications, not on time off, and spreading hours
           fairly.{" "}
           {isPublished
             ? "This week is already published. They'll show as Not sent yet; press Send changes when you're ready."
             : "Nothing is sent until you publish."}
         </Text>
+        </View>
       </Sheet>
 
       <Sheet
         open={Boolean(result)}
         onClose={() => setResult(null)}
-        title={result?.error ? "Couldn't publish" : "Schedule sent"}
+        title={result?.error ? "Couldn't publish" : result?.sectionText ? `${result.sectionText} sent` : "Schedule sent"}
         footer={<Button title="Done" style={{ flex: 1 }} onPress={() => setResult(null)} />}
       >
         {result?.error ? (
@@ -506,7 +594,9 @@ const styles = StyleSheet.create({
   slotBar: { width: 4, borderRadius: 2 },
   names: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   name: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: IOS.fill, maxWidth: "100%" },
+  nameNoShow: { backgroundColor: tint(IOS.red, 0.1) },
   nameDraft: { backgroundColor: tint(IOS.orange, 0.1), borderWidth: 1, borderStyle: "dashed", borderColor: tint(IOS.orange, 0.6) },
   openSlot: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1, borderStyle: "dashed", borderColor: tint(IOS.orange, 0.6) },
   nameText: { fontSize: 13, fontWeight: "600", color: IOS.ink },
+  keepRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, backgroundColor: IOS.surface },
 });
