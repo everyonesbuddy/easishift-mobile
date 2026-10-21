@@ -163,3 +163,27 @@ export function sectionLabel(value: SectionValue, options: { roles: SectionOptio
       .join(" · ") || "Everything"
   );
 }
+
+// --- Saved view filter: the roles / areas this scheduler chose to see ---
+
+export type ViewFilterValue = { roles: string[]; areas: string[] };
+export const emptyFilter: ViewFilterValue = { roles: [], areas: [] };
+
+export const filterActive = (f: ViewFilterValue | null | undefined) => Boolean(f?.roles?.length || f?.areas?.length);
+
+export const filterAsSection = (f: ViewFilterValue | null | undefined): SectionValue =>
+  filterActive(f) ? { mode: "section", roles: f!.roles, areas: f!.areas } : emptySection;
+
+/** Options plus anything already in the filter, so it can be turned off. */
+export function withFilterOptions(
+  options: { roles: SectionOption[]; areas: SectionOption[] },
+  filter: ViewFilterValue,
+  roleLabel: (role: string) => string,
+) {
+  const add = (list: SectionOption[], keys: string[], label: (k: string) => string) => {
+    const out = [...list];
+    for (const key of keys) if (!out.some((o) => o.key === key)) out.push({ key, label: label(key) });
+    return out;
+  };
+  return { roles: add(options.roles, filter.roles, roleLabel), areas: add(options.areas, filter.areas, toLabel) };
+}

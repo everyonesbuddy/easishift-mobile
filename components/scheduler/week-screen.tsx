@@ -8,8 +8,10 @@ import api from "@/config/api";
 import { getRoleDisplayName } from "@/constants/industry-roles";
 import { IOS, addDaysToKey, apiError, apiStatus, keyToDate, plural, roleColor, tint, toLabel, todayKey } from "@/constants/ios";
 import { useAuth } from "@/context/auth-context";
+import useViewFilter from "@/hooks/use-view-filter";
 
 import SectionPicker from "./section-picker";
+import ViewFilter from "./view-filter";
 import SlotSheet from "./slot-sheet";
 import {
   type CoverageRow,
@@ -17,6 +19,8 @@ import {
   type WeekData,
   type WeekSchedule,
   emptySection,
+  filterActive,
+  filterAsSection,
   inSection,
   notSentReason,
   sectionBody,
@@ -25,6 +29,7 @@ import {
   sectionOptions,
   slotLabel,
   staffName,
+  withFilterOptions,
 } from "./week-utils";
 
 const SOON_MS = 48 * 60 * 60 * 1000;
@@ -70,6 +75,9 @@ export default function WeekScreen() {
   const [publishSection, setPublishSection] = useState<SectionValue>(emptySection);
   const [fillSection, setFillSection] = useState<SectionValue>(emptySection);
   const [keepLastWeek, setKeepLastWeek] = useState(true);
+  // Roles / areas this scheduler chose to see (saved on their account).
+  const [filter, setFilter] = useViewFilter("schedule");
+  const filterSection = useMemo(() => filterAsSection(filter), [filter]);
   const weekRef = useRef<string | null>(null);
 
   const load = useCallback(async (key: string | null) => {
@@ -115,6 +123,7 @@ export default function WeekScreen() {
   const { rowsByDay, peopleByCoverage, outsByCoverage, looseByDay } = useMemo(() => {
     const rows = new Map<string, CoverageRow[]>();
     for (const row of data?.coverage || []) {
+      if (!inSection(row, filterSection)) continue;
       if (!rows.has(row.dateKey)) rows.set(row.dateKey, []);
       rows.get(row.dateKey)!.push(row);
     }
@@ -131,6 +140,7 @@ export default function WeekScreen() {
     const loose = new Map<string, WeekSchedule[]>();
     for (const s of data?.schedules || []) {
       if (!s.coverageId) {
+        if (!inSection(s, filterSection)) continue;
         const d = new Date(s.startTime);
         const pad = (n: number) => String(n).padStart(2, "0");
         const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -146,7 +156,7 @@ export default function WeekScreen() {
       }
     }
     return { rowsByDay: rows, peopleByCoverage: people, outsByCoverage: outs, looseByDay: loose };
-  }, [data]);
+  }, [data, filterSection]);
 
   const week = data?.week;
   const counts = data?.counts || {};
@@ -154,13 +164,12 @@ export default function WeekScreen() {
   const changes = isPublished ? (counts.pendingPeople ?? counts.unpublishedChanges ?? 0) : counts.unpublishedChanges || 0;
   const canPublish = !isPublished || changes > 0;
   const today = todayKey();
-  const fillableOpen = days.reduce(
-    (sum, d) => sum + (rowsByDay.get(d) || []).reduce((n, r) => n + (hasEnded(r) ? 0 : Math.max(0, r.requiredCount - r.assignedCount)), 0),
-    0,
-  );
+  // Auto-fill can still fill everything, so count all open spots for it.
+  const fillableOpen = (data?.coverage || []).reduce((n, r) => n + (hasEnded(r) ? 0 : Math.max(0, r.requiredCount - r.assignedCount)), 0);
   const openRow = (data?.coverage || []).find((r) => r._id === openRowId) || null;
   const options = useMemo(() => sectionOptions(data, (role) => getRoleDisplayName(role)), [data]);
   const showSections = options.roles.length > 1 || options.areas.length > 0;
+  const filterOptions = useMemo(() => withFilterOptions(options, filter, (role) => getRoleDisplayName(role)), [options, filter]);
   const notSentText = (counts.notSentSections || [])
     .map((g) => `${[g.role && getRoleDisplayName(g.role), g.unitArea && toLabel(g.unitArea)].filter(Boolean).join(", ") || "Other"} (${plural(g.people, "person", "people")})`)
     .join(" · ");
@@ -306,7 +315,10 @@ export default function WeekScreen() {
                       title="Auto-fill"
                       style={{ flex: 1 }}
                       disabled={fillableOpen === 0}
-                      onPress={() => setAutoFillOpen(true)}
+                      onPress={() => {
+                        setFillSection(filterSection);
+                        setAutoFillOpen(true);
+                      }}
                     />
                   )}
                   <Button
@@ -315,7 +327,10 @@ export default function WeekScreen() {
                     style={[{ flex: 1.8 }, isPublished && !changes && { backgroundColor: tint(IOS.green, 0.14) }]}
                     color={isPublished && changes ? IOS.orange : undefined}
                     disabled={!canPublish || publishing}
-                    onPress={() => setConfirmPublish(true)}
+                    onPress={() => {
+                      setPublishSection(filterSection);
+                      setConfirmPublish(true);
+                    }}
                   />
                 </View>
               )}
@@ -328,6 +343,7 @@ export default function WeekScreen() {
               </Text>
             </Card>
           )}
+          {data && <ViewFilter value={filter} onChange={setFilter} options={filterOptions} />}
         </View>
 
         {/* Day strip (sticky) */}
@@ -368,7 +384,11 @@ export default function WeekScreen() {
         <Text style={kit.title}>{keyToDate(day).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</Text>
         {!data && <Loading />}
         {data && dayRows.length === 0 && loose.length === 0 && (
-          <Empty title="Nothing needed this day" body="Set what you need each day in Weekly Needs on wisershifts.com." />
+          filterActive(filter) ? (
+            <Empty title="Nothing here matches your filter" body="Tap the filter above to change it, or Clear to see everything." />
+          ) : (
+            <Empty title="Nothing needed this day" body="Set what you need each day in Weekly Needs on wisershifts.com." />
+          )
         )}
         {data &&
           dayRows.map((row) => {
