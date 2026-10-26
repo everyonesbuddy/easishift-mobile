@@ -64,8 +64,25 @@ export function useNotificationsSync() {
       // 1. Schedules
       const shouldFetchSchedules =
         hasSchedulableRole || can("schedule.view") || can("schedule.view_own");
+      // Reminders only look ahead, so fetch from now on (not every shift
+      // ever): shifts for the next 30 days, open spots for the next 2 days
+      // (matchCoverageGaps only uses 48 hours).
+      const now = Date.now();
+      const HOUR = 60 * 60 * 1000;
+      const scheduleWindow = {
+        params: {
+          from: new Date(now - HOUR).toISOString(),
+          to: new Date(now + 30 * 24 * HOUR).toISOString(),
+        },
+      };
+      const coverageWindow = {
+        params: {
+          from: new Date(now).toISOString(),
+          to: new Date(now + 49 * HOUR).toISOString(),
+        },
+      };
       const schedulePromise = shouldFetchSchedules
-        ? api.get("/schedules").catch(() => ({ data: [] }))
+        ? api.get("/schedules", scheduleWindow).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] });
       requests.push(schedulePromise);
 
@@ -89,7 +106,7 @@ export function useNotificationsSync() {
 
       // 4. Coverage (Admin / Scheduler)
       const coveragePromise = canViewCoverage
-        ? api.get("/coverage").catch(() => ({ data: [] }))
+        ? api.get("/coverage", coverageWindow).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] });
       requests.push(coveragePromise);
 
