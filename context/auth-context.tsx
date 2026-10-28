@@ -110,6 +110,8 @@ const SCHEDULER_PERMISSIONS = [
   "messages.use",
   "facility_preferences.view",
   "facility_preferences.manage",
+  "labor.view",
+  "labor.census",
 ];
 const FALLBACK: Record<string, string[]> = {
   scheduler: SCHEDULER_PERMISSIONS,
