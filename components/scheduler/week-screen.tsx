@@ -10,6 +10,7 @@ import { IOS, addDaysToKey, apiError, apiStatus, keyToDate, plural, roleColor, t
 import { useAuth } from "@/context/auth-context";
 import useViewFilter from "@/hooks/use-view-filter";
 
+import { ResidentsTodayPrompt } from "./residents-today";
 import SectionPicker from "./section-picker";
 import ViewFilter from "./view-filter";
 import SlotSheet from "./slot-sheet";
@@ -376,6 +377,7 @@ export default function WeekScreen() {
           </View>
         )}
         <Notice notice={notice} onClose={() => setNotice(null)} />
+        <ResidentsTodayPrompt />
         {session?.readOnlyReason ? (
           <Notice notice={{ kind: "warning", text: "View only: the facility is over its scheduler limit. The owner can change the plan on wisershifts.com." }} />
         ) : null}

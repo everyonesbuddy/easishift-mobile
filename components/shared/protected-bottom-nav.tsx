@@ -5,6 +5,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import ChangePasswordModal from "@/components/auth/change-password-modal";
+import { ResidentsSheetLoader, useCanEnterResidents } from "@/components/scheduler/residents-today";
 import { Button, Card, Row, Sheet, kit } from "@/components/ios/kit";
 import { IOS, tint } from "@/constants/ios";
 import { useAuth } from "@/context/auth-context";
@@ -24,6 +25,8 @@ export default function ProtectedBottomNav() {
   const insets = useSafeAreaInsets();
   const [moreOpen, setMoreOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [residentsOpen, setResidentsOpen] = useState(false);
+  const canResidents = useCanEnterResidents();
 
   const items: NavItem[] = [
     { id: "schedule", label: "Schedule", icon: "calendar", to: "/schedule" },
@@ -89,8 +92,21 @@ export default function ProtectedBottomNav() {
                 }}
               />
             )}
+            {canResidents && (
+              <Row
+                first={!can("staff.view")}
+                title="Residents today"
+                subtitle="For hours per resident day on the Labor page"
+                left={<Feather name="clipboard" size={18} color={IOS.blue} />}
+                right={<Feather name="chevron-right" size={18} color={IOS.tertiary} />}
+                onPress={() => {
+                  setMoreOpen(false);
+                  setResidentsOpen(true);
+                }}
+              />
+            )}
             <Row
-              first={!can("staff.view")}
+              first={!can("staff.view") && !canResidents}
               title="Weekly Needs, preferences, billing"
               subtitle="Set up on wisershifts.com"
               left={<Feather name="external-link" size={18} color={IOS.blue} />}
@@ -120,6 +136,7 @@ export default function ProtectedBottomNav() {
       </Sheet>
 
       <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
+      <ResidentsSheetLoader open={residentsOpen} onClose={() => setResidentsOpen(false)} />
     </>
   );
 }
