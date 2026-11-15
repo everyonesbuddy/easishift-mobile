@@ -96,7 +96,7 @@ export default function ProtectedBottomNav() {
               <Row
                 first={!can("staff.view")}
                 title="Residents today"
-                subtitle="For hours per resident day on the Labor page"
+                subtitle="For staff hours per resident per day on the Labor page"
                 left={<Feather name="clipboard" size={18} color={IOS.blue} />}
                 right={<Feather name="chevron-right" size={18} color={IOS.tertiary} />}
                 onPress={() => {

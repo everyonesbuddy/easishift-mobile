@@ -9,6 +9,9 @@ export const COMMON_STAFF_ROLES = ["staff"] as const;
 export const ADMIN_ROLES = ["admin", "owner"] as const;
 export const FACILITY_BASELINE_ROLE = "staff";
 
+// Shown in capitals, like the web: CNA, LPN, DSP, BHT.
+const ACRONYMS = new Set(["cna", "lpn", "lvn", "rn", "np", "cma", "cmt", "hha", "pca", "qmap", "don", "adon", "cpr", "bls", "acls", "dsp", "bht", "qidp"]);
+
 const toDisplayLabel = (value: unknown): string =>
   String(value || "")
     .trim()
@@ -19,7 +22,7 @@ const toDisplayLabel = (value: unknown): string =>
     .map((part) => {
       const normalized = part.toLowerCase();
       if (/^\d+[ap]m?$/.test(normalized)) return normalized;
-      if (normalized.length <= 2 && /^[a-z]+$/.test(normalized)) {
+      if (ACRONYMS.has(normalized) || (normalized.length <= 2 && /^[a-z]+$/.test(normalized))) {
         return normalized.toUpperCase();
       }
       return normalized.charAt(0).toUpperCase() + normalized.slice(1);

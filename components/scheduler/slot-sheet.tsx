@@ -39,7 +39,15 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
   const [fill, setFill] = useState<{ coverage: CoverageRow & { remaining: number }; candidates: Candidate[] } | null>(null);
   // The parent remounts this sheet per slot (key), so "now" is per opening.
   const [now] = useState(() => Date.now());
-  const [textResult, setTextResult] = useState<{ sentTo?: number; bySms?: number; byEmail?: number; notReached?: { name: string; reason: string }[] } | null>(null);
+  const [textResult, setTextResult] = useState<{
+    sentTo?: number;
+    queued?: number;
+    waveSize?: number;
+    waveMinutes?: number;
+    bySms?: number;
+    byEmail?: number;
+    notReached?: { name: string; reason: string }[];
+  } | null>(null);
 
   const rowId = row?._id;
   const assignedCount = row?.assignedCount;
@@ -142,11 +150,12 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
     }
   };
 
-  const textEligible = async () => {
+  // everyone: text the people still waiting now instead of in waves (urgent).
+  const textEligible = async (everyone = false) => {
     if (!fill) return;
-    setBusyId("text");
+    setBusyId(everyone ? "everyone" : "text");
     try {
-      const res = await api.post(`/coverage/${fill.coverage._id}/fill-by-text`, {});
+      const res = await api.post(`/coverage/${fill.coverage._id}/fill-by-text`, everyone ? { everyone: true } : {});
       setTextResult(res.data);
     } catch (err) {
       fail(err, "Couldn't send the texts");
@@ -186,18 +195,27 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
             <>
               {fill.coverage.remaining <= 0 && <Notice notice={{ kind: "success", text: "This shift is already covered." }} />}
               {textResult ? (
-                <Notice
-                  notice={{
-                    kind: "success",
-                    text: `Offered to ${textResult.sentTo} ${textResult.sentTo === 1 ? "person" : "people"}: ${textResult.bySms || 0} by text, ${
-                      textResult.byEmail || 0
-                    } by email. The first to say yes gets the shift.${
-                      textResult.notReached?.length
-                        ? ` Not reached: ${textResult.notReached.map((p) => `${p.name} (${notSentReason(p.reason)})`).join(", ")}.`
-                        : ""
-                    }`,
-                  }}
-                />
+                <View style={{ gap: 6 }}>
+                  <Notice
+                    notice={{
+                      kind: "success",
+                      text: `Offered to ${textResult.sentTo} ${textResult.sentTo === 1 ? "person" : "people"}${
+                        (textResult.queued || 0) > 0 ? " most likely to say yes" : ""
+                      }: ${textResult.bySms || 0} by text, ${textResult.byEmail || 0} by email. The first to say yes gets the shift.${
+                        (textResult.queued || 0) > 0
+                          ? ` If nobody takes it, ${textResult.queued} more get it, ${textResult.waveSize} at a time every ${textResult.waveMinutes} minutes, until it's filled.`
+                          : ""
+                      }${
+                        textResult.notReached?.length
+                          ? ` Not reached: ${textResult.notReached.map((p) => `${p.name} (${notSentReason(p.reason)})`).join(", ")}.`
+                          : ""
+                      }`,
+                    }}
+                  />
+                  {(textResult.queued || 0) > 0 && (
+                    <Button title="Text everyone now" icon="send" busy={busyId === "everyone"} onPress={() => textEligible(true)} />
+                  )}
+                </View>
               ) : (
                 fillEligible.length > 0 &&
                 hasFeature("calloutText") && (
@@ -207,7 +225,7 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
                       icon="message-circle"
                       busy={busyId === "text"}
                       disabled={fill.coverage.remaining <= 0}
-                      onPress={textEligible}
+                      onPress={() => textEligible()}
                     />
                     <Text style={kit.caption}>People this would put into overtime are skipped.</Text>
                   </View>

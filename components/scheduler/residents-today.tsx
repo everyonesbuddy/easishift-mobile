@@ -32,7 +32,7 @@ function useLaborSettings(enabled: boolean) {
 }
 
 /**
- * Residents today, for hours per resident day on the Labor page. Mounted
+ * Residents today, for staff hours per resident per day on the Labor page. Mounted
  * only while open, so it starts fresh each time. Big number
  * with − / +, plus one-tap "same as yesterday" / "usual". Saves one day.
  */
@@ -89,7 +89,7 @@ export function ResidentsSheet({
       footer={<Button title="Save" onPress={save} busy={busy} disabled={!valid} />}
     >
       <View style={{ gap: 14 }}>
-        <Text style={kit.muted}>How many residents are in the building today? This keeps hours per resident day on the Labor page accurate.</Text>
+        <Text style={kit.muted}>How many residents are in the building today? This keeps staff hours per resident per day on the Labor page accurate.</Text>
         <View style={styles.stepper}>
           <Pressable style={styles.stepBtn} onPress={() => step(-1)} accessibilityLabel="One fewer">
             <Feather name="minus" size={22} color={IOS.ink} />
@@ -142,7 +142,7 @@ export function ResidentsTodayPrompt() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[kit.body, { fontWeight: "600" }]}>Residents today?</Text>
-          <Text style={kit.caption}>For hours per resident day</Text>
+          <Text style={kit.caption}>For staff hours per resident per day</Text>
         </View>
         <Button small title="Enter" onPress={() => setOpen(true)} />
       </Card>
