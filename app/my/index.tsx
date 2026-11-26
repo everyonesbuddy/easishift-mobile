@@ -4,6 +4,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 
 import { Button, Card, Chip, Empty, Field, Loading, Notice, type NoticeValue, SectionLabel, Segmented, Sheet, kit } from "@/components/ios/kit";
 import { type LinkShift, StaffHeader, useStaffFormat } from "@/components/staff-link/shared";
+import TextConsentCard from "@/components/staff-link/text-consent-card";
 import { IOS, apiError, toLabel } from "@/constants/ios";
 import { useStaffLink } from "@/context/staff-link-context";
 import { syncShiftReminders } from "@/services/staff-link/reminders";
@@ -15,7 +16,7 @@ const PAST_STEP_WEEKS = 4;
 type Candidate = { staffId: string; name: string };
 
 export default function MyShifts() {
-  const { client, me } = useStaffLink();
+  const { client, me, reload } = useStaffLink();
   const fmt = useStaffFormat();
   const features = me?.features || {};
   const [shifts, setShifts] = useState<LinkShift[] | null>(null);
@@ -199,8 +200,16 @@ export default function MyShifts() {
     <View style={kit.screen}>
       <StaffHeader />
       <ScrollView contentContainerStyle={kit.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        {me?.staff?.hasPhone && me.staff.smsStatus === "opted_out" && (
-          <Notice notice={{ kind: "info", text: "You've turned off texts. Reply START to any of our texts to turn them back on." }} />
+        {client && me?.features?.texts && me.staff?.hasPhone && me.staff.smsStatus !== "opted_in" && (
+          <TextConsentCard
+            client={client}
+            smsStatus={me.staff.smsStatus}
+            phoneLast4={me.staff.phoneLast4}
+            onDone={(sent) => {
+              setNotice({ kind: "success", text: sent ? "Texts are on. A confirmation text is on its way." : "Texts are on." });
+              void reload();
+            }}
+          />
         )}
         <Notice notice={notice} onClose={() => setNotice(null)} />
         <Segmented

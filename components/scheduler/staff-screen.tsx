@@ -12,6 +12,9 @@ import { useAuth } from "@/context/auth-context";
 
 import { notSentReason } from "./week-utils";
 
+// Our texting number: staff opt in by texting JOIN to it (we never text first).
+const SMS_NUMBER = "(855) 449-8584";
+
 type Staff = {
   _id: string;
   name: string;
@@ -29,7 +32,8 @@ type Staff = {
  * on the web.
  */
 export default function StaffScreen() {
-  const { can, facilityPreferences } = useAuth();
+  const { can, facilityPreferences, hasFeature, tenant } = useAuth();
+  const texts = hasFeature("sms");
   const canManage = can("staff.manage");
   const roleFamilies = (facilityPreferences as { roleFamilies?: unknown[] } | null)?.roleFamilies;
   const [staff, setStaff] = useState<Staff[] | null>(null);
@@ -131,6 +135,25 @@ export default function StaffScreen() {
           />
         </View>
         <Notice notice={notice} onClose={() => setNotice(null)} />
+        {texts && canManage && (
+          <Card style={{ gap: 8 }}>
+            <Text style={[kit.body, { fontWeight: "600" }]}>Getting staff on texts</Text>
+            <Text style={kit.caption}>
+              We only text people who say yes themselves. Tell your staff to text JOIN to {SMS_NUMBER}, or tick the box on their schedule page.
+            </Text>
+            <Button
+              small
+              kind="tinted"
+              icon="share"
+              title="Share how to sign up"
+              onPress={() =>
+                Share.share({
+                  message: `Get your ${tenant?.name ? `${tenant.name} ` : ""}work schedule by text: text JOIN to ${SMS_NUMBER} from your mobile. Shift reminders, changes and open shifts. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`,
+                })
+              }
+            />
+          </Card>
+        )}
         {staff === null ? (
           <Loading />
         ) : shown.length === 0 ? (
@@ -148,7 +171,13 @@ export default function StaffScreen() {
                     </Text>
                     <Text style={kit.caption} numberOfLines={1}>
                       {(s.roles || []).map(getRoleDisplayName).join(", ") || "No role"}
-                      {!s.hasPhone && !s.hasEmail ? " · no phone or email" : s.smsStatus === "opted_out" ? " · texts off" : ""}
+                      {!s.hasPhone && !s.hasEmail
+                        ? " · no phone or email"
+                        : s.smsStatus === "opted_out"
+                          ? " · texts off"
+                          : texts && s.hasPhone && s.smsStatus !== "opted_in"
+                            ? " · texts not on yet"
+                            : ""}
                     </Text>
                   </View>
                   {canManage && <Button small kind="tinted" title="Link" icon="link" onPress={() => setOpen(s)} />}

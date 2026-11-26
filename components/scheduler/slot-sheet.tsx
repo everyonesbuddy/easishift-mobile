@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Avatar, Button, Card, Loading, Notice, type NoticeValue, SectionLabel, Sheet, kit } from "@/components/ios/kit";
 import api from "@/config/api";
@@ -16,6 +16,8 @@ type Props = {
   weekPublished: boolean;
   callOuts: number;
   people: WeekSchedule[];
+  /** Called out of this slot: off the shift, but listed so a mistake can be undone. */
+  calledOut?: WeekSchedule[];
   canEdit: boolean;
   onClose: () => void;
   onChanged: () => void;
@@ -27,11 +29,19 @@ type Props = {
  * One day's need for one shift + role (the web's slot drawer): who's on
  * it, who could be, how many are needed, and call-outs.
  */
-export default function SlotSheet({ row, weekStart, weekPublished, callOuts, people, canEdit, onClose, onChanged, onEdited }: Props) {
+// An ended shift can still be marked as a call-out from these (the server refuses one they clocked in for).
+const AFTER_SHIFT_OUT = new Set(["scheduled", "no_show", "completed"]);
+
+type Replacement = { scheduleId: string; name: string };
+
+export default function SlotSheet({ row, weekStart, weekPublished, callOuts, people, calledOut = [], canEdit, onClose, onChanged, onEdited }: Props) {
   const { facilityPreferences, hasFeature } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [confirmOutId, setConfirmOutId] = useState<string | null>(null);
+  // Right after marking someone out: offer Undo on the spot.
+  const [justOut, setJustOut] = useState<WeekSchedule | null>(null);
   const [showOthers, setShowOthers] = useState(false);
   const [notice, setNotice] = useState<NoticeValue>(null);
   // Call-out flow: confirm, then fill.
@@ -136,11 +146,77 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
     }
   };
 
+  // Undo a call-out made by mistake, before or after the shift. If someone was
+  // added to cover and the spot is full, ask: keep them, or put this person
+  // back and take them off (they're told right away).
+  const undoOut = async (s: WeekSchedule): Promise<boolean> => {
+    setBusyId(`undo:${s._id}`);
+    setNotice(null);
+    try {
+      const res = await api.post(`/schedules/${s._id}/undo-call-out`);
+      setNotice({ kind: "success", text: `${staffName(s)} is back on the shift${res.data?.textsStopped ? ". Cover texts stopped." : "."}` });
+      setJustOut(null);
+      onChanged();
+      return true;
+    } catch (err) {
+      const data = (err as { response?: { data?: { errorCode?: string; message?: string; replacements?: Replacement[] } } })?.response?.data;
+      if (data?.errorCode === "SPOT_FILLED" && data.replacements?.length) {
+        const names = data.replacements.map((r) => r.name).join(" and ");
+        Alert.alert(
+          "Someone is covering this shift",
+          `${names} ${data.replacements.length === 1 ? "was" : "were"} added after ${staffName(s)} called out, and the shift is full.`,
+          [
+            { text: `Keep ${names}`, style: "cancel" },
+            {
+              text: `Put ${staffName(s)} back`,
+              onPress: async () => {
+                try {
+                  for (const r of data.replacements || []) await api.delete(`/schedules/${r.scheduleId}`, { params: { sendNow: "true" } });
+                  await undoOut(s);
+                } catch (e) {
+                  fail(e, "Couldn't take them off the shift");
+                }
+              },
+            },
+          ],
+        );
+      } else {
+        fail(err, "Couldn't undo the call-out");
+      }
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // After the shift: they called in but it wasn't marked in time. Just record it.
+  const markOutAfter = async (s: WeekSchedule) => {
+    setBusyId(s._id);
+    setNotice(null);
+    try {
+      await api.post(`/schedules/${s._id}/call-out`);
+      setConfirmOutId(null);
+      setJustOut(s);
+      onChanged();
+    } catch (err) {
+      fail(err, "Couldn't mark the call-out");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const markOut = async () => {
     if (!outFor) return;
     setBusyId("out");
     try {
       const res = await api.post(`/schedules/${outFor._id}/call-out`);
+      if (res.data?.afterShift) {
+        // The shift ended while the sheet was open: nothing to fill.
+        setJustOut(outFor);
+        setOutFor(null);
+        onChanged();
+        return;
+      }
       setFill({ coverage: res.data.coverage, candidates: res.data.candidates || [] });
       onChanged();
     } catch (err) {
@@ -175,7 +251,21 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
         subtitle={`${getRoleDisplayName(row.role)} · ${day} · ${label.time}`}
         footer={
           fill ? (
-            <Button kind="gray" title="Done" style={{ flex: 1 }} onPress={onClose} />
+            <>
+              <Button
+                kind="gray"
+                title="Undo call-out"
+                style={{ flex: 1 }}
+                busy={busyId === `undo:${outFor._id}`}
+                onPress={async () => {
+                  if (await undoOut(outFor)) {
+                    setFill(null);
+                    setOutFor(null);
+                  }
+                }}
+              />
+              <Button kind="gray" title="Done" style={{ flex: 1 }} onPress={onClose} />
+            </>
           ) : (
             <>
               <Button kind="gray" title="Cancel" style={{ flex: 1 }} onPress={() => setOutFor(null)} />
@@ -283,6 +373,12 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
           </View>
         )}
         <Notice notice={notice} onClose={() => setNotice(null)} />
+        {justOut && (
+          <Card style={styles.undoCard}>
+            <Text style={[kit.body, { flex: 1 }]}>{staffName(justOut)} marked as called out</Text>
+            <Button small kind="tinted" title="Undo" busy={busyId === `undo:${justOut._id}`} onPress={() => undoOut(justOut)} />
+          </Card>
+        )}
 
         <Card style={styles.countCard}>
           <View style={{ flex: 1 }}>
@@ -312,7 +408,16 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
                   detail={s.status === "no_show" ? "No-show (didn't clock in)" : s.state === "draft" ? "Not sent yet" : toLabel(s.status)}
                   warn={s.state === "draft" || s.status === "no_show"}
                   action={
-                    canEdit && !isPast ? (
+                    canEdit && isPast && s.state !== "draft" && AFTER_SHIFT_OUT.has(s.status) ? (
+                      confirmOutId === s._id ? (
+                        <View style={{ flexDirection: "row", gap: 2 }}>
+                          <Button small kind="plain" color={IOS.secondary} title="Cancel" onPress={() => setConfirmOutId(null)} />
+                          <Button small kind="destructive" title="Yes, out" busy={busyId === s._id} onPress={() => markOutAfter(s)} />
+                        </View>
+                      ) : (
+                        <Button small kind="plain" color={IOS.redText} title="Called out" onPress={() => setConfirmOutId(s._id)} />
+                      )
+                    ) : canEdit && !isPast ? (
                       <View style={{ flexDirection: "row", gap: 2 }}>
                         {s.status === "scheduled" && s.state !== "draft" && (
                           <Button small kind="plain" color={IOS.redText} title="Out" onPress={() => setOutFor(s)} />
@@ -330,6 +435,27 @@ export default function SlotSheet({ row, weekStart, weekPublished, callOuts, peo
             </Card>
           )}
         </View>
+
+        {calledOut.length > 0 && (
+          <View>
+            <SectionLabel>{`Called out (${calledOut.length})`}</SectionLabel>
+            <Card padded={false}>
+              {calledOut.map((s, i) => (
+                <PersonRow
+                  key={s._id}
+                  first={i === 0}
+                  name={staffName(s)}
+                  color={IOS.redText}
+                  detail={`${s.meta?.calloutMarkedAfterShift ? "Called out (marked after the shift)" : "Called out"}${s.meta?.callOutReason ? ` · ${s.meta.callOutReason}` : ""}`}
+                  warn
+                  action={
+                    canEdit ? <Button small kind="plain" title="Undo" busy={busyId === `undo:${s._id}`} onPress={() => undoOut(s)} /> : null
+                  }
+                />
+              ))}
+            </Card>
+          </View>
+        )}
 
         {canEdit && !isPast && (
           <View>
@@ -440,6 +566,7 @@ function PersonRow({
 
 const styles = StyleSheet.create({
   countCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
+  undoCard: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 14 },
   stepBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: IOS.fill, alignItems: "center", justifyContent: "center" },
   stepValue: { fontSize: 22, fontWeight: "800", minWidth: 28, textAlign: "center", color: IOS.ink, fontVariant: ["tabular-nums"] },
   person: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 9 },

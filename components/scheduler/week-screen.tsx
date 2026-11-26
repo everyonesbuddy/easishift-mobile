@@ -121,7 +121,7 @@ export default function WeekScreen() {
 
   const days = useMemo(() => (weekStart ? Array.from({ length: 7 }, (_, i) => addDaysToKey(weekStart, i)) : []), [weekStart]);
 
-  const { rowsByDay, peopleByCoverage, outsByCoverage, looseByDay } = useMemo(() => {
+  const { rowsByDay, peopleByCoverage, outsByCoverage, calledOutByCoverage, looseByDay } = useMemo(() => {
     const rows = new Map<string, CoverageRow[]>();
     for (const row of data?.coverage || []) {
       if (!inSection(row, filterSection)) continue;
@@ -137,6 +137,8 @@ export default function WeekScreen() {
       );
     }
     const people = new Map<string, WeekSchedule[]>();
+    // Called-out people stay findable so a mistake can be undone.
+    const calledOut = new Map<string, WeekSchedule[]>();
     const outs = new Map<string, number>();
     const loose = new Map<string, WeekSchedule[]>();
     for (const s of data?.schedules || []) {
@@ -150,13 +152,16 @@ export default function WeekScreen() {
         continue;
       }
       const id = String(s.coverageId);
-      if (s.status === "call_out") outs.set(id, (outs.get(id) || 0) + 1);
-      else {
+      if (s.status === "call_out") {
+        outs.set(id, (outs.get(id) || 0) + 1);
+        if (!calledOut.has(id)) calledOut.set(id, []);
+        calledOut.get(id)!.push(s);
+      } else {
         if (!people.has(id)) people.set(id, []);
         people.get(id)!.push(s);
       }
     }
-    return { rowsByDay: rows, peopleByCoverage: people, outsByCoverage: outs, looseByDay: loose };
+    return { rowsByDay: rows, peopleByCoverage: people, outsByCoverage: outs, calledOutByCoverage: calledOut, looseByDay: loose };
   }, [data, filterSection]);
 
   const week = data?.week;
@@ -474,6 +479,7 @@ export default function WeekScreen() {
           weekPublished={isPublished}
           callOuts={outsByCoverage.get(openRow._id) || 0}
           people={peopleByCoverage.get(openRow._id) || []}
+          calledOut={calledOutByCoverage.get(openRow._id) || []}
           canEdit={canEdit}
           onClose={() => setOpenRowId(null)}
           onChanged={reload}
