@@ -29,6 +29,7 @@ export type StaffLinkMe = {
     hasPhone?: boolean;
     hasEmail?: boolean;
     smsStatus?: string;
+    phoneLast4?: string | null;
   };
   facility: {
     name?: string;
@@ -37,6 +38,7 @@ export type StaffLinkMe = {
     currentWeekStart?: string;
   };
   features?: {
+    texts?: boolean;
     swaps?: boolean;
     pickup?: boolean;
     timeOff?: boolean;

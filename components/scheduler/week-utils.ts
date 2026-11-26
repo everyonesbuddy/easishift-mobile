@@ -31,6 +31,7 @@ export type WeekSchedule = {
   endTime: string;
   status: string;
   state?: string;
+  meta?: { calloutMarkedAfterShift?: boolean; callOutReason?: string; statusBeforeCallOut?: string } | null;
 };
 
 export type WeekData = {
@@ -105,7 +106,7 @@ const NOT_SENT: Record<string, string> = {
   opted_out: "replied STOP to texts",
   sms_needs_upgrade: "phone only; texting is on paid plans",
   sms_needs_pro: "phone only; texting is on paid plans",
-  awaiting_opt_in: "hasn't replied START yet",
+  awaiting_opt_in: "hasn't opted in to texts yet (they text JOIN or tick the box on their schedule page)",
   notifications_off: "turned notifications off",
   send_failed: "the message failed to send",
 };
